@@ -954,3 +954,16 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
         return new Call('trace', [matrix]);
     }
 }
+
+// Export classes for Global/CommonJS environments
+(function() {
+    const exports = {
+        CAS
+    };
+    if (typeof globalThis !== 'undefined') {
+        Object.assign(globalThis, exports);
+    }
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = exports;
+    }
+})();
