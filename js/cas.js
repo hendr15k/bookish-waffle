@@ -61,13 +61,24 @@ class CAS {
                     throw new Error(`Function ${node.funcName} expects ${funcDef.params.length} arguments, got ${args.length}`);
                 }
 
-                // Substitute arguments
+                // Substitute arguments securely (to avoid collision if args contain params)
+                // We use temporary placeholders
                 let body = funcDef.body;
+                const tempMap = {};
+
+                // 1. Replace params with temporary unique symbols
                 for (let i = 0; i < funcDef.params.length; i++) {
                     const paramName = funcDef.params[i];
-                    const argVal = args[i];
-                    body = body.substitute(new Symbol(paramName), argVal);
+                    const tempName = `__temp_param_${i}_${Date.now()}_${Math.random()}`; // Unique enough
+                    tempMap[tempName] = args[i];
+                    body = body.substitute(new Symbol(paramName), new Symbol(tempName));
                 }
+
+                // 2. Replace temporary symbols with actual arguments
+                for (const tempName in tempMap) {
+                    body = body.substitute(new Symbol(tempName), tempMap[tempName]);
+                }
+
                 return this._recursiveEval(body); // Re-evaluate body
             }
 
