@@ -181,7 +181,7 @@ class Parser {
                 this.eat(TOKEN_RPAREN);
                 return new Call(name, args);
             } else {
-                return new Symbol(name);
+                return new Sym(name);
             }
         } else if (token.type === TOKEN_LPAREN) {
             this.eat(TOKEN_LPAREN);
@@ -249,7 +249,7 @@ class Parser {
         // NUMBER, IDENTIFIER, LPAREN, LBRACKET
         // (MINUS/PLUS are handled in expr, so implicit mul like `x -y` isn't standard, usually `x * -y` needs parens or explicit `*`)
         // However, `2x` works. `x y` works. `x(y)` is parsed in factor, so if we are here, we saw a factor and next is something else.
-        // e.g. `x` (Symbol) then `y` (Symbol).
+        // e.g. `x` (Sym) then `y` (Sym).
         return token.type === TOKEN_NUMBER ||
                token.type === TOKEN_IDENTIFIER ||
                token.type === TOKEN_LPAREN ||
@@ -295,7 +295,7 @@ class Parser {
             if (this.currentToken.type === TOKEN_ASSIGN) {
                 this.eat(TOKEN_ASSIGN);
                 const value = this.statement();
-                return new Assignment(new Symbol(name), value);
+                return new Assignment(new Sym(name), value);
             }
 
             // Check for function definition: ID(args) :=
