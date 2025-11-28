@@ -350,6 +350,18 @@
             <span class="app-icon" style="color: #ffc107;">#</span>
             <span class="app-name">Numbers</span>
         </div>
+        <div class="app-card" onclick="openTool('variables')">
+            <span class="app-icon" style="color: #6c757d;">x=y</span>
+            <span class="app-name">Variables</span>
+        </div>
+        <div class="app-card" onclick="openTool('history')">
+            <span class="app-icon" style="color: #343a40;">🕒</span>
+            <span class="app-name">History</span>
+        </div>
+        <div class="app-card" onclick="openTool('settings')">
+            <span class="app-icon" style="color: #007bff;">⚙️</span>
+            <span class="app-name">Settings</span>
+        </div>
     </div>
 
     <!-- Tool Views -->
@@ -602,6 +614,53 @@
         <div class="tool-result"></div>
     </div>
 
+    <!-- VARIABLES APP -->
+    <div id="tool-variables" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Variables & Functions</span>
+        </div>
+        <div id="app-variable-list" style="margin-bottom: 20px;">
+            <!-- Content populated by JS -->
+        </div>
+        <button class="action-btn secondary" style="width: 100%;" onclick="runTool('clear', [])">Clear All Variables</button>
+        <div class="tool-result"></div>
+    </div>
+
+    <!-- HISTORY APP -->
+    <div id="tool-history" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">History</span>
+            <button class="action-btn secondary" style="font-size: 0.8em; padding: 5px 10px; margin-left: auto;" onclick="clearHistory()">Clear</button>
+        </div>
+        <div id="app-history-content" style="overflow-y: auto; flex-grow: 1;">
+            <!-- Mirrors main history -->
+        </div>
+    </div>
+
+    <!-- SETTINGS APP -->
+    <div id="tool-settings" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Settings</span>
+        </div>
+        <div class="tool-section">
+            <h3>Appearance</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span>Dark Mode</span>
+                <label class="switch">
+                    <input type="checkbox" id="dark-mode-toggle">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+        </div>
+        <div class="tool-section">
+            <h3>About</h3>
+            <p style="font-size: 0.9em; color: #666;">Web CAS v1.0<br>Client-side JavaScript Algebra System.</p>
+        </div>
+    </div>
+
     <div id="sidebar">
         <h2>Variables</h2>
         <div id="variable-list">
@@ -639,8 +698,25 @@
         const submitBtn = document.getElementById('submit-btn');
         const history = document.getElementById('history');
         const variableList = document.getElementById('variable-list');
+        const appVariableList = document.getElementById('app-variable-list');
         const modeToggle = document.getElementById('mode-toggle');
         let isMobileMode = false;
+
+        // Dark Mode Logic
+        if (localStorage.getItem('darkMode') === 'true') {
+            document.body.classList.add('dark-mode');
+            darkModeToggle.checked = true;
+        }
+
+        darkModeToggle.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                document.body.classList.add('dark-mode');
+                localStorage.setItem('darkMode', 'true');
+            } else {
+                document.body.classList.remove('dark-mode');
+                localStorage.setItem('darkMode', 'false');
+            }
+        });
 
         modeToggle.addEventListener('click', () => {
             isMobileMode = !isMobileMode;
@@ -662,6 +738,16 @@
         window.openTool = function(toolName) {
             document.getElementById('app-grid').style.display = 'none';
             document.getElementById('tool-' + toolName).style.display = 'block';
+
+            // Special initialization for specific tools
+            if (toolName === 'variables') {
+                updateVariables(); // Refresh content
+            }
+            if (toolName === 'history') {
+                // Sync history content
+                const historyContent = document.getElementById('app-history-content');
+                historyContent.innerHTML = history.innerHTML;
+            }
         };
 
         window.closeTool = function() {
@@ -672,6 +758,11 @@
             if (isMobileMode) {
                 document.getElementById('app-grid').style.display = 'grid';
             }
+        };
+
+        window.clearHistory = function() {
+            history.innerHTML = '';
+            document.getElementById('app-history-content').innerHTML = '';
         };
 
         window.runTool = function(action, inputTokens) {
@@ -741,44 +832,50 @@
             const varNames = Object.keys(vars);
             const funcNames = Object.keys(funcs);
 
-            variableList.innerHTML = '';
+            const render = (container) => {
+                container.innerHTML = '';
+                if (varNames.length === 0 && funcNames.length === 0) {
+                    container.innerHTML = '<div style="color: #888; font-style: italic;">No variables or functions defined</div>';
+                    return;
+                }
 
-            if (varNames.length === 0 && funcNames.length === 0) {
-                variableList.innerHTML = '<div style="color: #888; font-style: italic;">No variables or functions defined</div>';
-                return;
-            }
+                if (varNames.length > 0) {
+                    const header = document.createElement('div');
+                    header.innerHTML = '<strong>Vars:</strong>';
+                    container.appendChild(header);
 
-            if (varNames.length > 0) {
-                const header = document.createElement('div');
-                header.innerHTML = '<strong>Vars:</strong>';
-                variableList.appendChild(header);
+                    varNames.forEach(name => {
+                        const item = document.createElement('div');
+                        item.className = 'variable-item';
+                        const val = vars[name];
+                        let valStr = val.toString();
+                        if (valStr.length > 20) valStr = valStr.substring(0, 17) + '...';
+                        item.innerHTML = `<span class="variable-name">${name}</span> = <span class="variable-value">${valStr}</span>`;
+                        container.appendChild(item);
+                    });
+                }
 
-                varNames.forEach(name => {
-                    const item = document.createElement('div');
-                    item.className = 'variable-item';
-                    const val = vars[name];
-                    let valStr = val.toString();
-                    if (valStr.length > 20) valStr = valStr.substring(0, 17) + '...';
-                    item.innerHTML = `<span class="variable-name">${name}</span> = <span class="variable-value">${valStr}</span>`;
-                    variableList.appendChild(item);
-                });
-            }
+                if (funcNames.length > 0) {
+                    const header = document.createElement('div');
+                    header.innerHTML = '<strong style="display:block; margin-top:10px;">Funcs:</strong>';
+                    container.appendChild(header);
 
-            if (funcNames.length > 0) {
-                const header = document.createElement('div');
-                header.innerHTML = '<strong style="display:block; margin-top:10px;">Funcs:</strong>';
-                variableList.appendChild(header);
+                    funcNames.forEach(name => {
+                        const item = document.createElement('div');
+                        item.className = 'variable-item';
+                        const funcDef = funcs[name];
+                        let bodyStr = funcDef.body.toString();
+                        if (bodyStr.length > 20) bodyStr = bodyStr.substring(0, 17) + '...';
+                        item.innerHTML = `<span class="variable-name">${name}(${funcDef.params.join(',')})</span> := <span class="variable-value">${bodyStr}</span>`;
+                        container.appendChild(item);
+                    });
+                }
+            };
 
-                funcNames.forEach(name => {
-                    const item = document.createElement('div');
-                    item.className = 'variable-item';
-                    const funcDef = funcs[name];
-                    let bodyStr = funcDef.body.toString();
-                    if (bodyStr.length > 20) bodyStr = bodyStr.substring(0, 17) + '...';
-                    item.innerHTML = `<span class="variable-name">${name}(${funcDef.params.join(',')})</span> := <span class="variable-value">${bodyStr}</span>`;
-                    variableList.appendChild(item);
-                });
-            }
+            // Render to sidebar
+            render(variableList);
+            // Render to Variables App
+            if (appVariableList) render(appVariableList);
         }
 
         function drawPlot(canvas, result) {
