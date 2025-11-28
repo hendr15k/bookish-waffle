@@ -377,26 +377,32 @@ N(expr) [numeric eval], clear(), help()`;
     _limit(expr, varNode, point, depth = 0) {
         if (depth > 5) return new Call("limit", [expr, varNode, point]);
 
-        let val = expr.substitute(varNode, point).simplify();
-
         if (expr instanceof Div) {
             let num = expr.left.substitute(varNode, point).simplify();
             let den = expr.right.substitute(varNode, point).simplify();
 
+            // Handle Num or zero-value Num from simplification
+            const isZero = (n) => (n instanceof Num && n.value === 0);
+
+            if (isZero(num) && isZero(den)) {
+                 const diffNum = expr.left.diff(varNode).simplify();
+                 const diffDen = expr.right.diff(varNode).simplify();
+                 return this._limit(new Div(diffNum, diffDen), varNode, point, depth + 1);
+            }
+
             if (num instanceof Num && den instanceof Num) {
                 if (den.value !== 0) return new Num(num.value / den.value);
                 if (num.value !== 0 && den.value === 0) return new Symbol("Infinity");
-                if (num.value === 0 && den.value === 0) {
-                    const diffNum = expr.left.diff(varNode).simplify();
-                    const diffDen = expr.right.diff(varNode).simplify();
-                    return this._limit(new Div(diffNum, diffDen), varNode, point, depth + 1);
-                }
             }
         }
 
-        if (val instanceof Num) return val;
-
-        return val;
+        try {
+            const val = expr.substitute(varNode, point).simplify();
+            if (val instanceof Num) return val;
+            return val;
+        } catch (e) {
+            return new Call("limit", [expr, varNode, point]);
+        }
     }
 
     _det(matrix) {
