@@ -766,3 +766,16 @@ class FunctionDef extends Expr {
         return `\\text{${this.name}}(${paramsTex}) \\coloneqq ${this.body.toLatex()}`;
     }
 }
+
+class Block extends Expr {
+    constructor(statements) {
+        super();
+        this.statements = statements;
+    }
+    toString() { return this.statements.map(s => s.toString()).join("; "); }
+    simplify() { return new Block(this.statements.map(s => s.simplify())); }
+    evaluateNumeric() { return NaN; }
+    toLatex() {
+        return this.statements.map(s => s.toLatex()).join("; \\; ");
+    }
+}

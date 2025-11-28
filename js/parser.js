@@ -13,6 +13,7 @@ const TOKEN_RBRACKET = 'RBRACKET';
 const TOKEN_COMMA = 'COMMA';
 const TOKEN_ASSIGN = 'ASSIGN';
 const TOKEN_EQ = 'EQ';
+const TOKEN_SEMI = 'SEMI';
 const TOKEN_EOF = 'EOF';
 
 class Token {
@@ -133,6 +134,7 @@ class Lexer {
             if (this.currentChar === '[') { this.advance(); return new Token(TOKEN_LBRACKET, '['); }
             if (this.currentChar === ']') { this.advance(); return new Token(TOKEN_RBRACKET, ']'); }
             if (this.currentChar === ',') { this.advance(); return new Token(TOKEN_COMMA, ','); }
+            if (this.currentChar === ';') { this.advance(); return new Token(TOKEN_SEMI, ';'); }
 
             throw new Error(`Invalid character: ${this.currentChar}`);
         }
@@ -339,6 +341,17 @@ class Parser {
     }
 
     parse() {
-        return this.statement();
+        const statements = [];
+        statements.push(this.statement());
+        while (this.currentToken.type === TOKEN_SEMI) {
+            this.eat(TOKEN_SEMI);
+            if (this.currentToken.type !== TOKEN_EOF) {
+                statements.push(this.statement());
+            }
+        }
+        if (statements.length === 1) {
+            return statements[0];
+        }
+        return new Block(statements);
     }
 }

@@ -296,6 +296,61 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
             return new Vec(node.elements.map(e => this._recursiveEval(e)));
         }
 
+        if (node instanceof Block) {
+             const results = [];
+             for(const stmt of node.statements) {
+                 results.push(this._recursiveEval(stmt));
+             }
+
+             // Check if we have multiple plots
+             const plots = results.filter(r => r && r.type === 'plot');
+             if (plots.length > 0 && plots.length === results.length) {
+                  // Merge plots
+                  const combined = {
+                      type: 'plot',
+                      isMulti: true,
+                      plots: plots,
+                      toString: () => plots.map(p => p.toString()).join("; "),
+                      toLatex: () => plots.map(p => p.toLatex()).join("; ")
+                  };
+                  return combined;
+             }
+
+             // Return the last result if not all plots, or return a list?
+             // Standard behavior for blocks is return last value.
+             // But if we have mixed output (e.g. assignment then plot), we probably want the plot if it is last.
+             // If we have plot then assignment, we want assignment.
+             // However, for REPL, maybe we want to see all outputs?
+             // But current frontend only handles one result.
+             // If I have `1+1; 2+2`, I probably expect `4` or `2, 4`.
+             // If I have `a:=1; b:=2`, I expect `2`.
+             // If I have `plot(...); plot(...)`, user wants both.
+
+             // Let's return the last result, UNLESS they are all plots (handled above).
+             // Wait, what if I have `a:=1; plot(x,x)`? I want the plot.
+             // What if I have `plot(x,x); a:=1`? I probably want `1`.
+
+             // The user specifically asked for "In that case the program should plot both functions".
+             // This implies if there are multiple plots, we should show them.
+
+             // Let's check if there are ANY plots.
+             if (plots.length > 0) {
+                 if (plots.length === 1) return plots[0];
+                 // Multiple plots found mixed with other things?
+                 // `x=1; plot(x); plot(x^2)`
+                 // We should probably return the combined plots.
+                 return {
+                      type: 'plot',
+                      isMulti: true,
+                      plots: plots,
+                      toString: () => plots.map(p => p.toString()).join("; "),
+                      toLatex: () => plots.map(p => p.toLatex()).join("; ")
+                  };
+             }
+
+             return results[results.length - 1];
+        }
+
         return node;
     }
 
