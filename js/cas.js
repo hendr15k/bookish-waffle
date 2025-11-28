@@ -17,10 +17,16 @@ class CAS {
     }
 
     evaluate(exprTree) {
-        const evaluated = this._recursiveEval(exprTree);
+        let evaluated = this._recursiveEval(exprTree);
         if (evaluated && typeof evaluated.simplify === 'function') {
-            return evaluated.simplify();
+            evaluated = evaluated.simplify();
         }
+
+        // Store result in 'ans' variable if it's a value (Expression) and not a Plot/Action
+        if (evaluated instanceof Expr) {
+            this.variables['ans'] = evaluated;
+        }
+
         return evaluated;
     }
 
@@ -44,7 +50,7 @@ class CAS {
             return node;
         }
 
-        if (node instanceof Symbol) {
+        if (node instanceof Sym) {
             if (this.variables.hasOwnProperty(node.name)) {
                 return this.variables[node.name];
             }
@@ -71,12 +77,12 @@ class CAS {
                     const paramName = funcDef.params[i];
                     const tempName = `__temp_param_${i}_${Date.now()}_${Math.random()}`; // Unique enough
                     tempMap[tempName] = args[i];
-                    body = body.substitute(new Symbol(paramName), new Symbol(tempName));
+                    body = body.substitute(new Sym(paramName), new Sym(tempName));
                 }
 
                 // 2. Replace temporary symbols with actual arguments
                 for (const tempName in tempMap) {
-                    body = body.substitute(new Symbol(tempName), tempMap[tempName]);
+                    body = body.substitute(new Sym(tempName), tempMap[tempName]);
                 }
 
                 return this._recursiveEval(body); // Re-evaluate body
@@ -92,7 +98,7 @@ class CAS {
                 if (args.length < 2) throw new Error("diff requires at least 2 arguments");
                 const func = args[0];
                 const varNode = args[1];
-                if (!(varNode instanceof Symbol)) throw new Error("Second argument to diff must be a variable");
+                if (!(varNode instanceof Sym)) throw new Error("Second argument to diff must be a variable");
                 return func.diff(varNode);
             }
 
@@ -100,7 +106,7 @@ class CAS {
                 if (args.length < 2) throw new Error("integrate requires at least 2 arguments");
                 const func = args[0];
                 const varNode = args[1];
-                if (!(varNode instanceof Symbol)) throw new Error("Second argument to integrate must be a variable");
+                if (!(varNode instanceof Sym)) throw new Error("Second argument to integrate must be a variable");
 
                 if (args.length === 4) {
                     const lower = args[2];
@@ -145,7 +151,7 @@ class CAS {
                  if (args.length < 2) throw new Error("solve requires at least 2 arguments: equation and variable");
                  const eq = args[0];
                  const varNode = args[1];
-                 if (!(varNode instanceof Symbol)) throw new Error("Second argument to solve must be a variable");
+                 if (!(varNode instanceof Sym)) throw new Error("Second argument to solve must be a variable");
                  return this._solve(eq, varNode);
             }
 
@@ -176,7 +182,7 @@ class CAS {
                 const point = args[2];
                 const order = args[3];
 
-                if (!(varNode instanceof Symbol)) throw new Error("Second argument to taylor must be a variable");
+                if (!(varNode instanceof Sym)) throw new Error("Second argument to taylor must be a variable");
                 if (!(order instanceof Num)) throw new Error("Order must be a number");
 
                 return this._taylor(expr, varNode, point, order.value);
@@ -188,7 +194,7 @@ class CAS {
                 const expr = args[0];
                 const varNode = args[1];
                 const point = args[2];
-                if (!(varNode instanceof Symbol)) throw new Error("Second argument to limit must be a variable");
+                if (!(varNode instanceof Sym)) throw new Error("Second argument to limit must be a variable");
 
                 return this._limit(expr, varNode, point);
             }
@@ -241,6 +247,24 @@ class CAS {
                  return new Call('factorial', args);
             }
 
+            if (node.funcName === 'fibonacci') {
+                 if (args.length !== 1) throw new Error("fibonacci requires 1 argument");
+                 const n = args[0];
+                 if (n instanceof Num && Number.isInteger(n.value) && n.value >= 0) {
+                     return new Num(this._fibonacci(n.value));
+                 }
+                 return new Call('fibonacci', args);
+            }
+
+            if (node.funcName === 'gamma') {
+                 if (args.length !== 1) throw new Error("gamma requires 1 argument");
+                 const z = args[0];
+                 if (z instanceof Num) {
+                     return new Num(this._gamma(z.value));
+                 }
+                 return new Call('gamma', args);
+            }
+
             if (node.funcName === 'nCr') {
                 if (args.length !== 2) throw new Error("nCr requires 2 arguments");
                 return this._nCr(args[0], args[1]);
@@ -266,6 +290,21 @@ class CAS {
                 return this._variance(args[0]);
             }
 
+            if (node.funcName === 'linearRegression') {
+                if (args.length !== 1) throw new Error("linearRegression requires 1 argument (list of points)");
+                return this._linearRegression(args[0]);
+            }
+
+            if (node.funcName === 'normalPDF') {
+                if (args.length !== 3) throw new Error("normalPDF requires 3 arguments: x, mu, sigma");
+                return this._normalPDF(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'binomialPDF') {
+                if (args.length !== 3) throw new Error("binomialPDF requires 3 arguments: k, n, p");
+                return this._binomialPDF(args[0], args[1], args[2]);
+            }
+
             if (node.funcName === 'help') {
                 const helpText = `Available commands:
 diff(expr, var), integrate(expr, var, [lower, upper]),
@@ -285,7 +324,8 @@ N(expr) [numeric eval], clear(), help()`;
 \\text{expand}(expr), \\; \\text{simplify}(expr), \\; \\text{solve}(eq, var), \\\\
 \\text{det}(M), \\; \\text{trans}(M), \\; \\text{plot}(expr, var, [min, max]), \\\\
 \\text{gcd}(a, b), \\; \\text{lcm}(a, b), \\; \\text{factor}(n), \\; n!, \\\\
-\\text{mean}(L), \\; \\text{variance}(L), \\\\
+\\text{mean}(L), \\; \\text{variance}(L), \\; \\text{linearRegression}(L), \\\\
+\\text{normalPDF}(x, \\mu, \\sigma), \\; \\text{binomialPDF}(k, n, p), \\\\
 N(expr), \\; \\text{clear}(), \\; \\text{help}()
 \\end{array}`;
 
@@ -370,7 +410,7 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
     }
 
     _sum(expr, varNode, start, end) {
-        if (!(varNode instanceof Symbol)) throw new Error("Sum variable must be a symbol");
+        if (!(varNode instanceof Sym)) throw new Error("Sum variable must be a symbol");
         if (!(start instanceof Num) || !(end instanceof Num)) {
             // Symbolic sum not implemented, return call
             return new Call("sum", [expr, varNode, start, end]);
@@ -385,7 +425,7 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
     }
 
     _product(expr, varNode, start, end) {
-        if (!(varNode instanceof Symbol)) throw new Error("Product variable must be a symbol");
+        if (!(varNode instanceof Sym)) throw new Error("Product variable must be a symbol");
         if (!(start instanceof Num) || !(end instanceof Num)) {
             return new Call("product", [expr, varNode, start, end]);
         }
@@ -487,6 +527,43 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
         return res;
     }
 
+    _fibonacci(n) {
+        if (n === 0) return 0;
+        if (n === 1) return 1;
+        let a = 0, b = 1;
+        for (let i = 2; i <= n; i++) {
+            let temp = a + b;
+            a = b;
+            b = temp;
+        }
+        return b;
+    }
+
+    _gamma(z) {
+        // Lanczos approximation
+        const g = 7;
+        const C = [
+            0.99999999999980993,
+            676.5203681218851,
+            -1259.1392167224028,
+            771.32342877765313,
+            -176.61502916214059,
+            12.507343278686905,
+            -0.13857109526572012,
+            9.9843695780195716e-6,
+            1.5056327351493116e-7
+        ];
+
+        if (z < 0.5) return Math.PI / (Math.sin(Math.PI * z) * this._gamma(1 - z));
+
+        z -= 1;
+        let x = C[0];
+        for (let i = 1; i < g + 2; i++) x += C[i] / (z + i);
+
+        const t = z + g + 0.5;
+        return Math.sqrt(2 * Math.PI) * Math.pow(t, z + 0.5) * Math.exp(-t) * x;
+    }
+
     _limit(expr, varNode, point, depth = 0) {
         if (depth > 5) return new Call("limit", [expr, varNode, point]);
 
@@ -505,7 +582,7 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
 
             if (num instanceof Num && den instanceof Num) {
                 if (den.value !== 0) return new Num(num.value / den.value);
-                if (num.value !== 0 && den.value === 0) return new Symbol("Infinity");
+                if (num.value !== 0 && den.value === 0) return new Sym("Infinity");
             }
         }
 
@@ -756,6 +833,86 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
              return new Div(sumSq, new Num(n - 1)).simplify();
          }
          return new Call('variance', [list]);
+    }
+
+    _linearRegression(data) {
+        // data: [[x1, y1], [x2, y2], ...]
+        if (data instanceof Vec) {
+            const n = data.elements.length;
+            if (n < 2) throw new Error("Linear regression requires at least 2 points");
+
+            let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+            const points = [];
+
+            for (const pt of data.elements) {
+                if (!(pt instanceof Vec) || pt.elements.length !== 2) throw new Error("Data must be list of [x, y] points");
+                const xExpr = pt.elements[0].evaluateNumeric();
+                const yExpr = pt.elements[1].evaluateNumeric();
+                if (isNaN(xExpr) || isNaN(yExpr)) throw new Error("Linear regression data must be numeric");
+
+                sumX += xExpr;
+                sumY += yExpr;
+                sumXY += xExpr * yExpr;
+                sumXX += xExpr * xExpr;
+                points.push({x: xExpr, y: yExpr});
+            }
+
+            const denominator = n * sumXX - sumX * sumX;
+            if (denominator === 0) throw new Error("Vertical line (undefined slope)");
+
+            const slope = (n * sumXY - sumX * sumY) / denominator;
+            const intercept = (sumY - slope * sumX) / n;
+
+            // Return equation: slope * x + intercept
+            // Also attach the points to the result object for plotting?
+            // The result of _recursiveEval must be an Expr or a special object.
+            // If we return an Expr, it simplifies.
+
+            const eq = new Add(new Mul(new Num(slope), new Sym('x')), new Num(intercept)).simplify();
+
+            // We can return a special object that behaves like an Expr but has extra data?
+            // Or just return the equation. The user can plot it.
+            // But to "Visualize", we want the points.
+            // Let's rely on the frontend to construct the plot command if needed.
+            // Or, we can return a 'plot' object directly if called via a specific command?
+            // No, linearRegression should return the function.
+
+            return eq;
+        }
+        return new Call('linearRegression', [data]);
+    }
+
+    _normalPDF(x, mu, sigma) {
+        if (x instanceof Num && mu instanceof Num && sigma instanceof Num) {
+            const xv = x.value;
+            const mv = mu.value;
+            const sv = sigma.value;
+            if (sv <= 0) return new Num(0); // Error?
+
+            const coeff = 1 / (sv * Math.sqrt(2 * Math.PI));
+            const exp = Math.exp(-0.5 * Math.pow((xv - mv) / sv, 2));
+            return new Num(coeff * exp);
+        }
+        // Symbolic representation: 1/(sigma*sqrt(2pi)) * e^(-...)
+        const coeff = new Div(new Num(1), new Mul(sigma, new Call('sqrt', [new Mul(new Num(2), new Sym('pi'))])));
+        const exponent = new Mul(new Num(-0.5), new Pow(new Div(new Sub(x, mu), sigma), new Num(2)));
+        return new Mul(coeff, new Call('exp', [exponent]));
+    }
+
+    _binomialPDF(k, n, p) {
+        if (k instanceof Num && n instanceof Num && p instanceof Num) {
+            const kv = k.value;
+            const nv = n.value;
+            const pv = p.value;
+            if (!Number.isInteger(kv) || !Number.isInteger(nv)) return new Num(0);
+            if (kv < 0 || kv > nv) return new Num(0);
+
+            // nCr * p^k * (1-p)^(n-k)
+            const nCr = this._nCr(n, k).value;
+            const prob = nCr * Math.pow(pv, kv) * Math.pow(1 - pv, nv - kv);
+            return new Num(prob);
+        }
+        return new Call('binomialPDF', [k, n, p]);
     }
 
     _nCr(n, k) {

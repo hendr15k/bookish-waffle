@@ -24,7 +24,8 @@ vm.createContext(sandbox);
 const exposeClasses = `
     globalThis.Expr = Expr;
     globalThis.Num = Num;
-    globalThis.Symbol = Symbol;
+    globalThis.Sym = Sym;
+    globalThis.Symbol = Sym; // Alias for tests if they use Symbol explicitly, or just expose Sym
     globalThis.Add = Add;
     globalThis.Sub = Sub;
     globalThis.Mul = Mul;
