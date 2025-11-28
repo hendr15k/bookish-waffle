@@ -568,9 +568,32 @@ class Call extends Expr {
 
         if (this.funcName === 'sqrt') return `\\sqrt{${argsTex[0]}}`;
 
-        if (['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'exp', 'ln', 'log', 'det', 'inv', 'cross', 'trans', 'gcd', 'lcm'].includes(this.funcName)) {
-            // Basic functions
+        const standardFunctions = ['sin', 'cos', 'tan', 'sinh', 'cosh', 'tanh', 'exp', 'ln', 'log', 'det', 'gcd', 'sec', 'csc', 'cot'];
+        if (standardFunctions.includes(this.funcName)) {
             return `\\${this.funcName}\\left(${argsTex.join(", ")}\\right)`;
+        }
+
+        const mapFunctions = {
+            'asin': '\\arcsin',
+            'acos': '\\arccos',
+            'atan': '\\arctan',
+            'lcm': '\\operatorname{lcm}'
+        };
+        if (mapFunctions.hasOwnProperty(this.funcName)) {
+            return `${mapFunctions[this.funcName]}\\left(${argsTex.join(", ")}\\right)`;
+        }
+
+        if (this.funcName === 'inv' && argsTex.length === 1) {
+             return `\\left(${argsTex[0]}\\right)^{-1}`;
+        }
+        if (this.funcName === 'trans' && argsTex.length === 1) {
+             return `\\left(${argsTex[0]}\\right)^{T}`;
+        }
+        if (this.funcName === 'cross' && argsTex.length === 2) {
+             return `\\left(${argsTex[0]} \\times ${argsTex[1]}\\right)`;
+        }
+        if (this.funcName === 'abs' && argsTex.length === 1) {
+             return `\\left|${argsTex[0]}\\right|`;
         }
 
         if (this.funcName === 'limit') {
