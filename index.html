@@ -4,20 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Web CAS (Client-Side)</title>
-    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script>
         window.MathJax = {
           tex: {
-            inlineMath: [['$', '$'], ['\\(', '\\)']]
-          },
-          svg: {
-            fontCache: 'global'
-          },
-          startup: {
-             ready: () => {
-                 console.log('MathJax is ready');
-                 MathJax.startup.defaultReady();
-             }
+            inlineMath: [['$', '$'], ['\\(', '\\)']],
+            displayMath: [['\\[', '\\]'], ['$$', '$$']]
           }
         };
     </script>
@@ -321,7 +312,7 @@
 
             if (result && result.type === 'info') {
                 if (result.toLatex) {
-                     resultDiv.innerHTML = `\\[${result.toLatex()}\\]`;
+                     resultDiv.textContent = `\\[${result.toLatex()}\\]`;
                 } else {
                     resultDiv.style.whiteSpace = 'pre-wrap';
                     resultDiv.style.fontFamily = 'monospace';
@@ -354,7 +345,7 @@
 
             } else if (latex && !isError) {
                 // Render LaTeX
-                resultDiv.innerHTML = `\\[${latex}\\]`;
+                resultDiv.textContent = `\\[${latex}\\]`;
             } else {
                 resultDiv.textContent = result;
             }
