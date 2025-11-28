@@ -204,30 +204,57 @@
             const ctx = canvas.getContext('2d');
             const width = canvas.width;
             const height = canvas.height;
-            const minX = result.min;
-            const maxX = result.max;
-            // Determine Y range automatically
+
+            let plots = [];
+            if (result.isMulti) {
+                plots = result.plots;
+            } else {
+                plots = [result];
+            }
+
+            // Determine global range
+            let minX = plots[0].min;
+            let maxX = plots[0].max;
+            // Assuming all plots share same X range if combined, or we take union?
+            // Usually plot commands specify range.
+            // If they differ, we might need to take the union.
+            for(const p of plots) {
+                if (p.min < minX) minX = p.min;
+                if (p.max > maxX) maxX = p.max;
+            }
+
+            // Calculate points for all plots
+            const allPoints = []; // Array of arrays of points
             let minY = Infinity;
             let maxY = -Infinity;
-            const points = [];
 
             const steps = width;
-            for (let i = 0; i <= steps; i++) {
-                const x = minX + (maxX - minX) * (i / steps);
-                // Evaluate expr at x
-                try {
-                    // Need to substitute variable
-                    const valExpr = result.expr.substitute(result.var, new Num(x));
-                    const simplified = valExpr.simplify();
-                    if (simplified instanceof Num) {
-                        const y = simplified.value;
-                        points.push({x, y});
-                        if (y < minY) minY = y;
-                        if (y > maxY) maxY = y;
+
+            for(const p of plots) {
+                const points = [];
+                for (let i = 0; i <= steps; i++) {
+                    const x = minX + (maxX - minX) * (i / steps);
+                    // Check if x is within this plot's range?
+                    // Typically plot(expr, var, min, max) defines where to plot.
+                    // If we extend range, we might be plotting outside requested range?
+                    // Or we just plot everything on the global range?
+                    // Let's stick to the plot's defined range for evaluation, but map to global canvas.
+                    if (x < p.min || x > p.max) continue;
+
+                    try {
+                        const valExpr = p.expr.substitute(p.var, new Num(x));
+                        const simplified = valExpr.simplify();
+                        if (simplified instanceof Num) {
+                            const y = simplified.value;
+                            points.push({x, y});
+                            if (y < minY) minY = y;
+                            if (y > maxY) maxY = y;
+                        }
+                    } catch(e) {
+                        // Ignore
                     }
-                } catch(e) {
-                    // Ignore points where eval fails
                 }
+                allPoints.push(points);
             }
 
             if (minY === Infinity) {
@@ -235,7 +262,7 @@
                 return;
             }
 
-            // Add some padding to Y range
+            // Add padding
             const yRange = maxY - minY;
             if (yRange === 0) {
                  minY -= 1;
@@ -245,11 +272,13 @@
                 maxY += yRange * 0.1;
             }
 
+            // Clear
+            ctx.clearRect(0, 0, width, height);
+
             // Draw Axes
             ctx.strokeStyle = "#ccc";
             ctx.lineWidth = 1;
 
-            // X Axis
             if (minY <= 0 && maxY >= 0) {
                 const yZero = height - ((0 - minY) / (maxY - minY)) * height;
                 ctx.beginPath();
@@ -258,7 +287,6 @@
                 ctx.stroke();
             }
 
-            // Y Axis
             if (minX <= 0 && maxX >= 0) {
                 const xZero = ((0 - minX) / (maxX - minX)) * width;
                 ctx.beginPath();
@@ -267,24 +295,29 @@
                 ctx.stroke();
             }
 
-            // Draw Function
-            ctx.strokeStyle = "#007bff";
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            let first = true;
-            for (const p of points) {
-                const px = ((p.x - minX) / (maxX - minX)) * width;
-                const py = height - ((p.y - minY) / (maxY - minY)) * height;
-                if (first) {
-                    ctx.moveTo(px, py);
-                    first = false;
-                } else {
-                    ctx.lineTo(px, py);
-                }
-            }
-            ctx.stroke();
+            // Draw Functions
+            const colors = ["#007bff", "#28a745", "#dc3545", "#fd7e14", "#6f42c1"];
 
-            // Draw labels (simplistic)
+            for(let i=0; i<allPoints.length; i++) {
+                const points = allPoints[i];
+                ctx.strokeStyle = colors[i % colors.length];
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                let first = true;
+                for (const p of points) {
+                    const px = ((p.x - minX) / (maxX - minX)) * width;
+                    const py = height - ((p.y - minY) / (maxY - minY)) * height;
+                    if (first) {
+                        ctx.moveTo(px, py);
+                        first = false;
+                    } else {
+                        ctx.lineTo(px, py);
+                    }
+                }
+                ctx.stroke();
+            }
+
+            // Labels
             ctx.fillStyle = "#333";
             ctx.font = "10px sans-serif";
             ctx.fillText(minX.toFixed(1), 5, height - 5);
