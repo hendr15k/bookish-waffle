@@ -178,6 +178,16 @@ class CAS {
                 return this._det(args[0]);
             }
 
+            if (node.funcName === 'inv') {
+                if (args.length !== 1) throw new Error("inv requires 1 argument");
+                return this._inv(args[0]);
+            }
+
+            if (node.funcName === 'cross') {
+                if (args.length !== 2) throw new Error("cross requires 2 arguments");
+                return this._cross(args[0], args[1]);
+            }
+
             if (node.funcName === 'trans') {
                 if (args.length !== 1) throw new Error("trans requires 1 argument");
                 return this._trans(args[0]);
@@ -444,6 +454,81 @@ N(expr) [numeric eval], clear(), help()`;
             det = new Add(det, term);
         }
         return det.simplify();
+    }
+
+    _inv(matrix) {
+        if (!(matrix instanceof Vec)) throw new Error("inv requires a matrix");
+        const rows = matrix.elements.length;
+        if (rows === 0) return matrix;
+        if (!(matrix.elements[0] instanceof Vec)) throw new Error("inv requires a matrix");
+        const cols = matrix.elements[0].elements.length;
+        if (rows !== cols) throw new Error("inv requires a square matrix");
+
+        const det = this._det(matrix).simplify();
+        if (det instanceof Num && det.value === 0) throw new Error("Matrix is singular (det=0)");
+
+        // Cofactor matrix
+        const cofactorRows = [];
+        for (let r = 0; r < rows; r++) {
+            const row = [];
+            for (let c = 0; c < cols; c++) {
+                // Minor
+                const subRows = [];
+                for (let i = 0; i < rows; i++) {
+                    if (i === r) continue;
+                    const subRow = [];
+                    for (let j = 0; j < cols; j++) {
+                        if (j === c) continue;
+                        subRow.push(matrix.elements[i].elements[j]);
+                    }
+                    subRows.push(new Vec(subRow));
+                }
+                const subMatrix = new Vec(subRows);
+                let minor = this._det(subMatrix);
+
+                // Sign
+                if ((r + c) % 2 !== 0) minor = new Mul(new Num(-1), minor);
+                row.push(minor);
+            }
+            cofactorRows.push(new Vec(row));
+        }
+
+        // Adjugate (Transpose of Cofactor)
+        const adjRows = [];
+        for (let c = 0; c < cols; c++) {
+            const row = [];
+            for (let r = 0; r < rows; r++) {
+                row.push(cofactorRows[r].elements[c]);
+            }
+            adjRows.push(new Vec(row));
+        }
+
+        // Multiply by 1/det
+        const invRows = [];
+        for (let i = 0; i < rows; i++) {
+            const row = [];
+            for (let j = 0; j < cols; j++) {
+                row.push(new Div(adjRows[i].elements[j], det).simplify());
+            }
+            invRows.push(new Vec(row));
+        }
+
+        return new Vec(invRows);
+    }
+
+    _cross(v1, v2) {
+        if (!(v1 instanceof Vec) || !(v2 instanceof Vec)) throw new Error("cross requires two vectors");
+        // Assume 3D vectors
+        if (v1.elements.length !== 3 || v2.elements.length !== 3) throw new Error("cross requires 3D vectors");
+
+        const a1 = v1.elements[0], a2 = v1.elements[1], a3 = v1.elements[2];
+        const b1 = v2.elements[0], b2 = v2.elements[1], b3 = v2.elements[2];
+
+        const c1 = new Sub(new Mul(a2, b3), new Mul(a3, b2));
+        const c2 = new Sub(new Mul(a3, b1), new Mul(a1, b3));
+        const c3 = new Sub(new Mul(a1, b2), new Mul(a2, b1));
+
+        return new Vec([c1.simplify(), c2.simplify(), c3.simplify()]);
     }
 
     _trans(matrix) {
