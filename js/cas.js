@@ -241,6 +241,21 @@ class CAS {
                  return new Call('factorial', args);
             }
 
+            if (node.funcName === 'nCr') {
+                if (args.length !== 2) throw new Error("nCr requires 2 arguments");
+                return this._nCr(args[0], args[1]);
+            }
+
+            if (node.funcName === 'nPr') {
+                if (args.length !== 2) throw new Error("nPr requires 2 arguments");
+                return this._nPr(args[0], args[1]);
+            }
+
+            if (node.funcName === 'trace') {
+                if (args.length !== 1) throw new Error("trace requires 1 argument");
+                return this._trace(args[0]);
+            }
+
             if (node.funcName === 'mean') {
                 if (args.length !== 1) throw new Error("mean requires 1 argument (list)");
                 return this._mean(args[0]);
@@ -741,5 +756,44 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
              return new Div(sumSq, new Num(n - 1)).simplify();
          }
          return new Call('variance', [list]);
+    }
+
+    _nCr(n, k) {
+        if (n instanceof Num && k instanceof Num && Number.isInteger(n.value) && Number.isInteger(k.value)) {
+            const valN = n.value;
+            const valK = k.value;
+            if (valK < 0 || valK > valN) return new Num(0);
+            return new Num(this._factorial(valN) / (this._factorial(valK) * this._factorial(valN - valK)));
+        }
+        return new Call('nCr', [n, k]);
+    }
+
+    _nPr(n, k) {
+        if (n instanceof Num && k instanceof Num && Number.isInteger(n.value) && Number.isInteger(k.value)) {
+            const valN = n.value;
+            const valK = k.value;
+            if (valK < 0 || valK > valN) return new Num(0);
+            return new Num(this._factorial(valN) / this._factorial(valN - valK));
+        }
+        return new Call('nPr', [n, k]);
+    }
+
+    _trace(matrix) {
+        if (matrix instanceof Vec) {
+            // Check if it's a matrix (vec of vecs)
+            if (matrix.elements.length === 0) return new Num(0);
+            if (!(matrix.elements[0] instanceof Vec)) return new Call('trace', [matrix]); // Not a matrix, maybe a vector? Trace of vector is undefined or sum? Usually matrix.
+
+            const rows = matrix.elements.length;
+            const cols = matrix.elements[0].elements.length;
+            if (rows !== cols) throw new Error("trace requires a square matrix");
+
+            let sum = new Num(0);
+            for(let i=0; i<rows; i++) {
+                sum = new Add(sum, matrix.elements[i].elements[i]);
+            }
+            return sum.simplify();
+        }
+        return new Call('trace', [matrix]);
     }
 }

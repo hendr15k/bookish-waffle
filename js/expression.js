@@ -540,6 +540,38 @@ class Call extends Expr {
             if (arg instanceof Num && arg.value === 0) return new Num(1);
         }
 
+        if (this.funcName === 'floor') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) return new Num(Math.floor(arg.value));
+        }
+        if (this.funcName === 'ceil') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) return new Num(Math.ceil(arg.value));
+        }
+        if (this.funcName === 'round') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) return new Num(Math.round(arg.value));
+        }
+        if (this.funcName === 'abs') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) return new Num(Math.abs(arg.value));
+        }
+        if (this.funcName === 'real') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) return arg;
+            if (arg instanceof Symbol && arg.name === 'i') return new Num(0);
+        }
+        if (this.funcName === 'imag') {
+             const arg = simpleArgs[0];
+             if (arg instanceof Num) return new Num(0);
+             if (arg instanceof Symbol && arg.name === 'i') return new Num(1);
+        }
+        if (this.funcName === 'conj') {
+             const arg = simpleArgs[0];
+             if (arg instanceof Num) return arg;
+             if (arg instanceof Symbol && arg.name === 'i') return new Mul(new Num(-1), arg);
+        }
+
         return new Call(this.funcName, simpleArgs);
     }
     evaluateNumeric() {
@@ -550,6 +582,9 @@ class Call extends Expr {
         if (this.funcName === 'asin') return Math.asin(argsVal[0]);
         if (this.funcName === 'acos') return Math.acos(argsVal[0]);
         if (this.funcName === 'atan') return Math.atan(argsVal[0]);
+        if (this.funcName === 'asinh') return Math.asinh(argsVal[0]);
+        if (this.funcName === 'acosh') return Math.acosh(argsVal[0]);
+        if (this.funcName === 'atanh') return Math.atanh(argsVal[0]);
         if (this.funcName === 'sinh') return Math.sinh(argsVal[0]);
         if (this.funcName === 'cosh') return Math.cosh(argsVal[0]);
         if (this.funcName === 'tanh') return Math.tanh(argsVal[0]);
@@ -558,6 +593,9 @@ class Call extends Expr {
         if (this.funcName === 'log') return Math.log10(argsVal[0]);
         if (this.funcName === 'sqrt') return Math.sqrt(argsVal[0]);
         if (this.funcName === 'abs') return Math.abs(argsVal[0]);
+        if (this.funcName === 'floor') return Math.floor(argsVal[0]);
+        if (this.funcName === 'ceil') return Math.ceil(argsVal[0]);
+        if (this.funcName === 'round') return Math.round(argsVal[0]);
         return NaN; // Unknown
     }
     diff(varName) {
@@ -577,6 +615,18 @@ class Call extends Expr {
         if (this.funcName === 'atan') {
             // 1/(1+u^2) * u'
             return new Mul(new Div(new Num(1), new Add(new Num(1), new Pow(u, new Num(2)))), u.diff(varName));
+        }
+        if (this.funcName === 'asinh') {
+             // 1/sqrt(u^2 + 1) * u'
+             return new Mul(new Div(new Num(1), new Call('sqrt', [new Add(new Pow(u, new Num(2)), new Num(1))])), u.diff(varName));
+        }
+        if (this.funcName === 'acosh') {
+             // 1/sqrt(u^2 - 1) * u'
+             return new Mul(new Div(new Num(1), new Call('sqrt', [new Sub(new Pow(u, new Num(2)), new Num(1))])), u.diff(varName));
+        }
+        if (this.funcName === 'atanh') {
+             // 1/(1-u^2) * u'
+             return new Mul(new Div(new Num(1), new Sub(new Num(1), new Pow(u, new Num(2)))), u.diff(varName));
         }
         if (this.funcName === 'sinh') return new Mul(new Call('cosh', [u]), u.diff(varName));
         if (this.funcName === 'cosh') return new Mul(new Call('sinh', [u]), u.diff(varName));
@@ -631,8 +681,24 @@ class Call extends Expr {
             'asin': '\\arcsin',
             'acos': '\\arccos',
             'atan': '\\arctan',
-            'lcm': '\\operatorname{lcm}'
+            'asinh': '\\operatorname{asinh}',
+            'acosh': '\\operatorname{acosh}',
+            'atanh': '\\operatorname{atanh}',
+            'lcm': '\\operatorname{lcm}',
+            'nCr': '\\operatorname{nCr}',
+            'nPr': '\\operatorname{nPr}',
+            'floor': '\\lfloor ' + argsTex[0] + ' \\rfloor',
+            'ceil': '\\lceil ' + argsTex[0] + ' \\rceil',
+            'trace': '\\operatorname{tr}',
+            'real': '\\Re',
+            'imag': '\\Im',
+            'conj': '\\overline{' + argsTex[0] + '}'
         };
+
+        if (this.funcName === 'floor') return `\\lfloor ${argsTex[0]} \\rfloor`;
+        if (this.funcName === 'ceil') return `\\lceil ${argsTex[0]} \\rceil`;
+        if (this.funcName === 'conj') return `\\overline{${argsTex[0]}}`;
+
         if (mapFunctions.hasOwnProperty(this.funcName)) {
             return `${mapFunctions[this.funcName]}\\left(${argsTex.join(", ")}\\right)`;
         }
