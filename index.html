@@ -428,29 +428,6 @@
                 <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'atan(')">atan</button>
                 <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'abs(')">abs</button>
                 <button class="function-btn" style="background-color: #ffe8cc; border-color: #ffc107;" onclick="insertAtCursor('calc-main-input', 'ans')">Ans</button>
-                <button class="function-btn" id="calc-more-btn" onclick="toggleMoreFuncs()">More</button>
-            </div>
-
-            <div class="function-grid" id="calc-more-funcs" style="display: none;">
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sec(')">sec</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'csc(')">csc</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'cot(')">cot</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sign(')">sgn</button>
-
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'asec(')">asec</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'acsc(')">acsc</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'acot(')">acot</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'log2(')">log2</button>
-
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sinh(')">sinh</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'cosh(')">cosh</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'tanh(')">tanh</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'fibonacci(')">fib</button>
-
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'gamma(')">Γ</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'floor(')">flr</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'ceil(')">ceil</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'round(')">rnd</button>
             </div>
 
             <button class="action-btn" style="font-size: 1.2em; padding: 16px;" onclick="runTool('simplify', ['calc-main-input'])">Calculate</button>
@@ -859,18 +836,6 @@
         window.clearHistory = function() {
             history.innerHTML = '';
             document.getElementById('app-history-content').innerHTML = '';
-        };
-
-        window.toggleMoreFuncs = function() {
-            const moreDiv = document.getElementById('calc-more-funcs');
-            const btn = document.getElementById('calc-more-btn');
-            if (moreDiv.style.display === 'none') {
-                moreDiv.style.display = 'grid';
-                btn.textContent = 'Less';
-            } else {
-                moreDiv.style.display = 'none';
-                btn.textContent = 'More';
-            }
         };
 
         window.insertAtCursor = function(fieldId, val) {
