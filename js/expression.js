@@ -66,8 +66,22 @@ class Symbol extends Expr {
         return (this.name === varName.name) ? value : this;
     }
     toLatex() {
-        if (this.name === 'pi') return '\\pi';
-        if (this.name === 'theta') return '\\theta';
+        const greek = {
+            'alpha': '\\alpha', 'beta': '\\beta', 'gamma': '\\gamma', 'delta': '\\delta',
+            'epsilon': '\\epsilon', 'zeta': '\\zeta', 'eta': '\\eta', 'theta': '\\theta',
+            'iota': '\\iota', 'kappa': '\\kappa', 'lambda': '\\lambda', 'mu': '\\mu',
+            'nu': '\\nu', 'xi': '\\xi', 'omicron': 'o', 'pi': '\\pi', 'rho': '\\rho',
+            'sigma': '\\sigma', 'tau': '\\tau', 'upsilon': '\\upsilon', 'phi': '\\phi',
+            'chi': '\\chi', 'psi': '\\psi', 'omega': '\\omega',
+            'Alpha': 'A', 'Beta': 'B', 'Gamma': '\\Gamma', 'Delta': '\\Delta',
+            'Epsilon': 'E', 'Zeta': 'Z', 'Eta': 'H', 'Theta': '\\Theta',
+            'Iota': 'I', 'Kappa': 'K', 'Lambda': '\\Lambda', 'Mu': 'M',
+            'Nu': 'N', 'Xi': '\\Xi', 'Omicron': 'O', 'Pi': '\\Pi', 'Rho': 'P',
+            'Sigma': '\\Sigma', 'Tau': 'T', 'Upsilon': '\\Upsilon', 'Phi': '\\Phi',
+            'Chi': 'X', 'Psi': '\\Psi', 'Omega': '\\Omega',
+            'Infinity': '\\infty'
+        };
+        if (greek.hasOwnProperty(this.name)) return greek[this.name];
         return this.name;
     }
     equals(other) { return other instanceof Symbol && this.name === other.name; }
@@ -268,9 +282,18 @@ class Mul extends BinaryOp {
     toLatex() {
         let lTex = this.left.toLatex();
         let rTex = this.right.toLatex();
+        let op = " \\cdot ";
+
+        // Implicit multiplication formatting rules
+        if (this.left instanceof Num && this.right instanceof Symbol) op = ""; // 2x
+        if (this.left instanceof Num && this.right instanceof Call) op = ""; // 2sin(x)
+        if (this.left instanceof Symbol && this.right instanceof Symbol) op = " "; // x y
+        if (this.left instanceof Symbol && this.right instanceof Call) op = ""; // x sin(y)
+        if (this.left instanceof Num && this.right instanceof Pow && this.right.left instanceof Symbol) op = ""; // 2x^2
+
         if (this.left instanceof Add || this.left instanceof Sub) lTex = `\\left(${lTex}\\right)`;
         if (this.right instanceof Add || this.right instanceof Sub) rTex = `\\left(${rTex}\\right)`;
-        return `${lTex} \\cdot ${rTex}`;
+        return `${lTex}${op}${rTex}`;
     }
 }
 
@@ -528,7 +551,8 @@ class Call extends Expr {
             return new Div(u.diff(varName), new Mul(u, new Call('ln', [new Num(10)])));
         }
         if (this.funcName === 'sqrt') return new Div(u.diff(varName), new Mul(new Num(2), new Call('sqrt', [u])));
-        throw new Error("Differentiation not implemented for " + this.funcName);
+        // Default to symbolic diff
+        return new Call('diff', [this, varName]);
     }
     integrate(varName) {
         if (this.funcName === 'sin' && this.args[0].toString() === varName.toString()) return new Mul(new Num(-1), new Call('cos', [varName]));
@@ -540,13 +564,59 @@ class Call extends Expr {
         return new Call(this.funcName, this.args.map(a => a.substitute(varName, value)));
     }
     toLatex() {
-        const argsTex = this.args.map(a => a.toLatex()).join(", ");
-        if (['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'exp', 'ln', 'log', 'det', 'inv', 'cross', 'trans', 'gcd', 'lcm', 'limit'].includes(this.funcName)) return `\\${this.funcName}\\left(${argsTex}\\right)`;
-        if (this.funcName === 'sqrt') return `\\sqrt{${argsTex}}`;
-        if (this.funcName === 'factored') {
-            return this.args.map(a => a.toLatex()).join(" \\cdot ");
+        const argsTex = this.args.map(a => a.toLatex());
+
+        if (this.funcName === 'sqrt') return `\\sqrt{${argsTex[0]}}`;
+
+        if (['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'exp', 'ln', 'log', 'det', 'inv', 'cross', 'trans', 'gcd', 'lcm'].includes(this.funcName)) {
+            // Basic functions
+            return `\\${this.funcName}\\left(${argsTex.join(", ")}\\right)`;
         }
-        return `\\text{${this.funcName}}\\left(${argsTex}\\right)`;
+
+        if (this.funcName === 'limit') {
+            // limit(expr, var, val)
+            if (argsTex.length === 3) {
+                return `\\lim_{${argsTex[1]} \\to ${argsTex[2]}} ${argsTex[0]}`;
+            }
+        }
+
+        if (this.funcName === 'integrate') {
+            // integrate(expr, var) or integrate(expr, var, a, b)
+            if (argsTex.length === 2) {
+                return `\\int ${argsTex[0]} \\, d${argsTex[1]}`;
+            }
+            if (argsTex.length === 4) {
+                return `\\int_{${argsTex[2]}}^{${argsTex[3]}} ${argsTex[0]} \\, d${argsTex[1]}`;
+            }
+        }
+
+        if (this.funcName === 'sum') {
+            // sum(expr, var, start, end)
+            if (argsTex.length === 4) {
+                return `\\sum_{${argsTex[1]}=${argsTex[2]}}^{${argsTex[3]}} ${argsTex[0]}`;
+            }
+        }
+
+        if (this.funcName === 'product') {
+            // product(expr, var, start, end)
+            if (argsTex.length === 4) {
+                return `\\prod_{${argsTex[1]}=${argsTex[2]}}^{${argsTex[3]}} ${argsTex[0]}`;
+            }
+        }
+
+        if (this.funcName === 'diff') {
+            // diff(expr, var)
+            if (argsTex.length === 2) {
+                // If expr is complex, maybe \frac{d}{dx} (expr)
+                return `\\frac{d}{d ${argsTex[1]}} \\left( ${argsTex[0]} \\right)`;
+            }
+        }
+
+        if (this.funcName === 'factored') {
+            return argsTex.join(" \\cdot ");
+        }
+
+        return `\\text{${this.funcName}}\\left(${argsTex.join(", ")}\\right)`;
     }
 }
 
