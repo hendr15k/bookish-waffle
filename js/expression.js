@@ -278,6 +278,11 @@ class Mul extends BinaryOp {
             return new Div(new Mul(l.left, r), l.right).simplify();
         }
 
+        // Commutativity with Number: x * 2 -> 2 * x
+        if (r instanceof Num && !(l instanceof Num)) {
+            return new Mul(r, l).simplify();
+        }
+
         return new Mul(l, r);
     }
     evaluateNumeric() { return this.left.evaluateNumeric() * this.right.evaluateNumeric(); }
@@ -343,6 +348,26 @@ class Div extends BinaryOp {
             if (l.right.toString() === r.toString()) return l.left;
         }
         // Cancellation: a / (a * b) -> 1/b (Not full implementation but basic)
+
+        // Simplify Powers in Division: x^a / x^b -> x^(a-b)
+        let baseL = l;
+        let expL = new Num(1);
+        if (l instanceof Pow) {
+            baseL = l.left;
+            expL = l.right;
+        }
+
+        let baseR = r;
+        let expR = new Num(1);
+        if (r instanceof Pow) {
+            baseR = r.left;
+            expR = r.right;
+        }
+
+        if (baseL.toString() === baseR.toString()) {
+            const newExp = new Sub(expL, expR).simplify();
+            return new Pow(baseL, newExp).simplify();
+        }
 
         return new Div(l, r);
     }
