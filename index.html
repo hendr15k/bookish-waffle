@@ -260,19 +260,6 @@
         .action-btn.secondary {
             background-color: #6c757d;
         }
-        .matrix-grid {
-            display: grid;
-            gap: 5px;
-            margin: 10px 0;
-            overflow-x: auto;
-        }
-        .matrix-cell {
-            width: 50px;
-            text-align: center;
-            padding: 5px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
         .function-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -445,29 +432,6 @@
                 <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'atan(')">atan</button>
                 <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'abs(')">abs</button>
                 <button class="function-btn" style="background-color: #ffe8cc; border-color: #ffc107;" onclick="insertAtCursor('calc-main-input', 'ans')">Ans</button>
-                <button class="function-btn" id="calc-more-btn" onclick="toggleMoreFuncs()">More</button>
-            </div>
-
-            <div class="function-grid" id="calc-more-funcs" style="display: none;">
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sec(')">sec</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'csc(')">csc</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'cot(')">cot</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sign(')">sgn</button>
-
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'asec(')">asec</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'acsc(')">acsc</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'acot(')">acot</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'log2(')">log2</button>
-
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sinh(')">sinh</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'cosh(')">cosh</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'tanh(')">tanh</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'fibonacci(')">fib</button>
-
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'gamma(')">Γ</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'floor(')">flr</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'ceil(')">ceil</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'round(')">rnd</button>
             </div>
 
             <button class="action-btn" style="font-size: 1.2em; padding: 16px;" onclick="runTool('simplify', ['calc-main-input'])">Calculate</button>
@@ -928,154 +892,6 @@
         window.clearHistory = function() {
             history.innerHTML = '';
             document.getElementById('app-history-content').innerHTML = '';
-        };
-
-        window.toggleMoreFuncs = function() {
-            const moreDiv = document.getElementById('calc-more-funcs');
-            const btn = document.getElementById('calc-more-btn');
-            if (moreDiv.style.display === 'none') {
-                moreDiv.style.display = 'grid';
-                btn.textContent = 'Less';
-            } else {
-                moreDiv.style.display = 'none';
-                btn.textContent = 'More';
-            }
-        };
-
-        window.generateMatrixGrid = function() {
-            const rows = parseInt(document.getElementById('mat-rows').value);
-            const cols = parseInt(document.getElementById('mat-cols').value);
-            const container = document.getElementById('matrix-builder-container');
-            container.innerHTML = '';
-
-            const grid = document.createElement('div');
-            grid.className = 'matrix-grid';
-            grid.style.gridTemplateColumns = `repeat(${cols}, 50px)`;
-
-            for(let i=0; i<rows; i++) {
-                for(let j=0; j<cols; j++) {
-                    const input = document.createElement('input');
-                    input.className = 'matrix-cell';
-                    input.placeholder = '0';
-                    input.dataset.row = i;
-                    input.dataset.col = j;
-                    grid.appendChild(input);
-                }
-            }
-            container.appendChild(grid);
-        };
-
-        window.insertMatrix = function() {
-            const rows = parseInt(document.getElementById('mat-rows').value);
-            const cols = parseInt(document.getElementById('mat-cols').value);
-            const inputs = document.querySelectorAll('.matrix-cell');
-
-            // Build 2D array
-            const matrix = [];
-            for(let i=0; i<rows; i++) matrix[i] = [];
-
-            inputs.forEach(inp => {
-                const r = parseInt(inp.dataset.row);
-                const c = parseInt(inp.dataset.col);
-                const val = inp.value || '0';
-                matrix[r][c] = val;
-            });
-
-            // Format [[...]]
-            const str = '[' + matrix.map(row => '[' + row.join(',') + ']').join(',') + ']';
-
-            // Insert into lin-expr
-            const field = document.getElementById('lin-expr');
-            field.value = str;
-        };
-
-        const convRates = {
-            length: { m: 1, km: 1000, cm: 0.01, mm: 0.001, ft: 0.3048, in: 0.0254, mi: 1609.34 },
-            mass: { kg: 1, g: 0.001, mg: 0.000001, lb: 0.453592, oz: 0.0283495 },
-            temp: {} // Handled separately
-        };
-
-        window.updateConvUnits = function() {
-            const cat = document.getElementById('conv-category').value;
-            const fromSelect = document.getElementById('conv-unit-from');
-            const toSelect = document.getElementById('conv-unit-to');
-            fromSelect.innerHTML = '';
-            toSelect.innerHTML = '';
-
-            let units = [];
-            if (cat === 'temp') units = ['C', 'F', 'K'];
-            else units = Object.keys(convRates[cat]);
-
-            units.forEach(u => {
-                fromSelect.add(new Option(u, u));
-                toSelect.add(new Option(u, u));
-            });
-
-            // Defaults
-            if (cat === 'length') { fromSelect.value = 'm'; toSelect.value = 'ft'; }
-            if (cat === 'mass') { fromSelect.value = 'kg'; toSelect.value = 'lb'; }
-            if (cat === 'temp') { fromSelect.value = 'C'; toSelect.value = 'F'; }
-        };
-
-        window.runConverter = function(dir) {
-            const cat = document.getElementById('conv-category').value;
-            const fromUnit = document.getElementById('conv-unit-from').value;
-            const toUnit = document.getElementById('conv-unit-to').value;
-
-            const inputId = dir === 'from' ? 'conv-val-from' : 'conv-val-to';
-            const outputId = dir === 'from' ? 'conv-val-to' : 'conv-val-from';
-
-            const val = parseFloat(document.getElementById(inputId).value);
-            if (isNaN(val)) {
-                document.getElementById(outputId).value = '';
-                return;
-            }
-
-            let res;
-            if (cat === 'temp') {
-                // Convert to C
-                let c;
-                if (dir === 'from') {
-                    if (fromUnit === 'C') c = val;
-                    if (fromUnit === 'F') c = (val - 32) * 5/9;
-                    if (fromUnit === 'K') c = val - 273.15;
-
-                    // Convert C to target
-                    if (toUnit === 'C') res = c;
-                    if (toUnit === 'F') res = c * 9/5 + 32;
-                    if (toUnit === 'K') res = c + 273.15;
-                } else {
-                    // Reverse logic same as above just swapped
-                    // Actually simpler to just invoke from logic but swap units? No, infinite loop.
-                    // Just implement inverse.
-                    // Converting TO 'toUnit' FROM 'fromUnit' with value 'val' (which is in toUnit)
-                    // Wait, if dir is 'to', user typed in 'to' box. We update 'from'.
-                    // So calculate FromVal based on ToVal.
-
-                    // Convert ToVal (in ToUnit) to C
-                    if (toUnit === 'C') c = val;
-                    if (toUnit === 'F') c = (val - 32) * 5/9;
-                    if (toUnit === 'K') c = val - 273.15;
-
-                    // Convert C to FromUnit
-                    if (fromUnit === 'C') res = c;
-                    if (fromUnit === 'F') res = c * 9/5 + 32;
-                    if (fromUnit === 'K') res = c + 273.15;
-                }
-            } else {
-                // Linear
-                const factorFrom = convRates[cat][fromUnit];
-                const factorTo = convRates[cat][toUnit];
-
-                if (dir === 'from') {
-                    // val * from = base = res * to
-                    res = val * (factorFrom / factorTo);
-                } else {
-                    res = val * (factorTo / factorFrom);
-                }
-            }
-
-            document.getElementById(outputId).value = parseFloat(res.toFixed(6));
         };
 
         window.insertAtCursor = function(fieldId, val) {
