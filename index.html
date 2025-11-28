@@ -320,12 +320,20 @@
             }
 
             if (result && result.type === 'info') {
-                resultDiv.style.whiteSpace = 'pre-wrap';
-                resultDiv.style.fontFamily = 'monospace';
-                resultDiv.textContent = result.text;
+                if (result.toLatex) {
+                     resultDiv.innerHTML = `\\[${result.toLatex()}\\]`;
+                } else {
+                    resultDiv.style.whiteSpace = 'pre-wrap';
+                    resultDiv.style.fontFamily = 'monospace';
+                    resultDiv.textContent = result.text;
+                }
                 entryDiv.appendChild(resultDiv);
                 history.appendChild(entryDiv);
                 history.scrollTop = history.scrollHeight;
+
+                if (window.MathJax && typeof MathJax.typesetPromise === 'function') {
+                    MathJax.typesetPromise([resultDiv]).catch(err => console.error('MathJax error:', err));
+                }
                 return;
             }
 
@@ -375,7 +383,9 @@
                 if (result && (result.type === 'plot' || result.type === 'action' || result.type === 'info')) {
                      addToHistory(command, result, false, null);
                 } else {
-                     addToHistory(command, result.toString(), false, result.toLatex());
+                     // Always pass toLatex() if available
+                     const latex = (result && typeof result.toLatex === 'function') ? result.toLatex() : null;
+                     addToHistory(command, result.toString(), false, latex);
                 }
 
                 // Update variables list

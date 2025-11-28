@@ -18,7 +18,10 @@ class CAS {
 
     evaluate(exprTree) {
         const evaluated = this._recursiveEval(exprTree);
-        return evaluated.simplify();
+        if (evaluated && typeof evaluated.simplify === 'function') {
+            return evaluated.simplify();
+        }
+        return evaluated;
     }
 
     getVariables() {
@@ -92,6 +95,12 @@ class CAS {
                     const lower = args[2];
                     const upper = args[3];
                     const indefinite = func.integrate(varNode);
+
+                    // If integration failed (returned a Call to integrate), return symbolic definite integral
+                    if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
+                        return new Call('integrate', args);
+                    }
+
                     const valUpper = indefinite.substitute(varNode, upper);
                     const valLower = indefinite.substitute(varNode, lower);
                     return new Sub(valUpper, valLower);
@@ -241,7 +250,20 @@ det(M), trans(M), plot(expr, var, [min, max]),
 gcd(a, b), lcm(a, b), factor(n), factorial(n),
 mean(list), variance(list),
 N(expr) [numeric eval], clear(), help()`;
-                return { type: 'info', text: helpText, toString: () => helpText, toLatex: () => "\\text{See help output}" };
+
+                const latexHelp = `\\begin{array}{l}
+\\text{Available commands:} \\\\
+\\text{diff}(expr, var), \\; \\int(expr, var, [a, b]), \\\\
+\\lim(expr, var, val), \\; \\text{taylor}(expr, var, pt, n), \\\\
+\\sum(expr, var, a, b), \\; \\prod(expr, var, a, b), \\\\
+\\text{expand}(expr), \\; \\text{simplify}(expr), \\; \\text{solve}(eq, var), \\\\
+\\text{det}(M), \\; \\text{trans}(M), \\; \\text{plot}(expr, var, [min, max]), \\\\
+\\text{gcd}(a, b), \\; \\text{lcm}(a, b), \\; \\text{factor}(n), \\; n!, \\\\
+\\text{mean}(L), \\; \\text{variance}(L), \\\\
+N(expr), \\; \\text{clear}(), \\; \\text{help}()
+\\end{array}`;
+
+                return { type: 'info', text: helpText, toString: () => helpText, toLatex: () => latexHelp };
             }
 
             return new Call(node.funcName, args);
