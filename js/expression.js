@@ -685,8 +685,6 @@ class Call extends Expr {
             'acosh': '\\operatorname{acosh}',
             'atanh': '\\operatorname{atanh}',
             'lcm': '\\operatorname{lcm}',
-            'nCr': '\\operatorname{nCr}',
-            'nPr': '\\operatorname{nPr}',
             'floor': '\\lfloor ' + argsTex[0] + ' \\rfloor',
             'ceil': '\\lceil ' + argsTex[0] + ' \\rceil',
             'trace': '\\operatorname{tr}',
@@ -757,6 +755,18 @@ class Call extends Expr {
 
         if (this.funcName === 'factored') {
             return argsTex.join(" \\cdot ");
+        }
+
+        if (this.funcName === 'set') {
+            return `\\left\\{ ${argsTex.join(", ")} \\right\\}`;
+        }
+
+        if (this.funcName === 'nCr' && argsTex.length === 2) {
+            return `\\binom{${argsTex[0]}}{${argsTex[1]}}`;
+        }
+
+        if (this.funcName === 'nPr' && argsTex.length === 2) {
+             return `{}_{${argsTex[0]}}P_{${argsTex[1]}}`;
         }
 
         return `\\text{${this.funcName}}\\left(${argsTex.join(", ")}\\right)`;
