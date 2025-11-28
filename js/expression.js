@@ -417,10 +417,17 @@ class Pow extends BinaryOp {
     expand() {
         const l = this.left.expand();
         const r = this.right.expand();
+        // (a + b)^2 = a^2 + 2ab + b^2
         if (r instanceof Num && l instanceof Add && r.value === 2) {
             const a = l.left;
             const b = l.right;
             return new Add(new Add(new Pow(a, new Num(2)), new Mul(new Num(2), new Mul(a, b))), new Pow(b, new Num(2))).expand();
+        }
+        // (a - b)^2 = a^2 - 2ab + b^2
+        if (r instanceof Num && l instanceof Sub && r.value === 2) {
+            const a = l.left;
+            const b = l.right;
+            return new Sub(new Add(new Pow(a, new Num(2)), new Pow(b, new Num(2))), new Mul(new Num(2), new Mul(a, b))).expand();
         }
         return new Pow(l, r);
     }
