@@ -1129,6 +1129,9 @@
 
             const steps = width; // Pixel precision
 
+            // Define scatterPoints if not defined to prevent error, though it's likely unused here
+            const scatterPoints = [];
+
             for(const p of plots) {
                 const points = [];
                 // Respect plot definition range if stricter than view?
@@ -1155,8 +1158,9 @@
                     } catch(e) {
                         // Ignore
                     }
-                    scatterPoints.push(discrete);
                 }
+                allPoints.push(points);
+            }
 
             if (!explicitBounds || explicitBounds.minY === undefined) {
                 // Auto-scale Y

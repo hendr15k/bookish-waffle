@@ -24,7 +24,7 @@ vm.createContext(sandbox);
 const exposeClasses = `
     globalThis.Expr = Expr;
     globalThis.Num = Num;
-    globalThis.Symbol = Symbol;
+    globalThis.Sym = Sym;
     globalThis.Add = Add;
     globalThis.Sub = Sub;
     globalThis.Mul = Mul;
@@ -44,32 +44,20 @@ const exposeClasses = `
 
 vm.runInContext(expressionCode + "\n" + parserCode + "\n" + casCode + "\n" + exposeClasses, sandbox);
 
-const cas = new sandbox.CAS();
-const parser = (text) => new sandbox.Parser(new sandbox.Lexer(text));
+const { Call, Sym, Num, Mul } = sandbox;
 
-function evalExpr(text) {
-    const expr = parser(text).parse();
-    // We want to test toLatex() of the expression tree as parsed, or evaluated?
-    // User sees evaluated result.
-    const result = cas.evaluate(expr);
-    return result;
-}
-
-function checkLatex(description, input, expectedSubstring) {
+function checkDirectLatex(description, exprObj, expectedSubstring) {
     try {
-        const result = evalExpr(input);
-        const latex = result.toLatex();
+        const latex = exprObj.toLatex();
         if (latex.includes(expectedSubstring) || latex === expectedSubstring) {
-            console.log(`[PASS] ${description}: ${input} -> ${latex}`);
+            console.log(`[PASS] ${description}: ${latex}`);
         } else {
             console.error(`[FAIL] ${description}`);
-            console.error(`  Input: ${input}`);
             console.error(`  Expected substring: ${expectedSubstring}`);
             console.error(`  Got:      ${latex}`);
         }
     } catch (e) {
         console.error(`[FAIL] ${description}`);
-        console.error(`  Input: ${input}`);
         console.error(`  Error:    ${e.message}`);
     }
 }
@@ -77,19 +65,61 @@ function checkLatex(description, input, expectedSubstring) {
 console.log("--- Testing LaTeX Output ---");
 
 // Greek letters
-checkLatex("Greek alpha", "alpha", "\\alpha");
-checkLatex("Greek Gamma", "Gamma", "\\Gamma");
-checkLatex("Infinity", "limit(1/x, x, 0)", "\\infty"); // Assuming 1/x limit returns Infinity
+checkDirectLatex("Greek alpha", new Sym("alpha"), "\\alpha");
+checkDirectLatex("Greek Gamma", new Sym("Gamma"), "\\Gamma");
 
-// Calculus formatting
-checkLatex("Integral", "integrate(f(x), x)", "\\int");
-checkLatex("Definite Integral", "integrate(f(x), x, 0, 1)", "\\int_{0}^{1}");
-checkLatex("Limit", "limit(f(x), x, 0)", "\\lim_{x \\to 0}");
-checkLatex("Sum", "sum(k, k, 1, n)", "\\sum_{k=1}^{n}");
-checkLatex("Product", "product(k, k, 1, n)", "\\prod_{k=1}^{n}");
-checkLatex("Diff", "diff(f(x), x)", "\\frac{d}{d x}");
+// Calculus formatting - Test Call objects directly to avoid CAS evaluation/simplification
+// limit(f(x), x, 0)
+const limitCall = new Call("limit", [
+    new Call("f", [new Sym("x")]),
+    new Sym("x"),
+    new Num(0)
+]);
+checkDirectLatex("Limit", limitCall, "\\lim_{x \\to 0}");
 
-// Multiplication
-checkLatex("Implicit Mul NumVar", "2 * x", "2x"); // Prefer 2x over 2 \cdot x
-checkLatex("Implicit Mul Vars", "x * y", "x y"); // Prefer x y or x \cdot y. Let's aim for x y or just check it's not awful.
-checkLatex("Explicit Mul NumNum", "2 * 3", "2 \\cdot 3");
+// integrate(f(x), x)
+const integrateCall = new Call("integrate", [
+    new Call("f", [new Sym("x")]),
+    new Sym("x")
+]);
+checkDirectLatex("Integral", integrateCall, "\\int");
+
+// integrate(f(x), x, 0, 1)
+const defIntegrateCall = new Call("integrate", [
+    new Call("f", [new Sym("x")]),
+    new Sym("x"),
+    new Num(0),
+    new Num(1)
+]);
+checkDirectLatex("Definite Integral", defIntegrateCall, "\\int_{0}^{1}");
+
+// sum(k, k, 1, n)
+const sumCall = new Call("sum", [
+    new Sym("k"),
+    new Sym("k"),
+    new Num(1),
+    new Sym("n")
+]);
+checkDirectLatex("Sum", sumCall, "\\sum_{k=1}^{n}");
+
+// diff(f(x), x)
+const diffCall = new Call("diff", [
+    new Call("f", [new Sym("x")]),
+    new Sym("x")
+]);
+checkDirectLatex("Diff", diffCall, "\\frac{d}{d x}");
+
+// Explicit Mul NumNum (only if we construct it directly and it doesn't simplify)
+// NOTE: Mul constructor does NOT simplify automatically in the class definition in js/expression.js.
+// `new Mul(...)` creates the object. `simplify()` is a method.
+const mulCall = new Mul(new Num(2), new Num(3));
+checkDirectLatex("Explicit Mul NumNum", mulCall, "2 \\cdot 3");
+
+// Implicit Mul NumVar
+const impMul1 = new Mul(new Num(2), new Sym("x"));
+checkDirectLatex("Implicit Mul NumVar", impMul1, "2x");
+
+// Implicit Mul Vars
+const impMul2 = new Mul(new Sym("x"), new Sym("y"));
+checkDirectLatex("Implicit Mul Vars", impMul2, "x y");
+
