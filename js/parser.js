@@ -62,6 +62,31 @@ class Lexer {
             result += this.currentChar;
             this.advance();
         }
+
+        // Scientific notation: 1e5, 1.2e-3
+        // Lookahead to ensure it is actually scientific notation and not an identifier starting with e
+        if (this.currentChar === 'e' || this.currentChar === 'E') {
+            const peek1 = this.peek();
+            const peek2 = (peek1 === '+' || peek1 === '-') ? this.text[this.pos + 2] : null;
+
+            // Condition: 'e' followed by digit OR 'e' followed by +/- and then digit
+            const isSci = (peek1 !== null && /\d/.test(peek1)) ||
+                          ((peek1 === '+' || peek1 === '-') && peek2 !== undefined && /\d/.test(peek2));
+
+            if (isSci) {
+                result += this.currentChar;
+                this.advance();
+                if (this.currentChar === '+' || this.currentChar === '-') {
+                    result += this.currentChar;
+                    this.advance();
+                }
+                while (this.currentChar !== null && /\d/.test(this.currentChar)) {
+                    result += this.currentChar;
+                    this.advance();
+                }
+            }
+        }
+
         return parseFloat(result);
     }
 
@@ -80,7 +105,7 @@ class Lexer {
                 this.skipWhitespace();
                 continue;
             }
-            if (/\d/.test(this.currentChar)) {
+            if (/\d/.test(this.currentChar) || this.currentChar === '.') {
                 return new Token(TOKEN_NUMBER, this.number());
             }
             if (/[a-zA-Z]/.test(this.currentChar)) {
