@@ -173,40 +173,45 @@ class Parser {
             }
             this.eat(TOKEN_RBRACKET);
             return new Vec(elements);
-        } else if (token.type === TOKEN_PLUS) {
-            this.eat(TOKEN_PLUS);
-            return this.factor();
-        } else if (token.type === TOKEN_MINUS) {
-            this.eat(TOKEN_MINUS);
-            return new Mul(new Num(-1), this.factor());
         }
         this.error();
+    }
+
+    unary() {
+        if (this.currentToken.type === TOKEN_PLUS) {
+            this.eat(TOKEN_PLUS);
+            return this.unary();
+        } else if (this.currentToken.type === TOKEN_MINUS) {
+            this.eat(TOKEN_MINUS);
+            return new Mul(new Num(-1), this.unary());
+        }
+        return this.power();
     }
 
     power() {
         let node = this.factor();
         if (this.currentToken.type === TOKEN_CARET) {
             this.eat(TOKEN_CARET);
-            node = new Pow(node, this.power());
+            node = new Pow(node, this.unary());
         }
         return node;
     }
 
     term() {
-        let node = this.power();
+        let node = this.unary();
         while (this.currentToken.type === TOKEN_STAR ||
                this.currentToken.type === TOKEN_SLASH ||
                this.isImplicitMulStart(this.currentToken)) {
 
             if (this.currentToken.type === TOKEN_STAR) {
                 this.eat(TOKEN_STAR);
-                node = new Mul(node, this.power());
+                node = new Mul(node, this.unary());
             } else if (this.currentToken.type === TOKEN_SLASH) {
                 this.eat(TOKEN_SLASH);
-                node = new Div(node, this.power());
+                node = new Div(node, this.unary());
             } else {
                 // Implicit multiplication: no operator consumed
-                node = new Mul(node, this.power());
+                node = new Mul(node, this.unary());
             }
         }
         return node;
