@@ -17,10 +17,16 @@ class CAS {
     }
 
     evaluate(exprTree) {
-        const evaluated = this._recursiveEval(exprTree);
+        let evaluated = this._recursiveEval(exprTree);
         if (evaluated && typeof evaluated.simplify === 'function') {
-            return evaluated.simplify();
+            evaluated = evaluated.simplify();
         }
+
+        // Store result in 'ans' variable if it's a value (Expression) and not a Plot/Action
+        if (evaluated instanceof Expr) {
+            this.variables['ans'] = evaluated;
+        }
+
         return evaluated;
     }
 

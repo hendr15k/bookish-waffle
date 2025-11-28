@@ -421,6 +421,7 @@
                 <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'acos(')">acos</button>
                 <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'atan(')">atan</button>
                 <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'abs(')">abs</button>
+                <button class="function-btn" style="background-color: #ffe8cc; border-color: #ffc107;" onclick="insertAtCursor('calc-main-input', 'ans')">Ans</button>
             </div>
 
             <button class="action-btn" style="font-size: 1.2em; padding: 16px;" onclick="runTool('simplify', ['calc-main-input'])">Calculate</button>
@@ -1087,6 +1088,56 @@
         function addToHistory(command, result, isError, latex) {
             const entryDiv = document.createElement('div');
             entryDiv.className = 'entry';
+
+            // Allow clicking entry to copy result to input
+            entryDiv.style.cursor = 'pointer';
+            entryDiv.title = 'Click to insert result into input';
+            entryDiv.onclick = function() {
+                // Determine what to insert: result text or latex?
+                // For simplicity, insert the result text if it's not complex object
+                if (isError) return;
+
+                let valToInsert = '';
+                if (result && result.toLatex) {
+                     // If it's an object with toLatex, it might be a Plot or Info.
+                     // We probably don't want to insert "Plotting..." text.
+                     // If it's a plot, do nothing.
+                     if (result.type === 'plot') return;
+                     if (result.type === 'info') return;
+                }
+
+                // If result is string (from toString), use it.
+                // But wait, result argument is sometimes object, sometimes string.
+                if (typeof result === 'string') valToInsert = result;
+                else if (result && typeof result.toString === 'function') valToInsert = result.toString();
+
+                // Remove parens if it's a simple number? No, keep as is.
+
+                // Insert into active input
+                // Check if a tool input is focused, otherwise use main input
+                // But on mobile, we might not have focus.
+                // We default to the main calculator input if we are in app mode calculator?
+                // Or just the main input area in desktop.
+
+                const activeElement = document.activeElement;
+                if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+                    insertAtCursor(activeElement.id, valToInsert);
+                } else {
+                    // Try to find visible tool input
+                    const visibleTool = document.querySelector('.tool-view[style*="block"]');
+                    if (visibleTool) {
+                         const firstInput = visibleTool.querySelector('input');
+                         if (firstInput) insertAtCursor(firstInput.id, valToInsert);
+                    } else {
+                        // Desktop mode main input
+                        const mainInput = document.getElementById('command-input');
+                        if (mainInput) {
+                            mainInput.value = valToInsert; // Replace or append? Let's replace for history recall usually.
+                            // insertAtCursor(mainInput.id, valToInsert);
+                        }
+                    }
+                }
+            };
 
             const commandDiv = document.createElement('div');
             commandDiv.className = 'command';
