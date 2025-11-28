@@ -199,6 +199,43 @@
         }
         .action-btn.secondary {
             background-color: #6c757d;
+        #virtual-keyboard {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: #eee;
+            border-top: 1px solid #ccc;
+            padding: 10px;
+            box-sizing: border-box;
+            z-index: 1000;
+        }
+        .mobile-mode #virtual-keyboard {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 5px;
+        }
+        .v-key {
+            padding: 15px;
+            font-size: 18px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            cursor: pointer;
+            text-align: center;
+            user-select: none;
+        }
+        .v-key:active {
+            background: #ddd;
+        }
+        .v-key.primary {
+            background-color: #007bff;
+            color: white;
+        }
+        .v-key.danger {
+            background-color: #dc3545;
+            color: white;
         }
         canvas {
             border: 1px solid #ddd;
@@ -373,6 +410,7 @@
         const history = document.getElementById('history');
         const variableList = document.getElementById('variable-list');
         const modeToggle = document.getElementById('mode-toggle');
+        const virtualKeyboard = document.getElementById('virtual-keyboard');
         let isMobileMode = false;
 
         modeToggle.addEventListener('click', () => {
@@ -380,50 +418,36 @@
             if (isMobileMode) {
                 document.body.classList.add('mobile-mode');
                 modeToggle.textContent = 'Switch to Desktop Mode';
-                document.getElementById('input-area').style.display = 'none'; // Hide raw input in mobile
-                document.getElementById('history').style.marginBottom = '20px'; // Reset margin
             } else {
                 document.body.classList.remove('mobile-mode');
                 modeToggle.textContent = 'Switch to Interactive Mode';
-                document.getElementById('input-area').style.display = 'flex';
-                closeTool(); // Ensure no tool is open
             }
         });
 
-        // App/Tool Logic
-        window.openTool = function(toolName) {
-            document.getElementById('app-grid').style.display = 'none';
-            document.getElementById('tool-' + toolName).style.display = 'block';
-        };
+        window.insert = function(val) {
+            // Always use selectionStart/End, even if focus is temporarily lost to the button click
+            const start = input.selectionStart;
+            const end = input.selectionEnd;
+            const text = input.value;
 
-        window.closeTool = function() {
-            document.querySelectorAll('.tool-view').forEach(el => el.style.display = 'none');
-            if (isMobileMode) {
-                document.getElementById('app-grid').style.display = 'grid';
-            }
-        };
-
-        window.runTool = function(action, inputTokens) {
-            // Check if argument is an ID (element exists) or a literal string
-            const args = inputTokens.map(token => {
-                const el = document.getElementById(token);
-                return el ? el.value : token;
-            });
-
-             if (args.some(a => a === '')) {
-                alert("Please fill in all fields");
-                return;
+            if (val === 'DEL') {
+                if (start !== end) {
+                        // Delete selection
+                        input.value = text.slice(0, start) + text.slice(end);
+                        input.selectionStart = input.selectionEnd = start;
+                } else if (start > 0) {
+                    // Delete char before cursor
+                    input.value = text.slice(0, start - 1) + text.slice(end);
+                    input.selectionStart = input.selectionEnd = start - 1;
+                }
+            } else if (val === 'AC') {
+                input.value = '';
+            } else {
+                input.value = text.slice(0, start) + val + text.slice(end);
+                input.selectionStart = input.selectionEnd = start + val.length;
             }
 
-            // Construct command: action(arg1, arg2...)
-            const command = `${action}(${args.join(', ')})`;
-
-            // Set the main input value so evaluate uses it and history is consistent
-            input.value = command;
-            evaluate();
-
-            // Scroll history to bottom
-            history.scrollTop = history.scrollHeight;
+            input.focus();
         };
 
         function updateVariables() {
