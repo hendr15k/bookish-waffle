@@ -247,6 +247,24 @@ class CAS {
                  return new Call('factorial', args);
             }
 
+            if (node.funcName === 'fibonacci') {
+                 if (args.length !== 1) throw new Error("fibonacci requires 1 argument");
+                 const n = args[0];
+                 if (n instanceof Num && Number.isInteger(n.value) && n.value >= 0) {
+                     return new Num(this._fibonacci(n.value));
+                 }
+                 return new Call('fibonacci', args);
+            }
+
+            if (node.funcName === 'gamma') {
+                 if (args.length !== 1) throw new Error("gamma requires 1 argument");
+                 const z = args[0];
+                 if (z instanceof Num) {
+                     return new Num(this._gamma(z.value));
+                 }
+                 return new Call('gamma', args);
+            }
+
             if (node.funcName === 'nCr') {
                 if (args.length !== 2) throw new Error("nCr requires 2 arguments");
                 return this._nCr(args[0], args[1]);
@@ -491,6 +509,43 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
         let res = 1;
         for (let i = 2; i <= n; i++) res *= i;
         return res;
+    }
+
+    _fibonacci(n) {
+        if (n === 0) return 0;
+        if (n === 1) return 1;
+        let a = 0, b = 1;
+        for (let i = 2; i <= n; i++) {
+            let temp = a + b;
+            a = b;
+            b = temp;
+        }
+        return b;
+    }
+
+    _gamma(z) {
+        // Lanczos approximation
+        const g = 7;
+        const C = [
+            0.99999999999980993,
+            676.5203681218851,
+            -1259.1392167224028,
+            771.32342877765313,
+            -176.61502916214059,
+            12.507343278686905,
+            -0.13857109526572012,
+            9.9843695780195716e-6,
+            1.5056327351493116e-7
+        ];
+
+        if (z < 0.5) return Math.PI / (Math.sin(Math.PI * z) * this._gamma(1 - z));
+
+        z -= 1;
+        let x = C[0];
+        for (let i = 1; i < g + 2; i++) x += C[i] / (z + i);
+
+        const t = z + g + 0.5;
+        return Math.sqrt(2 * Math.PI) * Math.pow(t, z + 0.5) * Math.exp(-t) * x;
     }
 
     _limit(expr, varNode, point, depth = 0) {

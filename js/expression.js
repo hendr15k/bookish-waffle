@@ -543,6 +543,18 @@ class Call extends Expr {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 0) return new Num(0);
         }
+        if (this.funcName === 'sec') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num && arg.value === 0) return new Num(1);
+        }
+        if (this.funcName === 'csc') {
+             // undefined at 0
+        }
+        if (this.funcName === 'cot') {
+             // undefined at 0
+             if (arg instanceof Num && arg.value === Math.PI/2) return new Num(0);
+        }
+
         if (this.funcName === 'ln') {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 1) return new Num(0);
@@ -560,9 +572,23 @@ class Call extends Expr {
                 if (Number.isInteger(val)) return new Num(val);
             }
         }
+        if (this.funcName === 'log2') {
+             const arg = simpleArgs[0];
+             if (arg instanceof Num && arg.value === 1) return new Num(0);
+             if (arg instanceof Num && arg.value === 2) return new Num(1);
+             if (arg instanceof Num) {
+                 const val = Math.log2(arg.value);
+                 if (Number.isInteger(val)) return new Num(val);
+             }
+        }
         if (this.funcName === 'exp') {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 0) return new Num(1);
+        }
+        if (this.funcName === 'sign') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) return new Num(Math.sign(arg.value));
+            if (arg instanceof Num && arg.value === 0) return new Num(0);
         }
 
         if (this.funcName === 'floor') {
@@ -614,10 +640,28 @@ class Call extends Expr {
         if (this.funcName === 'cosh') return Math.cosh(argsVal[0]);
         if (this.funcName === 'tanh') return Math.tanh(argsVal[0]);
         if (this.funcName === 'exp') return Math.exp(argsVal[0]);
+        if (this.funcName === 'sec') return 1 / Math.cos(argsVal[0]);
+        if (this.funcName === 'csc') return 1 / Math.sin(argsVal[0]);
+        if (this.funcName === 'cot') return 1 / Math.tan(argsVal[0]);
+        if (this.funcName === 'asec') return Math.acos(1 / argsVal[0]);
+        if (this.funcName === 'acsc') return Math.asin(1 / argsVal[0]);
+        if (this.funcName === 'acot') return Math.atan(1 / argsVal[0]);
+        if (this.funcName === 'sech') return 1 / Math.cosh(argsVal[0]);
+        if (this.funcName === 'csch') return 1 / Math.sinh(argsVal[0]);
+        if (this.funcName === 'coth') return 1 / Math.tanh(argsVal[0]);
+        if (this.funcName === 'asinh') return Math.asinh(argsVal[0]); // Already there but confirming
+        if (this.funcName === 'acosh') return Math.acosh(argsVal[0]);
+        if (this.funcName === 'atanh') return Math.atanh(argsVal[0]);
+        if (this.funcName === 'asech') return Math.acosh(1 / argsVal[0]);
+        if (this.funcName === 'acsch') return Math.asinh(1 / argsVal[0]);
+        if (this.funcName === 'acoth') return Math.atanh(1 / argsVal[0]);
+
         if (this.funcName === 'ln') return Math.log(argsVal[0]);
         if (this.funcName === 'log') return Math.log10(argsVal[0]);
+        if (this.funcName === 'log2') return Math.log2(argsVal[0]);
         if (this.funcName === 'sqrt') return Math.sqrt(argsVal[0]);
         if (this.funcName === 'abs') return Math.abs(argsVal[0]);
+        if (this.funcName === 'sign') return Math.sign(argsVal[0]);
         if (this.funcName === 'floor') return Math.floor(argsVal[0]);
         if (this.funcName === 'ceil') return Math.ceil(argsVal[0]);
         if (this.funcName === 'round') return Math.round(argsVal[0]);
@@ -657,11 +701,18 @@ class Call extends Expr {
         if (this.funcName === 'cosh') return new Mul(new Call('sinh', [u]), u.diff(varName));
         if (this.funcName === 'tanh') return new Mul(new Div(new Num(1), new Pow(new Call('cosh', [u]), new Num(2))), u.diff(varName));
 
+        if (this.funcName === 'sec') return new Mul(new Mul(new Call('sec', [u]), new Call('tan', [u])), u.diff(varName));
+        if (this.funcName === 'csc') return new Mul(new Mul(new Num(-1), new Mul(new Call('csc', [u]), new Call('cot', [u]))), u.diff(varName));
+        if (this.funcName === 'cot') return new Mul(new Mul(new Num(-1), new Pow(new Call('csc', [u]), new Num(2))), u.diff(varName));
+
         if (this.funcName === 'exp') return new Mul(this, u.diff(varName));
         if (this.funcName === 'ln') return new Div(u.diff(varName), u);
         if (this.funcName === 'log') {
             // d/dx log10(u) = u' / (u * ln(10))
             return new Div(u.diff(varName), new Mul(u, new Call('ln', [new Num(10)])));
+        }
+        if (this.funcName === 'log2') {
+             return new Div(u.diff(varName), new Mul(u, new Call('ln', [new Num(2)])));
         }
         if (this.funcName === 'sqrt') return new Div(u.diff(varName), new Mul(new Num(2), new Call('sqrt', [u])));
         // Default to symbolic diff
@@ -706,16 +757,26 @@ class Call extends Expr {
             'asin': '\\arcsin',
             'acos': '\\arccos',
             'atan': '\\arctan',
+            'sec': '\\sec',
+            'csc': '\\csc',
+            'cot': '\\cot',
+            'asec': '\\operatorname{arcsec}',
+            'acsc': '\\operatorname{arccsc}',
+            'acot': '\\operatorname{arccot}',
             'asinh': '\\operatorname{asinh}',
             'acosh': '\\operatorname{acosh}',
             'atanh': '\\operatorname{atanh}',
+            'sech': '\\operatorname{sech}',
+            'csch': '\\operatorname{csch}',
+            'coth': '\\operatorname{coth}',
             'lcm': '\\operatorname{lcm}',
             'floor': '\\lfloor ' + argsTex[0] + ' \\rfloor',
             'ceil': '\\lceil ' + argsTex[0] + ' \\rceil',
             'trace': '\\operatorname{tr}',
             'real': '\\Re',
             'imag': '\\Im',
-            'conj': '\\overline{' + argsTex[0] + '}'
+            'conj': '\\overline{' + argsTex[0] + '}',
+            'sign': '\\operatorname{sgn}'
         };
 
         if (this.funcName === 'floor') return `\\lfloor ${argsTex[0]} \\rfloor`;
@@ -728,6 +789,9 @@ class Call extends Expr {
 
         if (this.funcName === 'inv' && argsTex.length === 1) {
              return `\\left(${argsTex[0]}\\right)^{-1}`;
+        }
+        if (this.funcName === 'log2' && argsTex.length === 1) {
+             return `\\log_2\\left(${argsTex[0]}\\right)`;
         }
         if (this.funcName === 'trans' && argsTex.length === 1) {
              return `\\left(${argsTex[0]}\\right)^{T}`;
