@@ -599,6 +599,22 @@ class Call extends Expr {
         return new Call("integrate", [this, varName]);
     }
     substitute(varName, value) {
+        // Handle variable binding functions (integrate, sum, product, limit, diff, solve, etc.)
+        // These functions typically take the bound variable as the second argument (index 1).
+        const bindingFunctions = ['integrate', 'sum', 'product', 'limit', 'diff', 'solve', 'plot', 'taylor'];
+        if (bindingFunctions.includes(this.funcName) && this.args.length >= 2) {
+            const boundVar = this.args[1];
+            if (boundVar instanceof Symbol && boundVar.name === varName.name) {
+                // The variable being substituted is the bound variable.
+                // Do NOT substitute in the body (arg 0) or the bound variable definition (arg 1).
+                // However, limits/ranges (args 2+) might still need substitution if they are distinct from the bound variable scope.
+                const newArgs = [...this.args];
+                for (let i = 2; i < this.args.length; i++) {
+                    newArgs[i] = newArgs[i].substitute(varName, value);
+                }
+                return new Call(this.funcName, newArgs);
+            }
+        }
         return new Call(this.funcName, this.args.map(a => a.substitute(varName, value)));
     }
     toLatex() {
