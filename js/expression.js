@@ -67,7 +67,13 @@ class Symbol extends Expr {
     }
     toLatex() {
         if (this.name === 'pi') return '\\pi';
-        if (this.name === 'theta') return '\\theta';
+        if (this.name === 'Infinity') return '\\infty';
+        const greek = [
+            'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta', 'iota', 'kappa',
+            'lambda', 'mu', 'nu', 'xi', 'omicron', 'rho', 'sigma', 'tau', 'upsilon', 'phi', 'chi', 'psi', 'omega',
+            'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Upsilon', 'Phi', 'Psi', 'Omega'
+        ];
+        if (greek.includes(this.name)) return '\\' + this.name;
         return this.name;
     }
     equals(other) { return other instanceof Symbol && this.name === other.name; }
@@ -282,6 +288,10 @@ class Div extends BinaryOp {
         if (l instanceof Num && r instanceof Num) {
             if (r.value === 0) throw new Error("Division by zero");
             if (l.value % r.value === 0) return new Num(l.value / r.value);
+            // Simplify signs: a/-b -> -a/b, -a/-b -> a/b
+            if (r.value < 0) {
+                return new Div(new Num(-l.value), new Num(-r.value)).simplify();
+            }
             return new Div(l, r);
         }
         if (l instanceof Num && l.value === 0) return new Num(0);
@@ -425,10 +435,50 @@ class Call extends Expr {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 0) return new Num(0);
         }
+        if (this.funcName === 'asin') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num && arg.value === 0) return new Num(0);
+            if (arg instanceof Num && arg.value === 1) return new Num(Math.PI / 2); // Approximate? Num stores float.
+            if (arg instanceof Num && arg.value === -1) return new Num(-Math.PI / 2);
+        }
+        if (this.funcName === 'acos') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num && arg.value === 1) return new Num(0);
+            if (arg instanceof Num && arg.value === 0) return new Num(Math.PI / 2);
+            if (arg instanceof Num && arg.value === -1) return new Num(Math.PI);
+        }
+        if (this.funcName === 'atan') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num && arg.value === 0) return new Num(0);
+        }
+        if (this.funcName === 'sinh') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num && arg.value === 0) return new Num(0);
+        }
+        if (this.funcName === 'cosh') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num && arg.value === 0) return new Num(1);
+        }
+        if (this.funcName === 'tanh') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num && arg.value === 0) return new Num(0);
+        }
         if (this.funcName === 'ln') {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 1) return new Num(0);
             if (arg instanceof Symbol && arg.name === 'e') return new Num(1);
+        }
+        if (this.funcName === 'log') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num && arg.value === 1) return new Num(0);
+            if (arg instanceof Num && arg.value === 10) return new Num(1);
+            // log(10^x) -> x
+            if (arg instanceof Pow && arg.left instanceof Num && arg.left.value === 10) return arg.right;
+            // log(100) -> 2
+            if (arg instanceof Num) {
+                const val = Math.log10(arg.value);
+                if (Number.isInteger(val)) return new Num(val);
+            }
         }
         if (this.funcName === 'exp') {
             const arg = simpleArgs[0];
@@ -442,8 +492,15 @@ class Call extends Expr {
         if (this.funcName === 'sin') return Math.sin(argsVal[0]);
         if (this.funcName === 'cos') return Math.cos(argsVal[0]);
         if (this.funcName === 'tan') return Math.tan(argsVal[0]);
+        if (this.funcName === 'asin') return Math.asin(argsVal[0]);
+        if (this.funcName === 'acos') return Math.acos(argsVal[0]);
+        if (this.funcName === 'atan') return Math.atan(argsVal[0]);
+        if (this.funcName === 'sinh') return Math.sinh(argsVal[0]);
+        if (this.funcName === 'cosh') return Math.cosh(argsVal[0]);
+        if (this.funcName === 'tanh') return Math.tanh(argsVal[0]);
         if (this.funcName === 'exp') return Math.exp(argsVal[0]);
         if (this.funcName === 'ln') return Math.log(argsVal[0]);
+        if (this.funcName === 'log') return Math.log10(argsVal[0]);
         if (this.funcName === 'sqrt') return Math.sqrt(argsVal[0]);
         if (this.funcName === 'abs') return Math.abs(argsVal[0]);
         return NaN; // Unknown
@@ -453,8 +510,29 @@ class Call extends Expr {
         if (this.funcName === 'sin') return new Mul(new Call('cos', [u]), u.diff(varName));
         if (this.funcName === 'cos') return new Mul(new Mul(new Num(-1), new Call('sin', [u])), u.diff(varName));
         if (this.funcName === 'tan') return new Mul(new Div(new Num(1), new Pow(new Call('cos', [u]), new Num(2))), u.diff(varName));
+
+        if (this.funcName === 'asin') {
+            // 1/sqrt(1-u^2) * u'
+            return new Mul(new Div(new Num(1), new Call('sqrt', [new Sub(new Num(1), new Pow(u, new Num(2)))])), u.diff(varName));
+        }
+        if (this.funcName === 'acos') {
+            // -1/sqrt(1-u^2) * u'
+            return new Mul(new Div(new Num(-1), new Call('sqrt', [new Sub(new Num(1), new Pow(u, new Num(2)))])), u.diff(varName));
+        }
+        if (this.funcName === 'atan') {
+            // 1/(1+u^2) * u'
+            return new Mul(new Div(new Num(1), new Add(new Num(1), new Pow(u, new Num(2)))), u.diff(varName));
+        }
+        if (this.funcName === 'sinh') return new Mul(new Call('cosh', [u]), u.diff(varName));
+        if (this.funcName === 'cosh') return new Mul(new Call('sinh', [u]), u.diff(varName));
+        if (this.funcName === 'tanh') return new Mul(new Div(new Num(1), new Pow(new Call('cosh', [u]), new Num(2))), u.diff(varName));
+
         if (this.funcName === 'exp') return new Mul(this, u.diff(varName));
         if (this.funcName === 'ln') return new Div(u.diff(varName), u);
+        if (this.funcName === 'log') {
+            // d/dx log10(u) = u' / (u * ln(10))
+            return new Div(u.diff(varName), new Mul(u, new Call('ln', [new Num(10)])));
+        }
         if (this.funcName === 'sqrt') return new Div(u.diff(varName), new Mul(new Num(2), new Call('sqrt', [u])));
         throw new Error("Differentiation not implemented for " + this.funcName);
     }
@@ -468,13 +546,64 @@ class Call extends Expr {
         return new Call(this.funcName, this.args.map(a => a.substitute(varName, value)));
     }
     toLatex() {
-        const argsTex = this.args.map(a => a.toLatex()).join(", ");
-        if (['sin', 'cos', 'tan', 'exp', 'ln', 'log', 'det', 'trans', 'gcd', 'lcm', 'limit'].includes(this.funcName)) return `\\${this.funcName}\\left(${argsTex}\\right)`;
-        if (this.funcName === 'sqrt') return `\\sqrt{${argsTex}}`;
-        if (this.funcName === 'factored') {
-            return this.args.map(a => a.toLatex()).join(" \\cdot ");
+        const argsTex = this.args.map(a => a.toLatex());
+
+        if (this.funcName === 'sqrt') return `\\sqrt{${argsTex.join(", ")}}`;
+
+        if (this.funcName === 'integrate') {
+            if (this.args.length === 2) {
+                return `\\int ${argsTex[0]} \\, d${argsTex[1]}`;
+            } else if (this.args.length === 4) {
+                return `\\int_{${argsTex[2]}}^{${argsTex[3]}} ${argsTex[0]} \\, d${argsTex[1]}`;
+            }
         }
-        return `\\text{${this.funcName}}\\left(${argsTex}\\right)`;
+
+        if (this.funcName === 'sum') {
+             // sum(expr, var, start, end)
+             if (this.args.length === 4) {
+                 return `\\sum_{${argsTex[1]}=${argsTex[2]}}^{${argsTex[3]}} ${argsTex[0]}`;
+             }
+        }
+
+        if (this.funcName === 'product') {
+             if (this.args.length === 4) {
+                 return `\\prod_{${argsTex[1]}=${argsTex[2]}}^{${argsTex[3]}} ${argsTex[0]}`;
+             }
+        }
+
+        if (this.funcName === 'limit') {
+            // limit(expr, var, val)
+            if (this.args.length === 3) {
+                return `\\lim_{${argsTex[1]} \\to ${argsTex[2]}} ${argsTex[0]}`;
+            }
+        }
+
+        if (this.funcName === 'diff') {
+            // diff(expr, var)
+            if (this.args.length === 2) {
+                return `\\frac{d}{d${argsTex[1]}} ${argsTex[0]}`;
+            }
+        }
+
+        if (this.funcName === 'factored') {
+            return argsTex.join(" \\cdot ");
+        }
+
+        // Standard functions
+        if (['sin', 'cos', 'tan', 'sinh', 'cosh', 'tanh', 'exp', 'ln', 'log', 'det', 'gcd', 'lcm', 'min', 'max'].includes(this.funcName)) {
+             return `\\${this.funcName}\\left(${argsTex.join(", ")}\\right)`;
+        }
+
+        if (this.funcName === 'asin') return `\\arcsin\\left(${argsTex.join(", ")}\\right)`;
+        if (this.funcName === 'acos') return `\\arccos\\left(${argsTex.join(", ")}\\right)`;
+        if (this.funcName === 'atan') return `\\arctan\\left(${argsTex.join(", ")}\\right)`;
+
+        // Special names
+        if (this.funcName === 'inv') return `\\text{inv}\\left(${argsTex.join(", ")}\\right)`; // Or M^{-1}? inv(M) is okay
+        if (this.funcName === 'trans') return `\\text{trans}\\left(${argsTex.join(", ")}\\right)`;
+        if (this.funcName === 'cross') return `\\text{cross}\\left(${argsTex.join(", ")}\\right)`;
+
+        return `\\text{${this.funcName}}\\left(${argsTex.join(", ")}\\right)`;
     }
 }
 
