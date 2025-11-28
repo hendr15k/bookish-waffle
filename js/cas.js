@@ -290,6 +290,21 @@ class CAS {
                 return this._variance(args[0]);
             }
 
+            if (node.funcName === 'linearRegression') {
+                if (args.length !== 1) throw new Error("linearRegression requires 1 argument (list of points)");
+                return this._linearRegression(args[0]);
+            }
+
+            if (node.funcName === 'normalPDF') {
+                if (args.length !== 3) throw new Error("normalPDF requires 3 arguments: x, mu, sigma");
+                return this._normalPDF(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'binomialPDF') {
+                if (args.length !== 3) throw new Error("binomialPDF requires 3 arguments: k, n, p");
+                return this._binomialPDF(args[0], args[1], args[2]);
+            }
+
             if (node.funcName === 'help') {
                 const helpText = `Available commands:
 diff(expr, var), integrate(expr, var, [lower, upper]),
@@ -309,7 +324,8 @@ N(expr) [numeric eval], clear(), help()`;
 \\text{expand}(expr), \\; \\text{simplify}(expr), \\; \\text{solve}(eq, var), \\\\
 \\text{det}(M), \\; \\text{trans}(M), \\; \\text{plot}(expr, var, [min, max]), \\\\
 \\text{gcd}(a, b), \\; \\text{lcm}(a, b), \\; \\text{factor}(n), \\; n!, \\\\
-\\text{mean}(L), \\; \\text{variance}(L), \\\\
+\\text{mean}(L), \\; \\text{variance}(L), \\; \\text{linearRegression}(L), \\\\
+\\text{normalPDF}(x, \\mu, \\sigma), \\; \\text{binomialPDF}(k, n, p), \\\\
 N(expr), \\; \\text{clear}(), \\; \\text{help}()
 \\end{array}`;
 
@@ -817,6 +833,86 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
              return new Div(sumSq, new Num(n - 1)).simplify();
          }
          return new Call('variance', [list]);
+    }
+
+    _linearRegression(data) {
+        // data: [[x1, y1], [x2, y2], ...]
+        if (data instanceof Vec) {
+            const n = data.elements.length;
+            if (n < 2) throw new Error("Linear regression requires at least 2 points");
+
+            let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+            const points = [];
+
+            for (const pt of data.elements) {
+                if (!(pt instanceof Vec) || pt.elements.length !== 2) throw new Error("Data must be list of [x, y] points");
+                const xExpr = pt.elements[0].evaluateNumeric();
+                const yExpr = pt.elements[1].evaluateNumeric();
+                if (isNaN(xExpr) || isNaN(yExpr)) throw new Error("Linear regression data must be numeric");
+
+                sumX += xExpr;
+                sumY += yExpr;
+                sumXY += xExpr * yExpr;
+                sumXX += xExpr * xExpr;
+                points.push({x: xExpr, y: yExpr});
+            }
+
+            const denominator = n * sumXX - sumX * sumX;
+            if (denominator === 0) throw new Error("Vertical line (undefined slope)");
+
+            const slope = (n * sumXY - sumX * sumY) / denominator;
+            const intercept = (sumY - slope * sumX) / n;
+
+            // Return equation: slope * x + intercept
+            // Also attach the points to the result object for plotting?
+            // The result of _recursiveEval must be an Expr or a special object.
+            // If we return an Expr, it simplifies.
+
+            const eq = new Add(new Mul(new Num(slope), new Sym('x')), new Num(intercept)).simplify();
+
+            // We can return a special object that behaves like an Expr but has extra data?
+            // Or just return the equation. The user can plot it.
+            // But to "Visualize", we want the points.
+            // Let's rely on the frontend to construct the plot command if needed.
+            // Or, we can return a 'plot' object directly if called via a specific command?
+            // No, linearRegression should return the function.
+
+            return eq;
+        }
+        return new Call('linearRegression', [data]);
+    }
+
+    _normalPDF(x, mu, sigma) {
+        if (x instanceof Num && mu instanceof Num && sigma instanceof Num) {
+            const xv = x.value;
+            const mv = mu.value;
+            const sv = sigma.value;
+            if (sv <= 0) return new Num(0); // Error?
+
+            const coeff = 1 / (sv * Math.sqrt(2 * Math.PI));
+            const exp = Math.exp(-0.5 * Math.pow((xv - mv) / sv, 2));
+            return new Num(coeff * exp);
+        }
+        // Symbolic representation: 1/(sigma*sqrt(2pi)) * e^(-...)
+        const coeff = new Div(new Num(1), new Mul(sigma, new Call('sqrt', [new Mul(new Num(2), new Sym('pi'))])));
+        const exponent = new Mul(new Num(-0.5), new Pow(new Div(new Sub(x, mu), sigma), new Num(2)));
+        return new Mul(coeff, new Call('exp', [exponent]));
+    }
+
+    _binomialPDF(k, n, p) {
+        if (k instanceof Num && n instanceof Num && p instanceof Num) {
+            const kv = k.value;
+            const nv = n.value;
+            const pv = p.value;
+            if (!Number.isInteger(kv) || !Number.isInteger(nv)) return new Num(0);
+            if (kv < 0 || kv > nv) return new Num(0);
+
+            // nCr * p^k * (1-p)^(n-k)
+            const nCr = this._nCr(n, k).value;
+            const prob = nCr * Math.pow(pv, kv) * Math.pow(1 - pv, nv - kv);
+            return new Num(prob);
+        }
+        return new Call('binomialPDF', [k, n, p]);
     }
 
     _nCr(n, k) {

@@ -676,6 +676,17 @@
                 <button class="action-btn" onclick="runTool('std', ['stat-list'])">Std Dev</button>
             </div>
         </div>
+
+        <div class="tool-section">
+            <h3>Linear Regression</h3>
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label">Points [[x1,y1], [x2,y2]...]</label>
+                    <input type="text" class="form-input" id="reg-data" placeholder="[[1,1], [2,3], [3,2]]">
+                </div>
+                <button class="action-btn" onclick="runRegression()">Calculate & Plot</button>
+            </div>
+        </div>
         <div class="tool-result"></div>
     </div>
 
@@ -702,6 +713,24 @@
                 <button class="action-btn" onclick="runTool('lcm', ['num-a', 'num-b'])">LCM (A,B)</button>
                 <button class="action-btn" onclick="runTool('nCr', ['num-a', 'num-b'])">nCr</button>
                 <button class="action-btn" onclick="runTool('nPr', ['num-a', 'num-b'])">nPr</button>
+            </div>
+        </div>
+
+        <div class="tool-section">
+            <h3>Base Converter</h3>
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label">Decimal</label>
+                    <input type="number" class="form-input" id="base-dec" oninput="updateBaseConversion('base-dec')">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Binary</label>
+                    <input type="text" class="form-input" id="base-bin" oninput="updateBaseConversion('base-bin')">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Hex</label>
+                    <input type="text" class="form-input" id="base-hex" oninput="updateBaseConversion('base-hex')">
+                </div>
             </div>
         </div>
         <div class="tool-result"></div>
@@ -1126,9 +1155,8 @@
                     } catch(e) {
                         // Ignore
                     }
+                    scatterPoints.push(discrete);
                 }
-                allPoints.push(points);
-            }
 
             if (!explicitBounds || explicitBounds.minY === undefined) {
                 // Auto-scale Y
@@ -1202,6 +1230,25 @@
                 }
                 ctx.stroke();
             }
+            ctx.restore();
+
+            // Draw Scatter Points
+            for(let i=0; i<scatterPoints.length; i++) {
+                const points = scatterPoints[i];
+                ctx.fillStyle = colors[i % colors.length]; // Use same color cycle or different?
+                // Make points distinct, maybe Red?
+                ctx.fillStyle = "rgba(255, 0, 0, 0.7)";
+
+                for(const p of points) {
+                    const px = ((p.x - minX) / (maxX - minX)) * width;
+                    const py = height - ((p.y - minY) / (maxY - minY)) * height;
+
+                    ctx.beginPath();
+                    ctx.arc(px, py, 4, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            }
+
             ctx.restore();
 
             // Labels
