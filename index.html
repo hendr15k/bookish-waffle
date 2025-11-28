@@ -260,6 +260,27 @@
         .action-btn.secondary {
             background-color: #6c757d;
         }
+        .function-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        .function-btn {
+            padding: 12px;
+            background: #e9ecef;
+            border: 1px solid #ced4da;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 1.1em;
+            cursor: pointer;
+            color: var(--text-color);
+            transition: background 0.1s;
+        }
+        .function-btn:active {
+            background: #dde2e6;
+            transform: scale(0.98);
+        }
         .tool-result {
             margin-top: 25px;
             padding: 20px;
@@ -284,6 +305,12 @@
             margin-top: 0;
             border-bottom: 1px solid #eee;
             padding-bottom: 5px;
+        }
+        #calc-more-funcs {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
         }
         .variable-item {
             margin-bottom: 8px;
@@ -326,6 +353,10 @@
 
     <!-- App Grid (Interactive Mode) -->
     <div id="app-grid">
+        <div class="app-card" onclick="openTool('calculator')">
+            <span class="app-icon" style="color: #007bff;">🧮</span>
+            <span class="app-name">Calculator</span>
+        </div>
         <div class="app-card" onclick="openTool('algebra')">
             <span class="app-icon" style="color: #e83e8c;">∑</span>
             <span class="app-name">Algebra</span>
@@ -365,6 +396,68 @@
     </div>
 
     <!-- Tool Views -->
+    <!-- CALCULATOR -->
+    <div id="tool-calculator" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Scientific Calculator</span>
+        </div>
+        <div class="tool-form">
+            <div class="form-group">
+                <input type="text" class="form-input" id="calc-main-input" placeholder="Enter expression..." style="font-size: 1.5em; padding: 15px;">
+            </div>
+
+            <div class="function-grid">
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', '(')">(</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', ')')">)</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', '^')">^</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sqrt(')">√</button>
+
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sin(')">sin</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'cos(')">cos</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'tan(')">tan</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'pi')">π</button>
+
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'ln(')">ln</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'log(')">log</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'e')">e</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'i')">i</button>
+
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'asin(')">asin</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'acos(')">acos</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'atan(')">atan</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'abs(')">abs</button>
+                <button class="function-btn" style="background-color: #ffe8cc; border-color: #ffc107;" onclick="insertAtCursor('calc-main-input', 'ans')">Ans</button>
+                <button class="function-btn" id="calc-more-btn" onclick="toggleMoreFuncs()">More</button>
+            </div>
+
+            <div class="function-grid" id="calc-more-funcs" style="display: none;">
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sec(')">sec</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'csc(')">csc</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'cot(')">cot</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sign(')">sgn</button>
+
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'asec(')">asec</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'acsc(')">acsc</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'acot(')">acot</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'log2(')">log2</button>
+
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sinh(')">sinh</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'cosh(')">cosh</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'tanh(')">tanh</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'fibonacci(')">fib</button>
+
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'gamma(')">Γ</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'floor(')">flr</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'ceil(')">ceil</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'round(')">rnd</button>
+            </div>
+
+            <button class="action-btn" style="font-size: 1.2em; padding: 16px;" onclick="runTool('simplify', ['calc-main-input'])">Calculate</button>
+        </div>
+        <div class="tool-result" style="font-size: 1.5em; min-height: 80px;"></div>
+    </div>
+
     <!-- ALGEBRA -->
     <div id="tool-algebra" class="tool-view">
         <div class="tool-header">
@@ -682,6 +775,8 @@
             <li>plot(expr, var, [min], [max])</li>
             <li>det(M), inv(M), cross(a,b)</li>
             <li>mean(L), median(L)</li>
+            <li>sec, csc, cot, log2, sign</li>
+            <li>fibonacci(n), gamma(z)</li>
             <li>clear(), help()</li>
         </ul>
     </div>
@@ -700,6 +795,7 @@
         const variableList = document.getElementById('variable-list');
         const appVariableList = document.getElementById('app-variable-list');
         const modeToggle = document.getElementById('mode-toggle');
+        const darkModeToggle = document.getElementById('dark-mode-toggle');
         let isMobileMode = false;
 
         // Dark Mode Logic
@@ -763,6 +859,37 @@
         window.clearHistory = function() {
             history.innerHTML = '';
             document.getElementById('app-history-content').innerHTML = '';
+        };
+
+        window.toggleMoreFuncs = function() {
+            const moreDiv = document.getElementById('calc-more-funcs');
+            const btn = document.getElementById('calc-more-btn');
+            if (moreDiv.style.display === 'none') {
+                moreDiv.style.display = 'grid';
+                btn.textContent = 'Less';
+            } else {
+                moreDiv.style.display = 'none';
+                btn.textContent = 'More';
+            }
+        };
+
+        window.insertAtCursor = function(fieldId, val) {
+            const field = document.getElementById(fieldId);
+            if (!field) return;
+
+            // Standard insert at cursor logic
+            if (field.selectionStart || field.selectionStart === 0) {
+                const startPos = field.selectionStart;
+                const endPos = field.selectionEnd;
+                field.value = field.value.substring(0, startPos)
+                    + val
+                    + field.value.substring(endPos, field.value.length);
+                field.selectionStart = startPos + val.length;
+                field.selectionEnd = startPos + val.length;
+            } else {
+                field.value += val;
+            }
+            field.focus();
         };
 
         window.runTool = function(action, inputTokens) {
@@ -1004,6 +1131,56 @@
         function addToHistory(command, result, isError, latex) {
             const entryDiv = document.createElement('div');
             entryDiv.className = 'entry';
+
+            // Allow clicking entry to copy result to input
+            entryDiv.style.cursor = 'pointer';
+            entryDiv.title = 'Click to insert result into input';
+            entryDiv.onclick = function() {
+                // Determine what to insert: result text or latex?
+                // For simplicity, insert the result text if it's not complex object
+                if (isError) return;
+
+                let valToInsert = '';
+                if (result && result.toLatex) {
+                     // If it's an object with toLatex, it might be a Plot or Info.
+                     // We probably don't want to insert "Plotting..." text.
+                     // If it's a plot, do nothing.
+                     if (result.type === 'plot') return;
+                     if (result.type === 'info') return;
+                }
+
+                // If result is string (from toString), use it.
+                // But wait, result argument is sometimes object, sometimes string.
+                if (typeof result === 'string') valToInsert = result;
+                else if (result && typeof result.toString === 'function') valToInsert = result.toString();
+
+                // Remove parens if it's a simple number? No, keep as is.
+
+                // Insert into active input
+                // Check if a tool input is focused, otherwise use main input
+                // But on mobile, we might not have focus.
+                // We default to the main calculator input if we are in app mode calculator?
+                // Or just the main input area in desktop.
+
+                const activeElement = document.activeElement;
+                if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+                    insertAtCursor(activeElement.id, valToInsert);
+                } else {
+                    // Try to find visible tool input
+                    const visibleTool = document.querySelector('.tool-view[style*="block"]');
+                    if (visibleTool) {
+                         const firstInput = visibleTool.querySelector('input');
+                         if (firstInput) insertAtCursor(firstInput.id, valToInsert);
+                    } else {
+                        // Desktop mode main input
+                        const mainInput = document.getElementById('command-input');
+                        if (mainInput) {
+                            mainInput.value = valToInsert; // Replace or append? Let's replace for history recall usually.
+                            // insertAtCursor(mainInput.id, valToInsert);
+                        }
+                    }
+                }
+            };
 
             const commandDiv = document.createElement('div');
             commandDiv.className = 'command';
