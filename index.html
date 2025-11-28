@@ -260,6 +260,27 @@
         .action-btn.secondary {
             background-color: #6c757d;
         }
+        .function-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        .function-btn {
+            padding: 12px;
+            background: #e9ecef;
+            border: 1px solid #ced4da;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 1.1em;
+            cursor: pointer;
+            color: var(--text-color);
+            transition: background 0.1s;
+        }
+        .function-btn:active {
+            background: #dde2e6;
+            transform: scale(0.98);
+        }
         .tool-result {
             margin-top: 25px;
             padding: 20px;
@@ -326,6 +347,10 @@
 
     <!-- App Grid (Interactive Mode) -->
     <div id="app-grid">
+        <div class="app-card" onclick="openTool('calculator')">
+            <span class="app-icon" style="color: #007bff;">🧮</span>
+            <span class="app-name">Calculator</span>
+        </div>
         <div class="app-card" onclick="openTool('algebra')">
             <span class="app-icon" style="color: #e83e8c;">∑</span>
             <span class="app-name">Algebra</span>
@@ -365,6 +390,44 @@
     </div>
 
     <!-- Tool Views -->
+    <!-- CALCULATOR -->
+    <div id="tool-calculator" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Scientific Calculator</span>
+        </div>
+        <div class="tool-form">
+            <div class="form-group">
+                <input type="text" class="form-input" id="calc-main-input" placeholder="Enter expression..." style="font-size: 1.5em; padding: 15px;">
+            </div>
+
+            <div class="function-grid">
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', '(')">(</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', ')')">)</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', '^')">^</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sqrt(')">√</button>
+
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sin(')">sin</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'cos(')">cos</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'tan(')">tan</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'pi')">π</button>
+
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'ln(')">ln</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'log(')">log</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'e')">e</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'i')">i</button>
+
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'asin(')">asin</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'acos(')">acos</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'atan(')">atan</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'abs(')">abs</button>
+            </div>
+
+            <button class="action-btn" style="font-size: 1.2em; padding: 16px;" onclick="runTool('simplify', ['calc-main-input'])">Calculate</button>
+        </div>
+        <div class="tool-result" style="font-size: 1.5em; min-height: 80px;"></div>
+    </div>
+
     <!-- ALGEBRA -->
     <div id="tool-algebra" class="tool-view">
         <div class="tool-header">
@@ -764,6 +827,25 @@
         window.clearHistory = function() {
             history.innerHTML = '';
             document.getElementById('app-history-content').innerHTML = '';
+        };
+
+        window.insertAtCursor = function(fieldId, val) {
+            const field = document.getElementById(fieldId);
+            if (!field) return;
+
+            // Standard insert at cursor logic
+            if (field.selectionStart || field.selectionStart === 0) {
+                const startPos = field.selectionStart;
+                const endPos = field.selectionEnd;
+                field.value = field.value.substring(0, startPos)
+                    + val
+                    + field.value.substring(endPos, field.value.length);
+                field.selectionStart = startPos + val.length;
+                field.selectionEnd = startPos + val.length;
+            } else {
+                field.value += val;
+            }
+            field.focus();
         };
 
         window.runTool = function(action, inputTokens) {
