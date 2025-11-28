@@ -188,6 +188,23 @@ class Mul extends BinaryOp {
                     resultRows.push(new Vec(row));
                 }
                 return new Vec(resultRows);
+            } else if (lIsMatrix && !rIsMatrix) {
+                // Matrix * Vector
+                const rowsA = l.elements.length;
+                const colsA = l.elements[0].elements.length;
+                const rowsB = r.elements.length;
+
+                if (colsA !== rowsB) throw new Error(`Matrix-Vector dimension mismatch: ${rowsA}x${colsA} * ${rowsB}`);
+
+                const newElements = [];
+                for (let i = 0; i < rowsA; i++) {
+                    let sum = new Num(0);
+                    for (let k = 0; k < colsA; k++) {
+                        sum = new Add(sum, new Mul(l.elements[i].elements[k], r.elements[k])).simplify();
+                    }
+                    newElements.push(sum);
+                }
+                return new Vec(newElements);
             }
         }
 
