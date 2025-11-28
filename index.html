@@ -260,19 +260,6 @@
         .action-btn.secondary {
             background-color: #6c757d;
         }
-        .matrix-grid {
-            display: grid;
-            gap: 5px;
-            margin: 10px 0;
-            overflow-x: auto;
-        }
-        .matrix-cell {
-            width: 50px;
-            text-align: center;
-            padding: 5px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
         .function-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -445,29 +432,6 @@
                 <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'atan(')">atan</button>
                 <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'abs(')">abs</button>
                 <button class="function-btn" style="background-color: #ffe8cc; border-color: #ffc107;" onclick="insertAtCursor('calc-main-input', 'ans')">Ans</button>
-                <button class="function-btn" id="calc-more-btn" onclick="toggleMoreFuncs()">More</button>
-            </div>
-
-            <div class="function-grid" id="calc-more-funcs" style="display: none;">
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sec(')">sec</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'csc(')">csc</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'cot(')">cot</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sign(')">sgn</button>
-
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'asec(')">asec</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'acsc(')">acsc</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'acot(')">acot</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'log2(')">log2</button>
-
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sinh(')">sinh</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'cosh(')">cosh</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'tanh(')">tanh</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'fibonacci(')">fib</button>
-
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'gamma(')">Γ</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'floor(')">flr</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'ceil(')">ceil</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'round(')">rnd</button>
             </div>
 
             <button class="action-btn" style="font-size: 1.2em; padding: 16px;" onclick="runTool('simplify', ['calc-main-input'])">Calculate</button>
@@ -959,273 +923,6 @@
             document.getElementById('app-history-content').innerHTML = '';
         };
 
-        window.toggleMoreFuncs = function() {
-            const moreDiv = document.getElementById('calc-more-funcs');
-            const btn = document.getElementById('calc-more-btn');
-            if (moreDiv.style.display === 'none') {
-                moreDiv.style.display = 'grid';
-                btn.textContent = 'Less';
-            } else {
-                moreDiv.style.display = 'none';
-                btn.textContent = 'More';
-            }
-        };
-
-        window.generateMatrixGrid = function() {
-            const rows = parseInt(document.getElementById('mat-rows').value);
-            const cols = parseInt(document.getElementById('mat-cols').value);
-            const container = document.getElementById('matrix-builder-container');
-            container.innerHTML = '';
-
-            const grid = document.createElement('div');
-            grid.className = 'matrix-grid';
-            grid.style.gridTemplateColumns = `repeat(${cols}, 50px)`;
-
-            for(let i=0; i<rows; i++) {
-                for(let j=0; j<cols; j++) {
-                    const input = document.createElement('input');
-                    input.className = 'matrix-cell';
-                    input.placeholder = '0';
-                    input.dataset.row = i;
-                    input.dataset.col = j;
-                    grid.appendChild(input);
-                }
-            }
-            container.appendChild(grid);
-        };
-
-        window.insertMatrix = function() {
-            const rows = parseInt(document.getElementById('mat-rows').value);
-            const cols = parseInt(document.getElementById('mat-cols').value);
-            const inputs = document.querySelectorAll('.matrix-cell');
-
-            // Build 2D array
-            const matrix = [];
-            for(let i=0; i<rows; i++) matrix[i] = [];
-
-            inputs.forEach(inp => {
-                const r = parseInt(inp.dataset.row);
-                const c = parseInt(inp.dataset.col);
-                const val = inp.value || '0';
-                matrix[r][c] = val;
-            });
-
-            // Format [[...]]
-            const str = '[' + matrix.map(row => '[' + row.join(',') + ']').join(',') + ']';
-
-            // Insert into lin-expr
-            const field = document.getElementById('lin-expr');
-            field.value = str;
-        };
-
-        const convRates = {
-            length: { m: 1, km: 1000, cm: 0.01, mm: 0.001, ft: 0.3048, in: 0.0254, mi: 1609.34 },
-            mass: { kg: 1, g: 0.001, mg: 0.000001, lb: 0.453592, oz: 0.0283495 },
-            temp: {} // Handled separately
-        };
-
-        window.updateConvUnits = function() {
-            const cat = document.getElementById('conv-category').value;
-            const fromSelect = document.getElementById('conv-unit-from');
-            const toSelect = document.getElementById('conv-unit-to');
-            fromSelect.innerHTML = '';
-            toSelect.innerHTML = '';
-
-            let units = [];
-            if (cat === 'temp') units = ['C', 'F', 'K'];
-            else units = Object.keys(convRates[cat]);
-
-            units.forEach(u => {
-                fromSelect.add(new Option(u, u));
-                toSelect.add(new Option(u, u));
-            });
-
-            // Defaults
-            if (cat === 'length') { fromSelect.value = 'm'; toSelect.value = 'ft'; }
-            if (cat === 'mass') { fromSelect.value = 'kg'; toSelect.value = 'lb'; }
-            if (cat === 'temp') { fromSelect.value = 'C'; toSelect.value = 'F'; }
-        };
-
-        window.updateBaseConversion = function(sourceId) {
-            const decInput = document.getElementById('base-dec');
-            const binInput = document.getElementById('base-bin');
-            const hexInput = document.getElementById('base-hex');
-
-            let val = NaN;
-
-            if (sourceId === 'base-dec') {
-                val = parseInt(decInput.value, 10);
-            } else if (sourceId === 'base-bin') {
-                val = parseInt(binInput.value, 2);
-            } else if (sourceId === 'base-hex') {
-                val = parseInt(hexInput.value, 16);
-            }
-
-            if (isNaN(val)) {
-                if (sourceId !== 'base-dec') decInput.value = '';
-                if (sourceId !== 'base-bin') binInput.value = '';
-                if (sourceId !== 'base-hex') hexInput.value = '';
-                return;
-            }
-
-            if (sourceId !== 'base-dec') decInput.value = val.toString(10);
-            if (sourceId !== 'base-bin') binInput.value = val.toString(2);
-            if (sourceId !== 'base-hex') hexInput.value = val.toString(16).toUpperCase();
-        };
-
-        window.runConverter = function(dir) {
-            const cat = document.getElementById('conv-category').value;
-            const fromUnit = document.getElementById('conv-unit-from').value;
-            const toUnit = document.getElementById('conv-unit-to').value;
-
-            const inputId = dir === 'from' ? 'conv-val-from' : 'conv-val-to';
-            const outputId = dir === 'from' ? 'conv-val-to' : 'conv-val-from';
-
-            const val = parseFloat(document.getElementById(inputId).value);
-            if (isNaN(val)) {
-                document.getElementById(outputId).value = '';
-                return;
-            }
-
-            let res;
-            if (cat === 'temp') {
-                // Convert to C
-                let c;
-                if (dir === 'from') {
-                    if (fromUnit === 'C') c = val;
-                    if (fromUnit === 'F') c = (val - 32) * 5/9;
-                    if (fromUnit === 'K') c = val - 273.15;
-
-                    // Convert C to target
-                    if (toUnit === 'C') res = c;
-                    if (toUnit === 'F') res = c * 9/5 + 32;
-                    if (toUnit === 'K') res = c + 273.15;
-                } else {
-                    // Reverse logic same as above just swapped
-                    // Actually simpler to just invoke from logic but swap units? No, infinite loop.
-                    // Just implement inverse.
-                    // Converting TO 'toUnit' FROM 'fromUnit' with value 'val' (which is in toUnit)
-                    // Wait, if dir is 'to', user typed in 'to' box. We update 'from'.
-                    // So calculate FromVal based on ToVal.
-
-                    // Convert ToVal (in ToUnit) to C
-                    if (toUnit === 'C') c = val;
-                    if (toUnit === 'F') c = (val - 32) * 5/9;
-                    if (toUnit === 'K') c = val - 273.15;
-
-                    // Convert C to FromUnit
-                    if (fromUnit === 'C') res = c;
-                    if (fromUnit === 'F') res = c * 9/5 + 32;
-                    if (fromUnit === 'K') res = c + 273.15;
-                }
-            } else {
-                // Linear
-                const factorFrom = convRates[cat][fromUnit];
-                const factorTo = convRates[cat][toUnit];
-
-                if (dir === 'from') {
-                    // val * from = base = res * to
-                    res = val * (factorFrom / factorTo);
-                } else {
-                    res = val * (factorTo / factorFrom);
-                }
-            }
-
-            document.getElementById(outputId).value = parseFloat(res.toFixed(6));
-        };
-
-        window.runRegression = function() {
-            const inputVal = document.getElementById('reg-data').value;
-            // Validate input basically
-            if (!inputVal.trim().startsWith('[')) {
-                addToHistory("Regression", "Invalid data format. Use [[x,y],...]", true);
-                return;
-            }
-
-            try {
-                // Run linearRegression via CAS
-                const cmd = `linearRegression(${inputVal})`;
-                const lexer = new Lexer(cmd);
-                const parser = new Parser(lexer);
-                const tree = parser.parse();
-                const resultExpr = cas.evaluate(tree);
-
-                // Parse points manually for plotting
-                // We use JSON.parse for simplicity if the input is valid JSON,
-                // otherwise we might need the parser.
-                // Since our parser supports [...] syntax, we can use it.
-                // But for plotting, we need discrete points.
-                // Let's assume user input is valid enough or use a regex to extract points.
-                // Or better: construct the Vec object from parser.
-
-                // Actually, let's just parse the string as JSON if possible
-                let points = [];
-                try {
-                    points = JSON.parse(inputVal);
-                    points = points.map(pt => ({x: pt[0], y: pt[1]}));
-                } catch(e) {
-                    // Fallback to simple regex parsing if JSON fails (e.g. single quotes)
-                    const matches = inputVal.match(/\[\s*([\d\.-]+)\s*,\s*([\d\.-]+)\s*\]/g);
-                    if (matches) {
-                        points = matches.map(m => {
-                            const p = m.match(/\[\s*([\d\.-]+)\s*,\s*([\d\.-]+)\s*\]/);
-                            return {x: parseFloat(p[1]), y: parseFloat(p[2])};
-                        });
-                    }
-                }
-
-                // Construct Plot Object
-                const plotResult = {
-                    type: 'plot',
-                    expr: resultExpr, // The line equation
-                    var: new Sym('x'),
-                    min: -10, // Default bounds, auto-scale will handle if data is outside
-                    max: 10,
-                    dataPoints: points, // Attach points
-                    toString: () => `Regression: ${resultExpr}`,
-                    toLatex: () => `y = ${resultExpr.toLatex()}`
-                };
-
-                addToHistory(cmd, plotResult, false, null);
-
-                // Copy result to tool view
-                setTimeout(() => {
-                    const entries = document.querySelectorAll('.entry');
-                    if (entries.length > 0) {
-                        const lastEntry = entries[entries.length - 1];
-                        const resultDiv = lastEntry.querySelector('.result');
-                        const visibleTool = document.querySelector('.tool-view[style*="block"]');
-                        if (visibleTool && resultDiv) {
-                            const resultBox = visibleTool.querySelector('.tool-result');
-                            if (resultBox) {
-                                resultBox.innerHTML = '';
-                                const clone = resultDiv.cloneNode(true);
-                                resultBox.appendChild(clone);
-                                resultBox.style.display = 'block';
-
-                                // Re-attach interactive plot events if canvas exists
-                                const canvas = clone.querySelector('canvas');
-                                if (canvas) {
-                                    // We need to re-draw because cloning canvas doesn't copy context?
-                                    // Actually cloning canvas element copies dimensions but clears content usually.
-                                    // We need to redraw.
-                                    drawPlot(canvas, plotResult);
-                                    setupInteractivePlot(canvas);
-                                }
-
-                                if (window.MathJax && typeof MathJax.typesetPromise === 'function') {
-                                    MathJax.typesetPromise([resultBox]).catch(err => console.error(err));
-                                }
-                            }
-                        }
-                    }
-                }, 50);
-
-            } catch(e) {
-                addToHistory("Regression", e.message, true);
-            }
-        };
-
         window.insertAtCursor = function(fieldId, val) {
             const field = document.getElementById(fieldId);
             if (!field) return;
@@ -1426,48 +1123,40 @@
             canvas.plotResult = result;
 
             // Calculate points for all plots
-            const allPoints = []; // Array of arrays of points (lines)
-            const scatterPoints = []; // Array of arrays of discrete points
+            const allPoints = []; // Array of arrays of points
             let calcMinY = Infinity;
             let calcMaxY = -Infinity;
 
             const steps = width; // Pixel precision
 
             for(const p of plots) {
-                // If plot has discrete points (e.g. from regression data), handle them
-                if (p.dataPoints) {
-                    const discrete = [];
-                    for(const pt of p.dataPoints) {
-                        discrete.push(pt);
-                        if (pt.y < calcMinY) calcMinY = pt.y;
-                        if (pt.y > calcMaxY) calcMaxY = pt.y;
+                const points = [];
+                // Respect plot definition range if stricter than view?
+                // Usually we want to view outside definition? No, function might be undefined.
+                // We plot in the intersection of view X and defined X.
+                // But simplified: just iterate view X.
+
+                for (let i = 0; i <= steps; i++) {
+                    const x = minX + (maxX - minX) * (i / steps);
+
+                    try {
+                        // Optimization: if simple num, skip parsing?
+                        // Using substitute is slow for high frequency.
+                        // Ideally we compile to JS function.
+                        const valExpr = p.expr.substitute(p.var, new Num(x));
+                        const simplified = valExpr.simplify();
+                        if (simplified instanceof Num) {
+                            const y = simplified.value;
+                            if (isNaN(y) || !isFinite(y)) continue;
+                            points.push({x, y});
+                            if (y < calcMinY) calcMinY = y;
+                            if (y > calcMaxY) calcMaxY = y;
+                        }
+                    } catch(e) {
+                        // Ignore
                     }
                     scatterPoints.push(discrete);
                 }
-
-                // If plot has an expression, evaluate it
-                if (p.expr) {
-                    const points = [];
-                    for (let i = 0; i <= steps; i++) {
-                        const x = minX + (maxX - minX) * (i / steps);
-
-                        try {
-                            const valExpr = p.expr.substitute(p.var, new Num(x));
-                            const simplified = valExpr.simplify();
-                            if (simplified instanceof Num) {
-                                const y = simplified.value;
-                                if (isNaN(y) || !isFinite(y)) continue;
-                                points.push({x, y});
-                                if (y < calcMinY) calcMinY = y;
-                                if (y > calcMaxY) calcMaxY = y;
-                            }
-                        } catch(e) {
-                            // Ignore
-                        }
-                    }
-                    allPoints.push(points);
-                }
-            }
 
             if (!explicitBounds || explicitBounds.minY === undefined) {
                 // Auto-scale Y
@@ -1521,7 +1210,6 @@
             ctx.rect(0,0,width,height);
             ctx.clip();
 
-            // Draw Continuous Lines
             for(let i=0; i<allPoints.length; i++) {
                 const points = allPoints[i];
                 ctx.strokeStyle = colors[i % colors.length];
@@ -1532,6 +1220,7 @@
                     const px = ((p.x - minX) / (maxX - minX)) * width;
                     const py = height - ((p.y - minY) / (maxY - minY)) * height;
 
+                    // Simple line plot
                     if (first) {
                         ctx.moveTo(px, py);
                         first = false;
@@ -1541,6 +1230,7 @@
                 }
                 ctx.stroke();
             }
+            ctx.restore();
 
             // Draw Scatter Points
             for(let i=0; i<scatterPoints.length; i++) {
@@ -1757,24 +1447,6 @@
                     drawPlot(canvas, result);
                     setupInteractivePlot(canvas);
                 }, 0);
-
-                // Add Download Button
-                const controlsDiv = document.createElement('div');
-                controlsDiv.style.marginTop = '10px';
-
-                const dlBtn = document.createElement('button');
-                dlBtn.textContent = 'Save Image';
-                dlBtn.className = 'action-btn secondary';
-                dlBtn.style.padding = '5px 10px';
-                dlBtn.style.fontSize = '0.9em';
-                dlBtn.onclick = () => {
-                    const link = document.createElement('a');
-                    link.download = 'plot.png';
-                    link.href = canvas.toDataURL();
-                    link.click();
-                };
-                controlsDiv.appendChild(dlBtn);
-                resultDiv.appendChild(controlsDiv);
 
                 // Also show expression
                  const textDiv = document.createElement('div');
