@@ -51,7 +51,14 @@ class Lexer {
 
     number() {
         let result = '';
+        let dotCount = 0;
         while (this.currentChar !== null && (/\d/.test(this.currentChar) || this.currentChar === '.')) {
+            if (this.currentChar === '.') {
+                dotCount++;
+                if (dotCount > 1) {
+                    throw new Error("Invalid number format: multiple decimal points");
+                }
+            }
             result += this.currentChar;
             this.advance();
         }

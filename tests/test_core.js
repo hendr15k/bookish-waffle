@@ -71,6 +71,19 @@ function test(description, input, expectedOutput) {
     }
 }
 
+function testShouldThrow(description, input, expectedErrorFragment) {
+    try {
+        evalExpr(input);
+        console.error(`[FAIL] ${description} - Expected error but got success.`);
+    } catch (e) {
+        if (e.message.includes(expectedErrorFragment)) {
+            console.log(`[PASS] ${description}`);
+        } else {
+            console.error(`[FAIL] ${description} - Expected error containing "${expectedErrorFragment}" but got "${e.message}"`);
+        }
+    }
+}
+
 // Basic arithmetic
 test("Addition", "1 + 1", "2");
 test("Subtraction", "5 - 3", "2");
@@ -92,3 +105,8 @@ test("Matrix * Vector", "[[1, 2], [3, 4]] * [5, 6]", "[17, 39]");
 // Calculus
 test("Diff tan(x)", "diff(tan(x), x)", "(1 / (cos(x)^2))");
 test("Limit tan(x)/x", "limit(tan(x)/x, x, 0)", "1");
+
+// Lexer Bug Tests
+testShouldThrow("Multiple decimal points", "1.2.3", "multiple decimal points");
+testShouldThrow("Multiple decimal points (trailing)", "1..", "multiple decimal points");
+testShouldThrow("Multiple decimal points (mixed)", "0.5.5", "multiple decimal points");
