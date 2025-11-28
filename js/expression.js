@@ -421,6 +421,10 @@ class Call extends Expr {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 0) return new Num(1);
         }
+        if (this.funcName === 'tan') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num && arg.value === 0) return new Num(0);
+        }
         if (this.funcName === 'ln') {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 1) return new Num(0);
@@ -448,6 +452,7 @@ class Call extends Expr {
         const u = this.args[0];
         if (this.funcName === 'sin') return new Mul(new Call('cos', [u]), u.diff(varName));
         if (this.funcName === 'cos') return new Mul(new Mul(new Num(-1), new Call('sin', [u])), u.diff(varName));
+        if (this.funcName === 'tan') return new Mul(new Div(new Num(1), new Pow(new Call('cos', [u]), new Num(2))), u.diff(varName));
         if (this.funcName === 'exp') return new Mul(this, u.diff(varName));
         if (this.funcName === 'ln') return new Div(u.diff(varName), u);
         if (this.funcName === 'sqrt') return new Div(u.diff(varName), new Mul(new Num(2), new Call('sqrt', [u])));
