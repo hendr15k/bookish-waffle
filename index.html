@@ -1185,12 +1185,71 @@
             // Clear
             ctx.clearRect(0, 0, width, height);
 
-            // Draw Axes
-            ctx.strokeStyle = "#ccc";
+            // Helper to map coordinates
+            const mapX = (x) => ((x - minX) / (maxX - minX)) * width;
+            const mapY = (y) => height - ((y - minY) / (maxY - minY)) * height;
+
+            // Draw Grid & Labels
+            ctx.save();
+            ctx.strokeStyle = "#eee"; // Light grid
+            ctx.fillStyle = "#888";
+            ctx.font = "10px sans-serif";
             ctx.lineWidth = 1;
 
+            // Calculate Grid Steps
+            const calculateStep = (range) => {
+                const magnitude = Math.pow(10, Math.floor(Math.log10(range)));
+                const norm = range / magnitude;
+                let step = magnitude;
+                if (norm < 2) step = magnitude * 0.2;
+                else if (norm < 5) step = magnitude * 0.5;
+                return step;
+            };
+
+            const xRange = maxX - minX;
+            const yRange = maxY - minY;
+            const xStep = calculateStep(xRange);
+            const yStep = calculateStep(yRange);
+
+            // Vertical Grid Lines & X Labels
+            const startX = Math.ceil(minX / xStep) * xStep;
+            for (let x = startX; x <= maxX; x += xStep) {
+                const px = mapX(x);
+                // Grid Line
+                ctx.beginPath();
+                ctx.moveTo(px, 0);
+                ctx.lineTo(px, height);
+                ctx.stroke();
+
+                // Label (avoid overlapping Y axis if close)
+                if (Math.abs(x) > xStep * 0.01) { // Skip 0 label usually handled by axis, or draw?
+                    ctx.fillText(x.toLocaleString(undefined, {maximumFractionDigits: 5}), px + 2, height - 5);
+                }
+            }
+
+            // Horizontal Grid Lines & Y Labels
+            const startY = Math.ceil(minY / yStep) * yStep;
+            for (let y = startY; y <= maxY; y += yStep) {
+                const py = mapY(y);
+                // Grid Line
+                ctx.beginPath();
+                ctx.moveTo(0, py);
+                ctx.lineTo(width, py);
+                ctx.stroke();
+
+                // Label
+                if (Math.abs(y) > yStep * 0.01) {
+                    ctx.fillText(y.toLocaleString(undefined, {maximumFractionDigits: 5}), 5, py - 2);
+                }
+            }
+            ctx.restore();
+
+            // Draw Axes (Stronger)
+            ctx.strokeStyle = "#333";
+            ctx.lineWidth = 1.5;
+
             if (minY <= 0 && maxY >= 0) {
-                const yZero = height - ((0 - minY) / (maxY - minY)) * height;
+                const yZero = mapY(0);
                 ctx.beginPath();
                 ctx.moveTo(0, yZero);
                 ctx.lineTo(width, yZero);
@@ -1198,7 +1257,7 @@
             }
 
             if (minX <= 0 && maxX >= 0) {
-                const xZero = ((0 - minX) / (maxX - minX)) * width;
+                const xZero = mapX(0);
                 ctx.beginPath();
                 ctx.moveTo(xZero, 0);
                 ctx.lineTo(xZero, height);
@@ -1221,8 +1280,8 @@
                 ctx.beginPath();
                 let first = true;
                 for (const p of points) {
-                    const px = ((p.x - minX) / (maxX - minX)) * width;
-                    const py = height - ((p.y - minY) / (maxY - minY)) * height;
+                    const px = mapX(p.x);
+                    const py = mapY(p.y);
 
                     // Simple line plot
                     if (first) {
@@ -1239,13 +1298,11 @@
             // Draw Scatter Points
             for(let i=0; i<scatterPoints.length; i++) {
                 const points = scatterPoints[i];
-                ctx.fillStyle = colors[i % colors.length]; // Use same color cycle or different?
-                // Make points distinct, maybe Red?
-                ctx.fillStyle = "rgba(255, 0, 0, 0.7)";
+                ctx.fillStyle = colors[i % colors.length];
 
                 for(const p of points) {
-                    const px = ((p.x - minX) / (maxX - minX)) * width;
-                    const py = height - ((p.y - minY) / (maxY - minY)) * height;
+                    const px = mapX(p.x);
+                    const py = mapY(p.y);
 
                     ctx.beginPath();
                     ctx.arc(px, py, 4, 0, 2 * Math.PI);
