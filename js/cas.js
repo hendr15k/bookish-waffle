@@ -241,6 +241,21 @@ class CAS {
                  return new Call('factorial', args);
             }
 
+            if (node.funcName === 'nCr') {
+                if (args.length !== 2) throw new Error("nCr requires 2 arguments");
+                return this._nCr(args[0], args[1]);
+            }
+
+            if (node.funcName === 'nPr') {
+                if (args.length !== 2) throw new Error("nPr requires 2 arguments");
+                return this._nPr(args[0], args[1]);
+            }
+
+            if (node.funcName === 'trace') {
+                if (args.length !== 1) throw new Error("trace requires 1 argument");
+                return this._trace(args[0]);
+            }
+
             if (node.funcName === 'mean') {
                 if (args.length !== 1) throw new Error("mean requires 1 argument (list)");
                 return this._mean(args[0]);
@@ -251,6 +266,41 @@ class CAS {
                 return this._variance(args[0]);
             }
 
+            if (node.funcName === 'std') {
+                 if (args.length !== 1) throw new Error("std requires 1 argument (list)");
+                 return this._std(args[0]);
+            }
+
+            if (node.funcName === 'median') {
+                 if (args.length !== 1) throw new Error("median requires 1 argument (list)");
+                 return this._median(args[0]);
+            }
+
+            if (node.funcName === 'min') {
+                 if (args.length !== 1) throw new Error("min requires 1 argument (list)");
+                 return this._min(args[0]);
+            }
+
+            if (node.funcName === 'max') {
+                 if (args.length !== 1) throw new Error("max requires 1 argument (list)");
+                 return this._max(args[0]);
+            }
+
+            if (node.funcName === 'isPrime') {
+                 if (args.length !== 1) throw new Error("isPrime requires 1 argument");
+                 return this._isPrime(args[0]);
+            }
+
+            if (node.funcName === 'nextPrime') {
+                 if (args.length !== 1) throw new Error("nextPrime requires 1 argument");
+                 return this._nextPrime(args[0]);
+            }
+
+            if (node.funcName === 'fibonacci') {
+                 if (args.length !== 1) throw new Error("fibonacci requires 1 argument");
+                 return this._fibonacci(args[0]);
+            }
+
             if (node.funcName === 'help') {
                 const helpText = `Available commands:
 diff(expr, var), integrate(expr, var, [lower, upper]),
@@ -259,7 +309,8 @@ sum(expr, var, start, end), product(expr, var, start, end),
 expand(expr), simplify(expr), solve(eq, var),
 det(M), trans(M), plot(expr, var, [min, max]),
 gcd(a, b), lcm(a, b), factor(n), factorial(n),
-mean(list), variance(list),
+mean(list), variance(list), std(list), median(list),
+min(list), max(list), isPrime(n), nextPrime(n), fibonacci(n),
 N(expr) [numeric eval], clear(), help()`;
 
                 const latexHelp = `\\begin{array}{l}
@@ -270,7 +321,8 @@ N(expr) [numeric eval], clear(), help()`;
 \\text{expand}(expr), \\; \\text{simplify}(expr), \\; \\text{solve}(eq, var), \\\\
 \\text{det}(M), \\; \\text{trans}(M), \\; \\text{plot}(expr, var, [min, max]), \\\\
 \\text{gcd}(a, b), \\; \\text{lcm}(a, b), \\; \\text{factor}(n), \\; n!, \\\\
-\\text{mean}(L), \\; \\text{variance}(L), \\\\
+\\text{mean}(L), \\; \\text{variance}(L), \\; \\text{std}(L), \\; \\text{median}(L), \\\\
+\\text{min}(L), \\; \\text{max}(L), \\; \\text{isPrime}(n), \\; \\text{fibonacci}(n), \\\\
 N(expr), \\; \\text{clear}(), \\; \\text{help}()
 \\end{array}`;
 
@@ -741,5 +793,181 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
              return new Div(sumSq, new Num(n - 1)).simplify();
          }
          return new Call('variance', [list]);
+    }
+
+    _nCr(n, k) {
+        if (n instanceof Num && k instanceof Num && Number.isInteger(n.value) && Number.isInteger(k.value)) {
+            const valN = n.value;
+            const valK = k.value;
+            if (valK < 0 || valK > valN) return new Num(0);
+            return new Num(this._factorial(valN) / (this._factorial(valK) * this._factorial(valN - valK)));
+        }
+        return new Call('nCr', [n, k]);
+    }
+
+    _nPr(n, k) {
+        if (n instanceof Num && k instanceof Num && Number.isInteger(n.value) && Number.isInteger(k.value)) {
+            const valN = n.value;
+            const valK = k.value;
+            if (valK < 0 || valK > valN) return new Num(0);
+            return new Num(this._factorial(valN) / this._factorial(valN - valK));
+        }
+        return new Call('nPr', [n, k]);
+    }
+
+    _trace(matrix) {
+        if (matrix instanceof Vec) {
+            // Check if it's a matrix (vec of vecs)
+            if (matrix.elements.length === 0) return new Num(0);
+            if (!(matrix.elements[0] instanceof Vec)) return new Call('trace', [matrix]); // Not a matrix, maybe a vector? Trace of vector is undefined or sum? Usually matrix.
+
+            const rows = matrix.elements.length;
+            const cols = matrix.elements[0].elements.length;
+            if (rows !== cols) throw new Error("trace requires a square matrix");
+
+            let sum = new Num(0);
+            for(let i=0; i<rows; i++) {
+                sum = new Add(sum, matrix.elements[i].elements[i]);
+            }
+            return sum.simplify();
+        }
+        return new Call('trace', [matrix]);
+    }
+
+    _std(list) {
+         if (list instanceof Vec) {
+             const variance = this._variance(list);
+             return new Call('sqrt', [variance]); // Let simplify/evaluate handle sqrt
+         }
+         return new Call('std', [list]);
+    }
+
+    _median(list) {
+        if (list instanceof Vec) {
+             const elements = list.elements;
+             if (elements.length === 0) return new Num(0);
+
+             // Try to evaluate to numbers for sorting
+             const numericElements = elements.map(e => {
+                 try {
+                     const val = e.evaluateNumeric();
+                     return { val: val, expr: e };
+                 } catch (err) {
+                     return { val: NaN, expr: e };
+                 }
+             });
+
+             if (numericElements.some(e => isNaN(e.val))) {
+                 return new Call('median', [list]); // Cannot sort symbolic
+             }
+
+             numericElements.sort((a, b) => a.val - b.val);
+
+             const n = numericElements.length;
+             if (n % 2 === 1) {
+                 return numericElements[Math.floor(n / 2)].expr;
+             } else {
+                 const mid1 = numericElements[n / 2 - 1].expr;
+                 const mid2 = numericElements[n / 2].expr;
+                 return new Div(new Add(mid1, mid2), new Num(2)).simplify();
+             }
+        }
+        return new Call('median', [list]);
+    }
+
+    _min(list) {
+        if (list instanceof Vec) {
+             const elements = list.elements;
+             if (elements.length === 0) return new Symbol('Infinity'); // Or undefined?
+
+             let minVal = Infinity;
+             let minExpr = null;
+
+             for(const e of elements) {
+                 const val = e.evaluateNumeric();
+                 if (isNaN(val)) return new Call('min', [list]);
+                 if (val < minVal) {
+                     minVal = val;
+                     minExpr = e;
+                 }
+             }
+             return minExpr;
+        }
+        return new Call('min', [list]);
+    }
+
+    _max(list) {
+        if (list instanceof Vec) {
+             const elements = list.elements;
+             if (elements.length === 0) return new Symbol('-Infinity');
+
+             let maxVal = -Infinity;
+             let maxExpr = null;
+
+             for(const e of elements) {
+                 const val = e.evaluateNumeric();
+                 if (isNaN(val)) return new Call('max', [list]);
+                 if (val > maxVal) {
+                     maxVal = val;
+                     maxExpr = e;
+                 }
+             }
+             return maxExpr;
+        }
+        return new Call('max', [list]);
+    }
+
+    _isPrime(n) {
+         if (n instanceof Num && Number.isInteger(n.value)) {
+             const val = n.value;
+             if (val <= 1) return new Num(0);
+             if (val <= 3) return new Num(1);
+             if (val % 2 === 0 || val % 3 === 0) return new Num(0);
+             for (let i = 5; i * i <= val; i += 6) {
+                 if (val % i === 0 || val % (i + 2) === 0) return new Num(0);
+             }
+             return new Num(1);
+         }
+         return new Call('isPrime', [n]);
+    }
+
+    _nextPrime(n) {
+         if (n instanceof Num && Number.isInteger(n.value)) {
+             let val = n.value + 1;
+             while (true) {
+                 // Check if val is prime
+                 let isP = true;
+                 if (val <= 1) isP = false;
+                 else if (val <= 3) isP = true;
+                 else if (val % 2 === 0 || val % 3 === 0) isP = false;
+                 else {
+                     for (let i = 5; i * i <= val; i += 6) {
+                         if (val % i === 0 || val % (i + 2) === 0) {
+                             isP = false;
+                             break;
+                         }
+                     }
+                 }
+                 if (isP) return new Num(val);
+                 val++;
+             }
+         }
+         return new Call('nextPrime', [n]);
+    }
+
+    _fibonacci(n) {
+         if (n instanceof Num && Number.isInteger(n.value) && n.value >= 0) {
+             const val = n.value;
+             if (val === 0) return new Num(0);
+             if (val === 1) return new Num(1);
+             let a = 0, b = 1;
+             for(let i = 2; i <= val; i++) {
+                 const temp = a + b;
+                 a = b;
+                 b = temp;
+             }
+             return new Num(b);
+         }
+         return new Call('fibonacci', [n]);
     }
 }
