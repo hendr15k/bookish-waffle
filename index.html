@@ -83,6 +83,123 @@
         #submit-btn:hover {
             background-color: #0056b3;
         }
+        /* Mobile / Interactive Mode Styles */
+        .mobile-mode #sidebar {
+            display: none;
+        }
+        .mobile-mode #main-content {
+            width: 100%;
+            margin-bottom: 250px; /* Space for keyboard */
+        }
+        .mobile-mode #history {
+            max-height: none;
+            height: calc(100vh - 350px); /* Adjust based on header/keyboard */
+        }
+        /* App Grid Styles */
+        #app-grid {
+            display: none;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            padding: 20px;
+        }
+        .mobile-mode #app-grid {
+            display: grid;
+        }
+        .app-card {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: transform 0.1s;
+        }
+        .app-card:active {
+            transform: scale(0.98);
+            background-color: #f8f9fa;
+        }
+        .app-icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+            display: block;
+        }
+        .app-name {
+            font-weight: bold;
+            color: #333;
+        }
+
+        /* Tool View Styles */
+        .tool-view {
+            display: none;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .tool-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .back-btn {
+            background: none;
+            border: none;
+            font-size: 1.2em;
+            cursor: pointer;
+            margin-right: 15px;
+            color: #007bff;
+        }
+        .tool-title {
+            font-size: 1.2em;
+            font-weight: bold;
+            flex-grow: 1;
+        }
+        .tool-form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .form-label {
+            font-weight: bold;
+            font-size: 0.9em;
+            color: #555;
+        }
+        .form-input {
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .action-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .action-btn {
+            padding: 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        .action-btn:hover {
+            background-color: #0056b3;
+        }
+        .action-btn.secondary {
+            background-color: #6c757d;
+        }
         canvas {
             border: 1px solid #ddd;
             background: white;
@@ -110,11 +227,113 @@
 </head>
 <body>
     <div id="main-content">
-        <h1>Computer Algebra System (JS)</h1>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h1>Computer Algebra System (JS)</h1>
+            <button id="mode-toggle">Switch to Interactive Mode</button>
+        </div>
         <div id="history"></div>
         <div id="input-area">
             <input type="text" id="command-input" placeholder="Enter command (e.g. sum(k^2, k, 1, 5) or sqrt(-1))" autocomplete="off">
             <button id="submit-btn">Evaluate</button>
+        </div>
+    </div>
+
+    <!-- App Grid (Interactive Mode) -->
+    <div id="app-grid">
+        <div class="app-card" onclick="openTool('algebra')">
+            <span class="app-icon">∑</span>
+            <span class="app-name">Algebra</span>
+        </div>
+        <div class="app-card" onclick="openTool('calculus')">
+            <span class="app-icon">∫</span>
+            <span class="app-name">Calculus</span>
+        </div>
+        <div class="app-card" onclick="openTool('plotting')">
+            <span class="app-icon">📈</span>
+            <span class="app-name">Plotting</span>
+        </div>
+        <div class="app-card" onclick="openTool('linear')">
+            <span class="app-icon">⊞</span>
+            <span class="app-name">Linear Algebra</span>
+        </div>
+    </div>
+
+    <!-- Tool Views -->
+    <div id="tool-algebra" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Algebra</span>
+        </div>
+        <div class="tool-form">
+            <div class="form-group">
+                <label class="form-label">Expression</label>
+                <input type="text" class="form-input" id="alg-expr" placeholder="e.g. (x+1)^2">
+            </div>
+            <div class="action-grid">
+                <button class="action-btn" onclick="runTool('simplify', ['alg-expr'])">Simplify</button>
+                <button class="action-btn" onclick="runTool('expand', ['alg-expr'])">Expand</button>
+                <button class="action-btn" onclick="runTool('sqrt', ['alg-expr'])">Sqrt</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="tool-calculus" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Calculus</span>
+        </div>
+        <div class="tool-form">
+            <div class="form-group">
+                <label class="form-label">Expression</label>
+                <input type="text" class="form-input" id="calc-expr" placeholder="e.g. x^2">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Variable</label>
+                <input type="text" class="form-input" id="calc-var" placeholder="e.g. x" value="x">
+            </div>
+            <div class="action-grid">
+                <button class="action-btn" onclick="runTool('diff', ['calc-expr', 'calc-var'])">Differentiate</button>
+                <button class="action-btn" onclick="runTool('integrate', ['calc-expr', 'calc-var'])">Integrate</button>
+                <button class="action-btn" onclick="runTool('limit', ['calc-expr', 'calc-var', '0'])">Limit -> 0</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="tool-plotting" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Plotting</span>
+        </div>
+        <div class="tool-form">
+            <div class="form-group">
+                <label class="form-label">Function y=</label>
+                <input type="text" class="form-input" id="plot-expr" placeholder="e.g. sin(x)">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Variable</label>
+                <input type="text" class="form-input" id="plot-var" placeholder="e.g. x" value="x">
+            </div>
+             <div class="action-grid">
+                <button class="action-btn" onclick="runTool('plot', ['plot-expr', 'plot-var'])">Plot</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="tool-linear" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Linear Algebra</span>
+        </div>
+        <div class="tool-form">
+            <div class="form-group">
+                <label class="form-label">Matrix/Vector</label>
+                <input type="text" class="form-input" id="lin-expr" placeholder="e.g. [[1,2],[3,4]]">
+            </div>
+            <div class="action-grid">
+                <button class="action-btn" onclick="runTool('inv', ['lin-expr'])">Inverse</button>
+                <button class="action-btn" onclick="runTool('trace', ['lin-expr'])">Trace</button>
+                 <button class="action-btn" onclick="runTool('trans', ['lin-expr'])">Transpose</button>
+            </div>
         </div>
     </div>
 
@@ -153,6 +372,59 @@
         const submitBtn = document.getElementById('submit-btn');
         const history = document.getElementById('history');
         const variableList = document.getElementById('variable-list');
+        const modeToggle = document.getElementById('mode-toggle');
+        let isMobileMode = false;
+
+        modeToggle.addEventListener('click', () => {
+            isMobileMode = !isMobileMode;
+            if (isMobileMode) {
+                document.body.classList.add('mobile-mode');
+                modeToggle.textContent = 'Switch to Desktop Mode';
+                document.getElementById('input-area').style.display = 'none'; // Hide raw input in mobile
+                document.getElementById('history').style.marginBottom = '20px'; // Reset margin
+            } else {
+                document.body.classList.remove('mobile-mode');
+                modeToggle.textContent = 'Switch to Interactive Mode';
+                document.getElementById('input-area').style.display = 'flex';
+                closeTool(); // Ensure no tool is open
+            }
+        });
+
+        // App/Tool Logic
+        window.openTool = function(toolName) {
+            document.getElementById('app-grid').style.display = 'none';
+            document.getElementById('tool-' + toolName).style.display = 'block';
+        };
+
+        window.closeTool = function() {
+            document.querySelectorAll('.tool-view').forEach(el => el.style.display = 'none');
+            if (isMobileMode) {
+                document.getElementById('app-grid').style.display = 'grid';
+            }
+        };
+
+        window.runTool = function(action, inputTokens) {
+            // Check if argument is an ID (element exists) or a literal string
+            const args = inputTokens.map(token => {
+                const el = document.getElementById(token);
+                return el ? el.value : token;
+            });
+
+             if (args.some(a => a === '')) {
+                alert("Please fill in all fields");
+                return;
+            }
+
+            // Construct command: action(arg1, arg2...)
+            const command = `${action}(${args.join(', ')})`;
+
+            // Set the main input value so evaluate uses it and history is consistent
+            input.value = command;
+            evaluate();
+
+            // Scroll history to bottom
+            history.scrollTop = history.scrollHeight;
+        };
 
         function updateVariables() {
             const vars = cas.getVariables();
