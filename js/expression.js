@@ -354,9 +354,18 @@ class Pow extends BinaryOp {
         const l = this.left.simplify();
         const r = this.right.simplify();
 
-        // i^2 = -1
-        if (l instanceof Symbol && l.name === 'i' && r instanceof Num && r.value === 2) {
-            return new Num(-1);
+        // Complex number rules for i^n
+        if (l instanceof Symbol && l.name === 'i' && r instanceof Num && Number.isInteger(r.value)) {
+            let n = r.value;
+            // Normalize n to [0, 3] if positive, or handle negative
+            // i^-1 = -i, i^-2 = -1, i^-3 = i, i^-4 = 1
+            // Generalized: i^n = i^(n mod 4)
+            // Need correct mod for negative numbers: ((n % 4) + 4) % 4
+            const rem = ((n % 4) + 4) % 4;
+            if (rem === 0) return new Num(1);
+            if (rem === 1) return l; // i
+            if (rem === 2) return new Num(-1);
+            if (rem === 3) return new Mul(new Num(-1), l); // -i
         }
 
         if (r instanceof Num && r.value === 0) return new Num(1);
