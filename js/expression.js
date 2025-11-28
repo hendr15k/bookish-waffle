@@ -39,7 +39,7 @@ class Num extends Expr {
     equals(other) { return other instanceof Num && this.value === other.value; }
 }
 
-class Symbol extends Expr {
+class Sym extends Expr {
     constructor(name) {
         super();
         this.name = name;
@@ -84,7 +84,7 @@ class Symbol extends Expr {
         if (greek.hasOwnProperty(this.name)) return greek[this.name];
         return this.name;
     }
-    equals(other) { return other instanceof Symbol && this.name === other.name; }
+    equals(other) { return other instanceof Sym && this.name === other.name; }
 }
 
 class BinaryOp extends Expr {
@@ -176,7 +176,7 @@ class Mul extends BinaryOp {
         const r = this.right.simplify();
 
         // Complex number rule: i * i = -1
-        if (l instanceof Symbol && l.name === 'i' && r instanceof Symbol && r.name === 'i') {
+        if (l instanceof Sym && l.name === 'i' && r instanceof Sym && r.name === 'i') {
             return new Num(-1);
         }
 
@@ -278,6 +278,11 @@ class Mul extends BinaryOp {
             return new Div(new Mul(l.left, r), l.right).simplify();
         }
 
+        // Commutativity with Number: x * 2 -> 2 * x
+        if (r instanceof Num && !(l instanceof Num)) {
+            return new Mul(r, l).simplify();
+        }
+
         return new Mul(l, r);
     }
     evaluateNumeric() { return this.left.evaluateNumeric() * this.right.evaluateNumeric(); }
@@ -302,11 +307,11 @@ class Mul extends BinaryOp {
         let op = " \\cdot ";
 
         // Implicit multiplication formatting rules
-        if (this.left instanceof Num && this.right instanceof Symbol) op = ""; // 2x
+        if (this.left instanceof Num && this.right instanceof Sym) op = ""; // 2x
         if (this.left instanceof Num && this.right instanceof Call) op = ""; // 2sin(x)
-        if (this.left instanceof Symbol && this.right instanceof Symbol) op = " "; // x y
-        if (this.left instanceof Symbol && this.right instanceof Call) op = ""; // x sin(y)
-        if (this.left instanceof Num && this.right instanceof Pow && this.right.left instanceof Symbol) op = ""; // 2x^2
+        if (this.left instanceof Sym && this.right instanceof Sym) op = " "; // x y
+        if (this.left instanceof Sym && this.right instanceof Call) op = ""; // x sin(y)
+        if (this.left instanceof Num && this.right instanceof Pow && this.right.left instanceof Sym) op = ""; // 2x^2
 
         if (this.left instanceof Add || this.left instanceof Sub) lTex = `\\left(${lTex}\\right)`;
         if (this.right instanceof Add || this.right instanceof Sub) rTex = `\\left(${rTex}\\right)`;
@@ -344,6 +349,26 @@ class Div extends BinaryOp {
         }
         // Cancellation: a / (a * b) -> 1/b (Not full implementation but basic)
 
+        // Simplify Powers in Division: x^a / x^b -> x^(a-b)
+        let baseL = l;
+        let expL = new Num(1);
+        if (l instanceof Pow) {
+            baseL = l.left;
+            expL = l.right;
+        }
+
+        let baseR = r;
+        let expR = new Num(1);
+        if (r instanceof Pow) {
+            baseR = r.left;
+            expR = r.right;
+        }
+
+        if (baseL.toString() === baseR.toString()) {
+            const newExp = new Sub(expL, expR).simplify();
+            return new Pow(baseL, newExp).simplify();
+        }
+
         return new Div(l, r);
     }
     evaluateNumeric() { return this.left.evaluateNumeric() / this.right.evaluateNumeric(); }
@@ -353,7 +378,7 @@ class Div extends BinaryOp {
         return new Div(num, den);
     }
     integrate(varName) {
-        if (this.left instanceof Num && this.left.value === 1 && this.right instanceof Symbol && this.right.name === varName.name) {
+        if (this.left instanceof Num && this.left.value === 1 && this.right instanceof Sym && this.right.name === varName.name) {
             return new Call("ln", [varName]);
         }
         if (this.right instanceof Num) {
@@ -377,7 +402,7 @@ class Pow extends BinaryOp {
         const r = this.right.simplify();
 
         // Complex number rules for i^n
-        if (l instanceof Symbol && l.name === 'i' && r instanceof Num && Number.isInteger(r.value)) {
+        if (l instanceof Sym && l.name === 'i' && r instanceof Num && Number.isInteger(r.value)) {
             let n = r.value;
             // Normalize n to [0, 3] if positive, or handle negative
             // i^-1 = -i, i^-2 = -1, i^-3 = i, i^-4 = 1
@@ -405,7 +430,7 @@ class Pow extends BinaryOp {
         return new Mul(this, new Mul(this.right, new Call("ln", [this.left])).diff(varName));
     }
     integrate(varName) {
-        if (this.left instanceof Symbol && this.left.name === varName.name) {
+        if (this.left instanceof Sym && this.left.name === varName.name) {
             if (this.right instanceof Num) {
                 if (this.right.value === -1) return new Call("ln", [varName]);
                 const n = this.right.value;
@@ -465,9 +490,9 @@ class Call extends Expr {
                 const absVal = Math.abs(arg.value);
                 const sqrtVal = Math.sqrt(absVal);
                 if (Number.isInteger(sqrtVal)) {
-                    return new Mul(new Symbol('i'), new Num(sqrtVal));
+                    return new Mul(new Sym('i'), new Num(sqrtVal));
                 }
-                return new Mul(new Symbol('i'), new Call('sqrt', [new Num(absVal)]));
+                return new Mul(new Sym('i'), new Call('sqrt', [new Num(absVal)]));
             }
             // sqrt(x) -> x^0.5
             // Maybe keep as sqrt(x) for display?
@@ -518,10 +543,22 @@ class Call extends Expr {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 0) return new Num(0);
         }
+        if (this.funcName === 'sec') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num && arg.value === 0) return new Num(1);
+        }
+        if (this.funcName === 'csc') {
+             // undefined at 0
+        }
+        if (this.funcName === 'cot') {
+             // undefined at 0
+             if (arg instanceof Num && arg.value === Math.PI/2) return new Num(0);
+        }
+
         if (this.funcName === 'ln') {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 1) return new Num(0);
-            if (arg instanceof Symbol && arg.name === 'e') return new Num(1);
+            if (arg instanceof Sym && arg.name === 'e') return new Num(1);
         }
         if (this.funcName === 'log') {
             const arg = simpleArgs[0];
@@ -535,9 +572,23 @@ class Call extends Expr {
                 if (Number.isInteger(val)) return new Num(val);
             }
         }
+        if (this.funcName === 'log2') {
+             const arg = simpleArgs[0];
+             if (arg instanceof Num && arg.value === 1) return new Num(0);
+             if (arg instanceof Num && arg.value === 2) return new Num(1);
+             if (arg instanceof Num) {
+                 const val = Math.log2(arg.value);
+                 if (Number.isInteger(val)) return new Num(val);
+             }
+        }
         if (this.funcName === 'exp') {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 0) return new Num(1);
+        }
+        if (this.funcName === 'sign') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) return new Num(Math.sign(arg.value));
+            if (arg instanceof Num && arg.value === 0) return new Num(0);
         }
 
         if (this.funcName === 'floor') {
@@ -559,17 +610,17 @@ class Call extends Expr {
         if (this.funcName === 'real') {
             const arg = simpleArgs[0];
             if (arg instanceof Num) return arg;
-            if (arg instanceof Symbol && arg.name === 'i') return new Num(0);
+            if (arg instanceof Sym && arg.name === 'i') return new Num(0);
         }
         if (this.funcName === 'imag') {
              const arg = simpleArgs[0];
              if (arg instanceof Num) return new Num(0);
-             if (arg instanceof Symbol && arg.name === 'i') return new Num(1);
+             if (arg instanceof Sym && arg.name === 'i') return new Num(1);
         }
         if (this.funcName === 'conj') {
              const arg = simpleArgs[0];
              if (arg instanceof Num) return arg;
-             if (arg instanceof Symbol && arg.name === 'i') return new Mul(new Num(-1), arg);
+             if (arg instanceof Sym && arg.name === 'i') return new Mul(new Num(-1), arg);
         }
 
         return new Call(this.funcName, simpleArgs);
@@ -589,10 +640,28 @@ class Call extends Expr {
         if (this.funcName === 'cosh') return Math.cosh(argsVal[0]);
         if (this.funcName === 'tanh') return Math.tanh(argsVal[0]);
         if (this.funcName === 'exp') return Math.exp(argsVal[0]);
+        if (this.funcName === 'sec') return 1 / Math.cos(argsVal[0]);
+        if (this.funcName === 'csc') return 1 / Math.sin(argsVal[0]);
+        if (this.funcName === 'cot') return 1 / Math.tan(argsVal[0]);
+        if (this.funcName === 'asec') return Math.acos(1 / argsVal[0]);
+        if (this.funcName === 'acsc') return Math.asin(1 / argsVal[0]);
+        if (this.funcName === 'acot') return Math.atan(1 / argsVal[0]);
+        if (this.funcName === 'sech') return 1 / Math.cosh(argsVal[0]);
+        if (this.funcName === 'csch') return 1 / Math.sinh(argsVal[0]);
+        if (this.funcName === 'coth') return 1 / Math.tanh(argsVal[0]);
+        if (this.funcName === 'asinh') return Math.asinh(argsVal[0]); // Already there but confirming
+        if (this.funcName === 'acosh') return Math.acosh(argsVal[0]);
+        if (this.funcName === 'atanh') return Math.atanh(argsVal[0]);
+        if (this.funcName === 'asech') return Math.acosh(1 / argsVal[0]);
+        if (this.funcName === 'acsch') return Math.asinh(1 / argsVal[0]);
+        if (this.funcName === 'acoth') return Math.atanh(1 / argsVal[0]);
+
         if (this.funcName === 'ln') return Math.log(argsVal[0]);
         if (this.funcName === 'log') return Math.log10(argsVal[0]);
+        if (this.funcName === 'log2') return Math.log2(argsVal[0]);
         if (this.funcName === 'sqrt') return Math.sqrt(argsVal[0]);
         if (this.funcName === 'abs') return Math.abs(argsVal[0]);
+        if (this.funcName === 'sign') return Math.sign(argsVal[0]);
         if (this.funcName === 'floor') return Math.floor(argsVal[0]);
         if (this.funcName === 'ceil') return Math.ceil(argsVal[0]);
         if (this.funcName === 'round') return Math.round(argsVal[0]);
@@ -632,11 +701,18 @@ class Call extends Expr {
         if (this.funcName === 'cosh') return new Mul(new Call('sinh', [u]), u.diff(varName));
         if (this.funcName === 'tanh') return new Mul(new Div(new Num(1), new Pow(new Call('cosh', [u]), new Num(2))), u.diff(varName));
 
+        if (this.funcName === 'sec') return new Mul(new Mul(new Call('sec', [u]), new Call('tan', [u])), u.diff(varName));
+        if (this.funcName === 'csc') return new Mul(new Mul(new Num(-1), new Mul(new Call('csc', [u]), new Call('cot', [u]))), u.diff(varName));
+        if (this.funcName === 'cot') return new Mul(new Mul(new Num(-1), new Pow(new Call('csc', [u]), new Num(2))), u.diff(varName));
+
         if (this.funcName === 'exp') return new Mul(this, u.diff(varName));
         if (this.funcName === 'ln') return new Div(u.diff(varName), u);
         if (this.funcName === 'log') {
             // d/dx log10(u) = u' / (u * ln(10))
             return new Div(u.diff(varName), new Mul(u, new Call('ln', [new Num(10)])));
+        }
+        if (this.funcName === 'log2') {
+             return new Div(u.diff(varName), new Mul(u, new Call('ln', [new Num(2)])));
         }
         if (this.funcName === 'sqrt') return new Div(u.diff(varName), new Mul(new Num(2), new Call('sqrt', [u])));
         // Default to symbolic diff
@@ -654,7 +730,7 @@ class Call extends Expr {
         const bindingFunctions = ['integrate', 'sum', 'product', 'limit', 'diff', 'solve', 'plot', 'taylor'];
         if (bindingFunctions.includes(this.funcName) && this.args.length >= 2) {
             const boundVar = this.args[1];
-            if (boundVar instanceof Symbol && boundVar.name === varName.name) {
+            if (boundVar instanceof Sym && boundVar.name === varName.name) {
                 // The variable being substituted is the bound variable.
                 // Do NOT substitute in the body (arg 0) or the bound variable definition (arg 1).
                 // However, limits/ranges (args 2+) might still need substitution if they are distinct from the bound variable scope.
@@ -681,16 +757,26 @@ class Call extends Expr {
             'asin': '\\arcsin',
             'acos': '\\arccos',
             'atan': '\\arctan',
+            'sec': '\\sec',
+            'csc': '\\csc',
+            'cot': '\\cot',
+            'asec': '\\operatorname{arcsec}',
+            'acsc': '\\operatorname{arccsc}',
+            'acot': '\\operatorname{arccot}',
             'asinh': '\\operatorname{asinh}',
             'acosh': '\\operatorname{acosh}',
             'atanh': '\\operatorname{atanh}',
+            'sech': '\\operatorname{sech}',
+            'csch': '\\operatorname{csch}',
+            'coth': '\\operatorname{coth}',
             'lcm': '\\operatorname{lcm}',
             'floor': '\\lfloor ' + argsTex[0] + ' \\rfloor',
             'ceil': '\\lceil ' + argsTex[0] + ' \\rceil',
             'trace': '\\operatorname{tr}',
             'real': '\\Re',
             'imag': '\\Im',
-            'conj': '\\overline{' + argsTex[0] + '}'
+            'conj': '\\overline{' + argsTex[0] + '}',
+            'sign': '\\operatorname{sgn}'
         };
 
         if (this.funcName === 'floor') return `\\lfloor ${argsTex[0]} \\rfloor`;
@@ -703,6 +789,9 @@ class Call extends Expr {
 
         if (this.funcName === 'inv' && argsTex.length === 1) {
              return `\\left(${argsTex[0]}\\right)^{-1}`;
+        }
+        if (this.funcName === 'log2' && argsTex.length === 1) {
+             return `\\log_2\\left(${argsTex[0]}\\right)`;
         }
         if (this.funcName === 'trans' && argsTex.length === 1) {
              return `\\left(${argsTex[0]}\\right)^{T}`;

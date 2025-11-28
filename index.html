@@ -260,6 +260,40 @@
         .action-btn.secondary {
             background-color: #6c757d;
         }
+        .matrix-grid {
+            display: grid;
+            gap: 5px;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        .matrix-cell {
+            width: 50px;
+            text-align: center;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .function-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        .function-btn {
+            padding: 12px;
+            background: #e9ecef;
+            border: 1px solid #ced4da;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 1.1em;
+            cursor: pointer;
+            color: var(--text-color);
+            transition: background 0.1s;
+        }
+        .function-btn:active {
+            background: #dde2e6;
+            transform: scale(0.98);
+        }
         .tool-result {
             margin-top: 25px;
             padding: 20px;
@@ -284,6 +318,12 @@
             margin-top: 0;
             border-bottom: 1px solid #eee;
             padding-bottom: 5px;
+        }
+        #calc-more-funcs {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
         }
         .variable-item {
             margin-bottom: 8px;
@@ -326,6 +366,10 @@
 
     <!-- App Grid (Interactive Mode) -->
     <div id="app-grid">
+        <div class="app-card" onclick="openTool('calculator')">
+            <span class="app-icon" style="color: #007bff;">🧮</span>
+            <span class="app-name">Calculator</span>
+        </div>
         <div class="app-card" onclick="openTool('algebra')">
             <span class="app-icon" style="color: #e83e8c;">∑</span>
             <span class="app-name">Algebra</span>
@@ -358,6 +402,10 @@
             <span class="app-icon" style="color: #343a40;">🕒</span>
             <span class="app-name">History</span>
         </div>
+        <div class="app-card" onclick="openTool('converter')">
+            <span class="app-icon" style="color: #6610f2;">⚖️</span>
+            <span class="app-name">Converter</span>
+        </div>
         <div class="app-card" onclick="openTool('settings')">
             <span class="app-icon" style="color: #007bff;">⚙️</span>
             <span class="app-name">Settings</span>
@@ -365,6 +413,68 @@
     </div>
 
     <!-- Tool Views -->
+    <!-- CALCULATOR -->
+    <div id="tool-calculator" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Scientific Calculator</span>
+        </div>
+        <div class="tool-form">
+            <div class="form-group">
+                <input type="text" class="form-input" id="calc-main-input" placeholder="Enter expression..." style="font-size: 1.5em; padding: 15px;">
+            </div>
+
+            <div class="function-grid">
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', '(')">(</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', ')')">)</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', '^')">^</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sqrt(')">√</button>
+
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sin(')">sin</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'cos(')">cos</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'tan(')">tan</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'pi')">π</button>
+
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'ln(')">ln</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'log(')">log</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'e')">e</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'i')">i</button>
+
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'asin(')">asin</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'acos(')">acos</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'atan(')">atan</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'abs(')">abs</button>
+                <button class="function-btn" style="background-color: #ffe8cc; border-color: #ffc107;" onclick="insertAtCursor('calc-main-input', 'ans')">Ans</button>
+                <button class="function-btn" id="calc-more-btn" onclick="toggleMoreFuncs()">More</button>
+            </div>
+
+            <div class="function-grid" id="calc-more-funcs" style="display: none;">
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sec(')">sec</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'csc(')">csc</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'cot(')">cot</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sign(')">sgn</button>
+
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'asec(')">asec</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'acsc(')">acsc</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'acot(')">acot</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'log2(')">log2</button>
+
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'sinh(')">sinh</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'cosh(')">cosh</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'tanh(')">tanh</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'fibonacci(')">fib</button>
+
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'gamma(')">Γ</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'floor(')">flr</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'ceil(')">ceil</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'round(')">rnd</button>
+            </div>
+
+            <button class="action-btn" style="font-size: 1.2em; padding: 16px;" onclick="runTool('simplify', ['calc-main-input'])">Calculate</button>
+        </div>
+        <div class="tool-result" style="font-size: 1.5em; min-height: 80px;"></div>
+    </div>
+
     <!-- ALGEBRA -->
     <div id="tool-algebra" class="tool-view">
         <div class="tool-header">
@@ -548,6 +658,25 @@
         </div>
 
         <div class="tool-section">
+            <h3>Matrix Builder</h3>
+            <div class="tool-form">
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Rows</label>
+                        <input type="number" class="form-input" id="mat-rows" value="2" min="1" max="5">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Cols</label>
+                        <input type="number" class="form-input" id="mat-cols" value="2" min="1" max="5">
+                    </div>
+                </div>
+                <button class="action-btn secondary" onclick="generateMatrixGrid()">Generate Grid</button>
+                <div id="matrix-builder-container"></div>
+                <button class="action-btn" onclick="insertMatrix()">Insert Matrix</button>
+            </div>
+        </div>
+
+        <div class="tool-section">
              <h3>Vector Cross Product</h3>
              <div class="tool-form">
                 <div class="form-group">
@@ -612,6 +741,36 @@
             </div>
         </div>
         <div class="tool-result"></div>
+    </div>
+
+    <!-- CONVERTER -->
+    <div id="tool-converter" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Unit Converter</span>
+        </div>
+        <div class="tool-form">
+            <div class="form-group">
+                <label class="form-label">Category</label>
+                <select id="conv-category" class="form-input" onchange="updateConvUnits()">
+                    <option value="length">Length</option>
+                    <option value="mass">Mass</option>
+                    <option value="temp">Temperature</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <div class="form-group" style="flex:1">
+                    <label class="form-label">From</label>
+                    <input type="number" class="form-input" id="conv-val-from" oninput="runConverter('from')">
+                    <select id="conv-unit-from" class="form-input" onchange="runConverter('from')"></select>
+                </div>
+                <div class="form-group" style="flex:1">
+                    <label class="form-label">To</label>
+                    <input type="number" class="form-input" id="conv-val-to" oninput="runConverter('to')">
+                    <select id="conv-unit-to" class="form-input" onchange="runConverter('from')"></select>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- VARIABLES APP -->
@@ -682,6 +841,8 @@
             <li>plot(expr, var, [min], [max])</li>
             <li>det(M), inv(M), cross(a,b)</li>
             <li>mean(L), median(L)</li>
+            <li>sec, csc, cot, log2, sign</li>
+            <li>fibonacci(n), gamma(z)</li>
             <li>clear(), help()</li>
         </ul>
     </div>
@@ -700,6 +861,7 @@
         const variableList = document.getElementById('variable-list');
         const appVariableList = document.getElementById('app-variable-list');
         const modeToggle = document.getElementById('mode-toggle');
+        const darkModeToggle = document.getElementById('dark-mode-toggle');
         let isMobileMode = false;
 
         // Dark Mode Logic
@@ -748,6 +910,9 @@
                 const historyContent = document.getElementById('app-history-content');
                 historyContent.innerHTML = history.innerHTML;
             }
+            if (toolName === 'converter') {
+                updateConvUnits();
+            }
         };
 
         window.closeTool = function() {
@@ -763,6 +928,173 @@
         window.clearHistory = function() {
             history.innerHTML = '';
             document.getElementById('app-history-content').innerHTML = '';
+        };
+
+        window.toggleMoreFuncs = function() {
+            const moreDiv = document.getElementById('calc-more-funcs');
+            const btn = document.getElementById('calc-more-btn');
+            if (moreDiv.style.display === 'none') {
+                moreDiv.style.display = 'grid';
+                btn.textContent = 'Less';
+            } else {
+                moreDiv.style.display = 'none';
+                btn.textContent = 'More';
+            }
+        };
+
+        window.generateMatrixGrid = function() {
+            const rows = parseInt(document.getElementById('mat-rows').value);
+            const cols = parseInt(document.getElementById('mat-cols').value);
+            const container = document.getElementById('matrix-builder-container');
+            container.innerHTML = '';
+
+            const grid = document.createElement('div');
+            grid.className = 'matrix-grid';
+            grid.style.gridTemplateColumns = `repeat(${cols}, 50px)`;
+
+            for(let i=0; i<rows; i++) {
+                for(let j=0; j<cols; j++) {
+                    const input = document.createElement('input');
+                    input.className = 'matrix-cell';
+                    input.placeholder = '0';
+                    input.dataset.row = i;
+                    input.dataset.col = j;
+                    grid.appendChild(input);
+                }
+            }
+            container.appendChild(grid);
+        };
+
+        window.insertMatrix = function() {
+            const rows = parseInt(document.getElementById('mat-rows').value);
+            const cols = parseInt(document.getElementById('mat-cols').value);
+            const inputs = document.querySelectorAll('.matrix-cell');
+
+            // Build 2D array
+            const matrix = [];
+            for(let i=0; i<rows; i++) matrix[i] = [];
+
+            inputs.forEach(inp => {
+                const r = parseInt(inp.dataset.row);
+                const c = parseInt(inp.dataset.col);
+                const val = inp.value || '0';
+                matrix[r][c] = val;
+            });
+
+            // Format [[...]]
+            const str = '[' + matrix.map(row => '[' + row.join(',') + ']').join(',') + ']';
+
+            // Insert into lin-expr
+            const field = document.getElementById('lin-expr');
+            field.value = str;
+        };
+
+        const convRates = {
+            length: { m: 1, km: 1000, cm: 0.01, mm: 0.001, ft: 0.3048, in: 0.0254, mi: 1609.34 },
+            mass: { kg: 1, g: 0.001, mg: 0.000001, lb: 0.453592, oz: 0.0283495 },
+            temp: {} // Handled separately
+        };
+
+        window.updateConvUnits = function() {
+            const cat = document.getElementById('conv-category').value;
+            const fromSelect = document.getElementById('conv-unit-from');
+            const toSelect = document.getElementById('conv-unit-to');
+            fromSelect.innerHTML = '';
+            toSelect.innerHTML = '';
+
+            let units = [];
+            if (cat === 'temp') units = ['C', 'F', 'K'];
+            else units = Object.keys(convRates[cat]);
+
+            units.forEach(u => {
+                fromSelect.add(new Option(u, u));
+                toSelect.add(new Option(u, u));
+            });
+
+            // Defaults
+            if (cat === 'length') { fromSelect.value = 'm'; toSelect.value = 'ft'; }
+            if (cat === 'mass') { fromSelect.value = 'kg'; toSelect.value = 'lb'; }
+            if (cat === 'temp') { fromSelect.value = 'C'; toSelect.value = 'F'; }
+        };
+
+        window.runConverter = function(dir) {
+            const cat = document.getElementById('conv-category').value;
+            const fromUnit = document.getElementById('conv-unit-from').value;
+            const toUnit = document.getElementById('conv-unit-to').value;
+
+            const inputId = dir === 'from' ? 'conv-val-from' : 'conv-val-to';
+            const outputId = dir === 'from' ? 'conv-val-to' : 'conv-val-from';
+
+            const val = parseFloat(document.getElementById(inputId).value);
+            if (isNaN(val)) {
+                document.getElementById(outputId).value = '';
+                return;
+            }
+
+            let res;
+            if (cat === 'temp') {
+                // Convert to C
+                let c;
+                if (dir === 'from') {
+                    if (fromUnit === 'C') c = val;
+                    if (fromUnit === 'F') c = (val - 32) * 5/9;
+                    if (fromUnit === 'K') c = val - 273.15;
+
+                    // Convert C to target
+                    if (toUnit === 'C') res = c;
+                    if (toUnit === 'F') res = c * 9/5 + 32;
+                    if (toUnit === 'K') res = c + 273.15;
+                } else {
+                    // Reverse logic same as above just swapped
+                    // Actually simpler to just invoke from logic but swap units? No, infinite loop.
+                    // Just implement inverse.
+                    // Converting TO 'toUnit' FROM 'fromUnit' with value 'val' (which is in toUnit)
+                    // Wait, if dir is 'to', user typed in 'to' box. We update 'from'.
+                    // So calculate FromVal based on ToVal.
+
+                    // Convert ToVal (in ToUnit) to C
+                    if (toUnit === 'C') c = val;
+                    if (toUnit === 'F') c = (val - 32) * 5/9;
+                    if (toUnit === 'K') c = val - 273.15;
+
+                    // Convert C to FromUnit
+                    if (fromUnit === 'C') res = c;
+                    if (fromUnit === 'F') res = c * 9/5 + 32;
+                    if (fromUnit === 'K') res = c + 273.15;
+                }
+            } else {
+                // Linear
+                const factorFrom = convRates[cat][fromUnit];
+                const factorTo = convRates[cat][toUnit];
+
+                if (dir === 'from') {
+                    // val * from = base = res * to
+                    res = val * (factorFrom / factorTo);
+                } else {
+                    res = val * (factorTo / factorFrom);
+                }
+            }
+
+            document.getElementById(outputId).value = parseFloat(res.toFixed(6));
+        };
+
+        window.insertAtCursor = function(fieldId, val) {
+            const field = document.getElementById(fieldId);
+            if (!field) return;
+
+            // Standard insert at cursor logic
+            if (field.selectionStart || field.selectionStart === 0) {
+                const startPos = field.selectionStart;
+                const endPos = field.selectionEnd;
+                field.value = field.value.substring(0, startPos)
+                    + val
+                    + field.value.substring(endPos, field.value.length);
+                field.selectionStart = startPos + val.length;
+                field.selectionEnd = startPos + val.length;
+            } else {
+                field.value += val;
+            }
+            field.focus();
         };
 
         window.runTool = function(action, inputTokens) {
@@ -826,6 +1158,11 @@
             }, 50); // Small delay to allow DOM to update from evaluate()
         };
 
+        function deleteVariable(name) {
+            delete cas.variables[name];
+            updateVariables();
+        }
+
         function updateVariables() {
             const vars = cas.getVariables();
             const funcs = cas.getFunctions ? cas.getFunctions() : {};
@@ -847,10 +1184,35 @@
                     varNames.forEach(name => {
                         const item = document.createElement('div');
                         item.className = 'variable-item';
+                        item.style.display = 'flex';
+                        item.style.justifyContent = 'space-between';
+                        item.style.alignItems = 'center';
+
                         const val = vars[name];
                         let valStr = val.toString();
                         if (valStr.length > 20) valStr = valStr.substring(0, 17) + '...';
-                        item.innerHTML = `<span class="variable-name">${name}</span> = <span class="variable-value">${valStr}</span>`;
+
+                        const textSpan = document.createElement('span');
+                        textSpan.innerHTML = `<span class="variable-name">${name}</span> = <span class="variable-value">${valStr}</span>`;
+
+                        // Prevent deletion of 'ans' or constants like 'pi' if we want to protect them.
+                        // For now, allow deleting everything except maybe PI?
+                        // Let's allow everything.
+                        const delBtn = document.createElement('button');
+                        delBtn.textContent = '×';
+                        delBtn.style.border = 'none';
+                        delBtn.style.background = 'transparent';
+                        delBtn.style.color = '#dc3545';
+                        delBtn.style.fontWeight = 'bold';
+                        delBtn.style.cursor = 'pointer';
+                        delBtn.style.fontSize = '1.2em';
+                        delBtn.onclick = (e) => {
+                            e.stopPropagation(); // Prevent clicking item if that becomes a feature
+                            deleteVariable(name);
+                        };
+
+                        item.appendChild(textSpan);
+                        item.appendChild(delBtn);
                         container.appendChild(item);
                     });
                 }
@@ -878,7 +1240,7 @@
             if (appVariableList) render(appVariableList);
         }
 
-        function drawPlot(canvas, result) {
+        function drawPlot(canvas, result, explicitBounds = null) {
             const ctx = canvas.getContext('2d');
             const width = canvas.width;
             const height = canvas.height;
@@ -891,39 +1253,59 @@
             }
 
             // Determine global range
-            let minX = parseFloat(plots[0].min);
-            let maxX = parseFloat(plots[0].max);
+            // If explicitBounds is provided (from zoom/pan), use them.
+            // Otherwise calculate default from args.
 
-            for(const p of plots) {
-                if (p.min < minX) minX = parseFloat(p.min);
-                if (p.max > maxX) maxX = parseFloat(p.max);
+            let minX, maxX, minY, maxY;
+
+            if (explicitBounds) {
+                minX = explicitBounds.minX;
+                maxX = explicitBounds.maxX;
+                minY = explicitBounds.minY;
+                maxY = explicitBounds.maxY;
+            } else {
+                minX = parseFloat(plots[0].min);
+                maxX = parseFloat(plots[0].max);
+
+                for(const p of plots) {
+                    if (p.min < minX) minX = parseFloat(p.min);
+                    if (p.max > maxX) maxX = parseFloat(p.max);
+                }
             }
+
+            // Store current bounds on canvas for event handlers
+            canvas.plotBounds = { minX, maxX, minY, maxY };
+            canvas.plotResult = result;
 
             // Calculate points for all plots
             const allPoints = []; // Array of arrays of points
-            let minY = Infinity;
-            let maxY = -Infinity;
+            let calcMinY = Infinity;
+            let calcMaxY = -Infinity;
 
-            const steps = width;
+            const steps = width; // Pixel precision
 
             for(const p of plots) {
                 const points = [];
-                const pMin = parseFloat(p.min);
-                const pMax = parseFloat(p.max);
+                // Respect plot definition range if stricter than view?
+                // Usually we want to view outside definition? No, function might be undefined.
+                // We plot in the intersection of view X and defined X.
+                // But simplified: just iterate view X.
 
                 for (let i = 0; i <= steps; i++) {
                     const x = minX + (maxX - minX) * (i / steps);
-                    if (x < pMin || x > pMax) continue;
 
                     try {
+                        // Optimization: if simple num, skip parsing?
+                        // Using substitute is slow for high frequency.
+                        // Ideally we compile to JS function.
                         const valExpr = p.expr.substitute(p.var, new Num(x));
                         const simplified = valExpr.simplify();
                         if (simplified instanceof Num) {
                             const y = simplified.value;
                             if (isNaN(y) || !isFinite(y)) continue;
                             points.push({x, y});
-                            if (y < minY) minY = y;
-                            if (y > maxY) maxY = y;
+                            if (y < calcMinY) calcMinY = y;
+                            if (y > calcMaxY) calcMaxY = y;
                         }
                     } catch(e) {
                         // Ignore
@@ -932,19 +1314,24 @@
                 allPoints.push(points);
             }
 
-            if (minY === Infinity || maxY === -Infinity) {
-                ctx.fillText("No valid points to plot", 10, 20);
-                return;
-            }
-
-            // Add padding
-            const yRange = maxY - minY;
-            if (yRange === 0) {
-                 minY -= 1;
-                 maxY += 1;
-            } else {
-                minY -= yRange * 0.1;
-                maxY += yRange * 0.1;
+            if (!explicitBounds || explicitBounds.minY === undefined) {
+                // Auto-scale Y
+                if (calcMinY === Infinity || calcMaxY === -Infinity) {
+                    // Default range if no points
+                    minY = -10;
+                    maxY = 10;
+                } else {
+                    const yRange = calcMaxY - calcMinY;
+                    if (yRange === 0) {
+                        minY = calcMinY - 1;
+                        maxY = calcMaxY + 1;
+                    } else {
+                        minY = calcMinY - yRange * 0.1;
+                        maxY = calcMaxY + yRange * 0.1;
+                    }
+                }
+                canvas.plotBounds.minY = minY;
+                canvas.plotBounds.maxY = maxY;
             }
 
             // Clear
@@ -973,6 +1360,12 @@
             // Draw Functions
             const colors = ["#007bff", "#28a745", "#dc3545", "#fd7e14", "#6f42c1"];
 
+            ctx.save();
+            // Clip to canvas area
+            ctx.beginPath();
+            ctx.rect(0,0,width,height);
+            ctx.clip();
+
             for(let i=0; i<allPoints.length; i++) {
                 const points = allPoints[i];
                 ctx.strokeStyle = colors[i % colors.length];
@@ -982,6 +1375,8 @@
                 for (const p of points) {
                     const px = ((p.x - minX) / (maxX - minX)) * width;
                     const py = height - ((p.y - minY) / (maxY - minY)) * height;
+
+                    // Simple line plot
                     if (first) {
                         ctx.moveTo(px, py);
                         first = false;
@@ -991,19 +1386,159 @@
                 }
                 ctx.stroke();
             }
+            ctx.restore();
 
             // Labels
             ctx.fillStyle = "#333";
             ctx.font = "10px sans-serif";
             ctx.fillText(minX.toFixed(1), 5, height - 5);
-            ctx.fillText(maxX.toFixed(1), width - 25, height - 5);
+            ctx.fillText(maxX.toFixed(1), width - 35, height - 5);
             ctx.fillText(maxY.toFixed(1), 5, 10);
             ctx.fillText(minY.toFixed(1), 5, height - 20);
+        }
+
+        function setupInteractivePlot(canvas) {
+            let isDragging = false;
+            let lastX = 0;
+            let lastY = 0;
+
+            const getPos = (e) => {
+                if (e.touches && e.touches.length > 0) {
+                    return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                }
+                return { x: e.clientX, y: e.clientY };
+            };
+
+            const onStart = (e) => {
+                isDragging = true;
+                const pos = getPos(e);
+                lastX = pos.x;
+                lastY = pos.y;
+                e.preventDefault(); // Prevent scroll on mobile
+            };
+
+            const onMove = (e) => {
+                if (!isDragging) return;
+                e.preventDefault();
+                const pos = getPos(e);
+                const dx = pos.x - lastX;
+                const dy = pos.y - lastY;
+                lastX = pos.x;
+                lastY = pos.y;
+
+                // Calculate shift in graph coordinates
+                const b = canvas.plotBounds;
+                const width = canvas.width;
+                const height = canvas.height;
+
+                const xRange = b.maxX - b.minX;
+                const yRange = b.maxY - b.minY;
+
+                const shiftX = -(dx / width) * xRange;
+                const shiftY = (dy / height) * yRange; // Y is inverted
+
+                const newBounds = {
+                    minX: b.minX + shiftX,
+                    maxX: b.maxX + shiftX,
+                    minY: b.minY + shiftY,
+                    maxY: b.maxY + shiftY
+                };
+
+                drawPlot(canvas, canvas.plotResult, newBounds);
+            };
+
+            const onEnd = (e) => {
+                isDragging = false;
+            };
+
+            const onWheel = (e) => {
+                e.preventDefault();
+                const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
+
+                const b = canvas.plotBounds;
+                const xRange = b.maxX - b.minX;
+                const yRange = b.maxY - b.minY;
+                const centerX = (b.minX + b.maxX) / 2;
+                const centerY = (b.minY + b.maxY) / 2;
+
+                const newXRange = xRange * zoomFactor;
+                const newYRange = yRange * zoomFactor;
+
+                const newBounds = {
+                    minX: centerX - newXRange / 2,
+                    maxX: centerX + newXRange / 2,
+                    minY: centerY - newYRange / 2,
+                    maxY: centerY + newYRange / 2
+                };
+
+                drawPlot(canvas, canvas.plotResult, newBounds);
+            };
+
+            canvas.addEventListener('mousedown', onStart);
+            canvas.addEventListener('mousemove', onMove);
+            canvas.addEventListener('mouseup', onEnd);
+            canvas.addEventListener('mouseleave', onEnd);
+
+            canvas.addEventListener('touchstart', onStart, {passive: false});
+            canvas.addEventListener('touchmove', onMove, {passive: false});
+            canvas.addEventListener('touchend', onEnd);
+
+            canvas.addEventListener('wheel', onWheel, {passive: false});
         }
 
         function addToHistory(command, result, isError, latex) {
             const entryDiv = document.createElement('div');
             entryDiv.className = 'entry';
+
+            // Allow clicking entry to copy result to input
+            entryDiv.style.cursor = 'pointer';
+            entryDiv.title = 'Click to insert result into input';
+            entryDiv.onclick = function() {
+                // Determine what to insert: result text or latex?
+                // For simplicity, insert the result text if it's not complex object
+                if (isError) return;
+
+                let valToInsert = '';
+                if (result && result.toLatex) {
+                     // If it's an object with toLatex, it might be a Plot or Info.
+                     // We probably don't want to insert "Plotting..." text.
+                     // If it's a plot, do nothing.
+                     if (result.type === 'plot') return;
+                     if (result.type === 'info') return;
+                }
+
+                // If result is string (from toString), use it.
+                // But wait, result argument is sometimes object, sometimes string.
+                if (typeof result === 'string') valToInsert = result;
+                else if (result && typeof result.toString === 'function') valToInsert = result.toString();
+
+                // Remove parens if it's a simple number? No, keep as is.
+
+                // Insert into active input
+                // Check if a tool input is focused, otherwise use main input
+                // But on mobile, we might not have focus.
+                // We default to the main calculator input if we are in app mode calculator?
+                // Or just the main input area in desktop.
+
+                const activeElement = document.activeElement;
+                if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+                    insertAtCursor(activeElement.id, valToInsert);
+                } else {
+                    // Try to find visible tool input
+                    const visibleTool = document.querySelector('.tool-view[style*="block"]');
+                    if (visibleTool) {
+                         const firstInput = visibleTool.querySelector('input');
+                         if (firstInput) insertAtCursor(firstInput.id, valToInsert);
+                    } else {
+                        // Desktop mode main input
+                        const mainInput = document.getElementById('command-input');
+                        if (mainInput) {
+                            mainInput.value = valToInsert; // Replace or append? Let's replace for history recall usually.
+                            // insertAtCursor(mainInput.id, valToInsert);
+                        }
+                    }
+                }
+            };
 
             const commandDiv = document.createElement('div');
             commandDiv.className = 'command';
@@ -1041,10 +1576,14 @@
                 const canvas = document.createElement('canvas');
                 canvas.width = 400;
                 canvas.height = 300;
+                canvas.style.cursor = 'move';
                 resultDiv.appendChild(canvas);
 
                 // Draw after appending
-                setTimeout(() => drawPlot(canvas, result), 0);
+                setTimeout(() => {
+                    drawPlot(canvas, result);
+                    setupInteractivePlot(canvas);
+                }, 0);
 
                 // Also show expression
                  const textDiv = document.createElement('div');
