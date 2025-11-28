@@ -119,6 +119,12 @@ class Add extends BinaryOp {
         if (r instanceof Num && r.value === 0) return l;
         if (r instanceof Num && r.value < 0) return new Sub(l, new Num(-r.value)).simplify();
         if (l instanceof Num && l.value < 0) return new Sub(r, new Num(-l.value)).simplify(); // (-a) + b -> b - a
+
+        // x + (-y) -> x - y
+        if (r instanceof Mul && r.left instanceof Num && r.left.value === -1) {
+            return new Sub(l, r.right).simplify();
+        }
+
         if (l.toString() === r.toString()) return new Mul(new Num(2), l);
         return new Add(l, r);
     }
@@ -147,6 +153,12 @@ class Sub extends BinaryOp {
 
         if (l instanceof Num && r instanceof Num) return new Num(l.value - r.value);
         if (r instanceof Num && r.value === 0) return l;
+
+        // x - (-y) -> x + y
+        if (r instanceof Mul && r.left instanceof Num && r.left.value === -1) {
+            return new Add(l, r.right).simplify();
+        }
+
         if (l.toString() === r.toString()) return new Num(0);
         return new Sub(l, r);
     }
@@ -252,6 +264,11 @@ class Mul extends BinaryOp {
         if (r instanceof Num && r.value === 0) return new Num(0);
         if (l instanceof Num && l.value === 1) return r;
         if (r instanceof Num && r.value === 1) return l;
+
+        // Scalar Associativity: c1 * (c2 * x) -> (c1*c2) * x
+        if (l instanceof Num && r instanceof Mul && r.left instanceof Num) {
+            return new Mul(new Num(l.value * r.left.value), r.right).simplify();
+        }
 
         // Simplify Mul with Div: a * (b / c) -> (a * b) / c
         if (r instanceof Div) {
@@ -386,10 +403,17 @@ class Pow extends BinaryOp {
     expand() {
         const l = this.left.expand();
         const r = this.right.expand();
+        // (a + b)^2 = a^2 + 2ab + b^2
         if (r instanceof Num && l instanceof Add && r.value === 2) {
             const a = l.left;
             const b = l.right;
             return new Add(new Add(new Pow(a, new Num(2)), new Mul(new Num(2), new Mul(a, b))), new Pow(b, new Num(2))).expand();
+        }
+        // (a - b)^2 = a^2 - 2ab + b^2
+        if (r instanceof Num && l instanceof Sub && r.value === 2) {
+            const a = l.left;
+            const b = l.right;
+            return new Sub(new Add(new Pow(a, new Num(2)), new Pow(b, new Num(2))), new Mul(new Num(2), new Mul(a, b))).expand();
         }
         return new Pow(l, r);
     }
