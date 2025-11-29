@@ -159,8 +159,11 @@ class CAS {
                  if (args.length < 2) throw new Error("plot requires at least 2 arguments: expression and variable");
                  const expr = args[0];
                  const varNode = args[1];
-                 const min = args.length > 2 ? args[2].value : -10;
-                 const max = args.length > 3 ? args[3].value : 10;
+                 let min = args.length > 2 ? args[2].evaluateNumeric() : -10;
+                 let max = args.length > 3 ? args[3].evaluateNumeric() : 10;
+
+                 if (isNaN(min)) min = -10;
+                 if (isNaN(max)) max = 10;
 
                  // Return a special object that the frontend can recognize
                  return {
@@ -273,6 +276,11 @@ class CAS {
             if (node.funcName === 'nPr') {
                 if (args.length !== 2) throw new Error("nPr requires 2 arguments");
                 return this._nPr(args[0], args[1]);
+            }
+
+            if (node.funcName === 'isPrime') {
+                if (args.length !== 1) throw new Error("isPrime requires 1 argument");
+                return this._isPrime(args[0]);
             }
 
             if (node.funcName === 'trace') {
@@ -936,6 +944,18 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
             return new Num(this._factorial(valN) / this._factorial(valN - valK));
         }
         return new Call('nPr', [n, k]);
+    }
+
+    _isPrime(n) {
+        if (n instanceof Num && Number.isInteger(n.value)) {
+            const val = n.value;
+            if (val < 2) return new Num(0);
+            for (let i = 2, s = Math.sqrt(val); i <= s; i++) {
+                if (val % i === 0) return new Num(0);
+            }
+            return new Num(1);
+        }
+        return new Call('isPrime', [n]);
     }
 
     _trace(matrix) {
