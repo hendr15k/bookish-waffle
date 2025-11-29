@@ -864,18 +864,20 @@
         let isMobileMode = false;
 
         // Dark Mode Logic
-        if (localStorage.getItem('darkMode') === 'true') {
-            document.body.classList.add('dark-mode');
-            darkModeToggle.checked = true;
-        }
+        try {
+            if (localStorage.getItem('darkMode') === 'true') {
+                document.body.classList.add('dark-mode');
+                darkModeToggle.checked = true;
+            }
+        } catch(e) { console.warn("LocalStorage access denied"); }
 
         darkModeToggle.addEventListener('change', (e) => {
             if (e.target.checked) {
                 document.body.classList.add('dark-mode');
-                localStorage.setItem('darkMode', 'true');
+                try { localStorage.setItem('darkMode', 'true'); } catch(e) {}
             } else {
                 document.body.classList.remove('dark-mode');
-                localStorage.setItem('darkMode', 'false');
+                try { localStorage.setItem('darkMode', 'false'); } catch(e) {}
             }
         });
 
@@ -1325,6 +1327,45 @@
             ctx.fillText(maxX.toFixed(1), width - 35, height - 5);
             ctx.fillText(maxY.toFixed(1), 5, 10);
             ctx.fillText(minY.toFixed(1), 5, height - 20);
+
+            // Legend
+            if (plots.length > 0) {
+                const legendX = width - 120;
+                let legendY = 20;
+
+                // Background
+                ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+                ctx.fillRect(legendX - 5, legendY - 10, 115, (plots.length + (scatterPoints.length > 0 ? 1 : 0)) * 20 + 5);
+                ctx.strokeStyle = "#ccc";
+                ctx.lineWidth = 1;
+                ctx.strokeRect(legendX - 5, legendY - 10, 115, (plots.length + (scatterPoints.length > 0 ? 1 : 0)) * 20 + 5);
+
+                // Function entries
+                for (let i = 0; i < plots.length; i++) {
+                    const p = plots[i];
+                    ctx.beginPath();
+                    ctx.strokeStyle = colors[i % colors.length];
+                    ctx.lineWidth = 2;
+                    ctx.moveTo(legendX, legendY);
+                    ctx.lineTo(legendX + 20, legendY);
+                    ctx.stroke();
+
+                    ctx.fillStyle = "#333";
+                    ctx.fillText(`y = ${p.expr.toString().substring(0, 15)}...`, legendX + 25, legendY + 3);
+                    legendY += 20;
+                }
+
+                // Scatter entry
+                if (scatterPoints.length > 0) {
+                    ctx.beginPath();
+                    ctx.fillStyle = "rgba(255, 0, 0, 0.7)";
+                    ctx.arc(legendX + 10, legendY, 3, 0, 2 * Math.PI);
+                    ctx.fill();
+
+                    ctx.fillStyle = "#333";
+                    ctx.fillText("Data Points", legendX + 25, legendY + 3);
+                }
+            }
         }
 
         function setupInteractivePlot(canvas) {
@@ -1333,10 +1374,11 @@
             let lastY = 0;
 
             const getPos = (e) => {
+                const rect = canvas.getBoundingClientRect();
                 if (e.touches && e.touches.length > 0) {
-                    return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                    return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
                 }
-                return { x: e.clientX, y: e.clientY };
+                return { x: e.clientX - rect.left, y: e.clientY - rect.top };
             };
 
             const onStart = (e) => {
@@ -1348,33 +1390,62 @@
             };
 
             const onMove = (e) => {
-                if (!isDragging) return;
-                e.preventDefault();
                 const pos = getPos(e);
-                const dx = pos.x - lastX;
-                const dy = pos.y - lastY;
-                lastX = pos.x;
-                lastY = pos.y;
-
-                // Calculate shift in graph coordinates
                 const b = canvas.plotBounds;
                 const width = canvas.width;
                 const height = canvas.height;
-
                 const xRange = b.maxX - b.minX;
                 const yRange = b.maxY - b.minY;
 
-                const shiftX = -(dx / width) * xRange;
-                const shiftY = (dy / height) * yRange; // Y is inverted
+                if (isDragging) {
+                    e.preventDefault();
+                    const dx = pos.x - lastX;
+                    const dy = pos.y - lastY;
+                    lastX = pos.x;
+                    lastY = pos.y;
 
-                const newBounds = {
-                    minX: b.minX + shiftX,
-                    maxX: b.maxX + shiftX,
-                    minY: b.minY + shiftY,
-                    maxY: b.maxY + shiftY
-                };
+                    const shiftX = -(dx / width) * xRange;
+                    const shiftY = (dy / height) * yRange; // Y is inverted
 
-                drawPlot(canvas, canvas.plotResult, newBounds);
+                    const newBounds = {
+                        minX: b.minX + shiftX,
+                        maxX: b.maxX + shiftX,
+                        minY: b.minY + shiftY,
+                        maxY: b.maxY + shiftY
+                    };
+
+                    drawPlot(canvas, canvas.plotResult, newBounds);
+                } else {
+                    // Hover effect (Crosshair & Coords)
+                    drawPlot(canvas, canvas.plotResult, canvas.plotBounds);
+
+                    const ctx = canvas.getContext('2d');
+                    const x = pos.x;
+                    const y = pos.y;
+
+                    // Draw Crosshair
+                    ctx.beginPath();
+                    ctx.strokeStyle = '#aaa';
+                    ctx.setLineDash([5, 5]);
+                    ctx.lineWidth = 1;
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, height);
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(width, y);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    // Draw Coordinates
+                    const b = canvas.plotBounds;
+                    const valX = b.minX + (x / width) * (b.maxX - b.minX);
+                    const valY = b.minY + ((height - y) / height) * (b.maxY - b.minY);
+
+                    const text = `(${valX.toFixed(2)}, ${valY.toFixed(2)})`;
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                    ctx.fillRect(x + 10, y - 25, ctx.measureText(text).width + 10, 20);
+                    ctx.fillStyle = '#333';
+                    ctx.fillText(text, x + 15, y - 10);
+                }
             };
 
             const onEnd = (e) => {
@@ -1567,6 +1638,222 @@
             input.value = '';
         }
 
+        // --- Helper Functions for UI Tools ---
+
+        window.runRegression = function() {
+            const dataStr = document.getElementById('reg-data').value;
+            if (!dataStr) return;
+
+            try {
+                // Parse data using CAS parser to handle brackets safely
+                const lexer = new Lexer(dataStr);
+                const parser = new Parser(lexer);
+                const dataTree = parser.parse();
+
+                // Check format: Vec of Vecs
+                if (!(dataTree instanceof Vec)) throw new Error("Data must be a list of points e.g. [[1,1], [2,3]]");
+
+                const regressionEq = cas._linearRegression(dataTree); // Access internal for now or use evaluate logic
+                // Better: construct command string
+
+                const cmd = `linearRegression(${dataStr})`;
+                const lex = new Lexer(cmd);
+                const par = new Parser(lex);
+                const tree = par.parse();
+                const result = cas.evaluate(tree); // Should be the line expression
+
+                // Extract points for plotting
+                const points = [];
+                for(const pt of dataTree.elements) {
+                    if (pt instanceof Vec && pt.elements.length === 2) {
+                        const x = pt.elements[0].evaluateNumeric();
+                        const y = pt.elements[1].evaluateNumeric();
+                        points.push({x, y});
+                    }
+                }
+
+                // Construct Plot Object
+                // Estimate bounds
+                let minX = Infinity, maxX = -Infinity;
+                for(const p of points) {
+                    if (p.x < minX) minX = p.x;
+                    if (p.x > maxX) maxX = p.x;
+                }
+                const margin = (maxX - minX) * 0.2 || 1;
+                minX -= margin;
+                maxX += margin;
+
+                const plotObj = {
+                    type: 'plot',
+                    expr: result,
+                    var: new Sym('x'), // Regression returns expression in x
+                    min: minX,
+                    max: maxX,
+                    scatter: points,
+                    toLatex: () => `\\text{Regression: } ${result.toLatex()}`
+                };
+
+                addToHistory(cmd, plotObj, false, null);
+
+            } catch(e) {
+                addToHistory("Regression Error", e.message, true);
+            }
+        };
+
+        window.generateMatrixGrid = function() {
+            const r = parseInt(document.getElementById('mat-rows').value);
+            const c = parseInt(document.getElementById('mat-cols').value);
+            const container = document.getElementById('matrix-builder-container');
+            container.innerHTML = '';
+
+            const table = document.createElement('table');
+            for(let i=0; i<r; i++) {
+                const tr = document.createElement('tr');
+                for(let j=0; j<c; j++) {
+                    const td = document.createElement('td');
+                    const inp = document.createElement('input');
+                    inp.type = 'number';
+                    inp.className = 'form-input';
+                    inp.style.width = '50px';
+                    inp.style.padding = '5px';
+                    inp.dataset.row = i;
+                    inp.dataset.col = j;
+                    td.appendChild(inp);
+                    tr.appendChild(td);
+                }
+                table.appendChild(tr);
+            }
+            container.appendChild(table);
+        };
+
+        window.insertMatrix = function() {
+            const container = document.getElementById('matrix-builder-container');
+            const inputs = container.querySelectorAll('input');
+            if (inputs.length === 0) return;
+
+            let maxR = 0, maxC = 0;
+            inputs.forEach(inp => {
+                maxR = Math.max(maxR, parseInt(inp.dataset.row));
+                maxC = Math.max(maxC, parseInt(inp.dataset.col));
+            });
+
+            const mat = [];
+            for(let i=0; i<=maxR; i++) {
+                const row = [];
+                for(let j=0; j<=maxC; j++) {
+                    const el = container.querySelector(`input[data-row="${i}"][data-col="${j}"]`);
+                    row.push(el && el.value ? el.value : '0');
+                }
+                mat.push(`[${row.join(',')}]`);
+            }
+            const matStr = `[${mat.join(',')}]`;
+            document.getElementById('lin-expr').value = matStr;
+        };
+
+        window.updateBaseConversion = function(sourceId) {
+            const val = document.getElementById(sourceId).value;
+            if (val === '') return;
+
+            let num;
+            try {
+                if (sourceId === 'base-dec') num = parseInt(val, 10);
+                else if (sourceId === 'base-bin') num = parseInt(val, 2);
+                else if (sourceId === 'base-hex') num = parseInt(val, 16);
+
+                if (isNaN(num)) return;
+
+                if (sourceId !== 'base-dec') document.getElementById('base-dec').value = num.toString(10);
+                if (sourceId !== 'base-bin') document.getElementById('base-bin').value = num.toString(2);
+                if (sourceId !== 'base-hex') document.getElementById('base-hex').value = num.toString(16).toUpperCase();
+            } catch(e) {}
+        };
+
+        window.updateConvUnits = function() {
+            const cat = document.getElementById('conv-category').value;
+            const units = {
+                'length': ['m', 'km', 'cm', 'mm', 'ft', 'in', 'mi'],
+                'mass': ['kg', 'g', 'mg', 'lb', 'oz'],
+                'temp': ['C', 'F', 'K']
+            };
+
+            const opts = units[cat].map(u => `<option value="${u}">${u}</option>`).join('');
+            document.getElementById('conv-unit-from').innerHTML = opts;
+            document.getElementById('conv-unit-to').innerHTML = opts;
+        };
+
+        window.runConverter = function(dir) {
+            const cat = document.getElementById('conv-category').value;
+            const uFrom = document.getElementById('conv-unit-from').value;
+            const uTo = document.getElementById('conv-unit-to').value;
+            const vFrom = parseFloat(document.getElementById('conv-val-from').value);
+            const vTo = parseFloat(document.getElementById('conv-val-to').value);
+
+            if (dir === 'from' && isNaN(vFrom)) return;
+            if (dir === 'to' && isNaN(vTo)) return;
+
+            // Simple conversion logic (placeholder for full lib)
+            // Normalize to base unit (m, kg, C)
+            const toBase = (val, unit) => {
+                if (cat === 'length') {
+                    if (unit === 'm') return val;
+                    if (unit === 'km') return val * 1000;
+                    if (unit === 'cm') return val / 100;
+                    if (unit === 'mm') return val / 1000;
+                    if (unit === 'ft') return val * 0.3048;
+                    if (unit === 'in') return val * 0.0254;
+                    if (unit === 'mi') return val * 1609.34;
+                }
+                if (cat === 'mass') {
+                    if (unit === 'kg') return val;
+                    if (unit === 'g') return val / 1000;
+                    if (unit === 'mg') return val / 1000000;
+                    if (unit === 'lb') return val * 0.453592;
+                    if (unit === 'oz') return val * 0.0283495;
+                }
+                if (cat === 'temp') {
+                    if (unit === 'C') return val;
+                    if (unit === 'F') return (val - 32) * 5/9;
+                    if (unit === 'K') return val - 273.15;
+                }
+                return val;
+            };
+
+            const fromBase = (val, unit) => {
+                if (cat === 'length') {
+                    if (unit === 'm') return val;
+                    if (unit === 'km') return val / 1000;
+                    if (unit === 'cm') return val * 100;
+                    if (unit === 'mm') return val * 1000;
+                    if (unit === 'ft') return val / 0.3048;
+                    if (unit === 'in') return val / 0.0254;
+                    if (unit === 'mi') return val / 1609.34;
+                }
+                if (cat === 'mass') {
+                    if (unit === 'kg') return val;
+                    if (unit === 'g') return val * 1000;
+                    if (unit === 'mg') return val * 1000000;
+                    if (unit === 'lb') return val / 0.453592;
+                    if (unit === 'oz') return val / 0.0283495;
+                }
+                if (cat === 'temp') {
+                    if (unit === 'C') return val;
+                    if (unit === 'F') return val * 9/5 + 32;
+                    if (unit === 'K') return val + 273.15;
+                }
+                return val;
+            };
+
+            if (dir === 'from') {
+                const base = toBase(vFrom, uFrom);
+                const target = fromBase(base, uTo);
+                document.getElementById('conv-val-to').value = target; // round?
+            } else {
+                const base = toBase(vTo, uTo);
+                const target = fromBase(base, uFrom);
+                document.getElementById('conv-val-from').value = target;
+            }
+        };
+
         submitBtn.addEventListener('click', evaluate);
         input.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
@@ -1652,83 +1939,6 @@
 
             // Note: True scatter plotting requires CAS update or special handling here.
             // For now, getting the equation is the primary goal.
-        };
-
-        window.runAndPlot = function(action, inputIds) {
-             const args = inputIds.map(id => document.getElementById(id).value);
-             if (args.some(a => a === '')) {
-                 alert("Please fill in required fields");
-                 return;
-             }
-
-             let command = '';
-             // Heuristic to find variable: usually the second argument
-             const varName = args[1];
-
-             if (action === 'taylor') {
-                 // Special case: Plot Original AND Series
-                 const expr = args[0];
-                 command = `plot(${expr}, ${varName}); plot(taylor(${args.join(', ')}), ${varName})`;
-             } else {
-                 // Generic: plot(action(args), var)
-                 command = `plot(${action}(${args.join(', ')}), ${varName})`;
-             }
-
-             input.value = command;
-             evaluate();
-
-             // Scroll history
-             history.scrollTop = history.scrollHeight;
-
-             // Update Tool Result (Duplicate logic from runTool)
-             setTimeout(() => {
-                const entries = document.querySelectorAll('.entry');
-                if (entries.length > 0) {
-                    const lastEntry = entries[entries.length - 1];
-                    const resultDiv = lastEntry.querySelector('.result');
-                    if (resultDiv) {
-                        const visibleTool = document.querySelector('.tool-view[style*="block"]');
-                        if (visibleTool) {
-                            const resultBox = visibleTool.querySelector('.tool-result');
-                            if (resultBox) {
-                                resultBox.innerHTML = '';
-                                const clone = resultDiv.cloneNode(true);
-                                resultBox.appendChild(clone);
-                                resultBox.style.display = 'block';
-
-                                // Re-render MathJax
-                                if (window.MathJax && typeof MathJax.typesetPromise === 'function') {
-                                    MathJax.typesetPromise([resultBox]).catch(err => console.error(err));
-                                }
-
-                                // Re-bind canvas events if plot
-                                const canvas = clone.querySelector('canvas');
-                                if (canvas) {
-                                    // We need to re-draw because cloning canvas doesn't copy context
-                                    // But wait, the original canvas in history has the drawing.
-                                    // Cloning a canvas element DOES NOT copy the image data.
-                                    // We must re-draw or use drawImage.
-
-                                    // Simpler: Just move the result? No, we want it in history too.
-                                    // We need to get the Result Object again.
-                                    // But we don't have easy access to the last result object here cleanly.
-                                    // Workaround: Access the original canvas and drawImage
-                                    const origCanvas = resultDiv.querySelector('canvas');
-                                    if (origCanvas) {
-                                        const ctx = canvas.getContext('2d');
-                                        ctx.drawImage(origCanvas, 0, 0);
-                                        // Also need to setup interactive plot again
-                                        // Use the props attached to origCanvas
-                                        canvas.plotResult = origCanvas.plotResult;
-                                        canvas.plotBounds = origCanvas.plotBounds;
-                                        setupInteractivePlot(canvas);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }, 100);
         };
 
         // Base Converter Logic
