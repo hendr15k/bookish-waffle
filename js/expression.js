@@ -843,6 +843,7 @@ class Call extends Expr {
              return new Div(u.diff(varName), new Mul(u, new Call('ln', [new Num(2)])));
         }
         if (this.funcName === 'sqrt') return new Div(u.diff(varName), new Mul(new Num(2), new Call('sqrt', [u])));
+        if (this.funcName === 'abs') return new Mul(new Call('sign', [u]), u.diff(varName));
         // Default to symbolic diff
         return new Call('diff', [this, varName]);
     }
