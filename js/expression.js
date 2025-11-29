@@ -447,11 +447,24 @@ class Div extends BinaryOp {
         if (l instanceof Mul) {
             if (l.left.toString() === r.toString()) return l.right;
             if (l.right.toString() === r.toString()) return l.left;
+
+            // Handle scalar denominator vs term in numerator
+            // e.g. (2 * x) / 2 -> x (where r is Num(2) and l.left is Num(2))
+            if (r instanceof Num && l.left instanceof Num && l.left.value === r.value) return l.right;
+            if (r instanceof Num && l.right instanceof Num && l.right.value === r.value) return l.left;
         }
         // Cancellation: a / (a * b) -> 1/b
         if (r instanceof Mul) {
             if (r.left.toString() === l.toString()) return new Div(new Num(1), r.right).simplify();
             if (r.right.toString() === l.toString()) return new Div(new Num(1), r.left).simplify();
+        }
+
+        // Cancellation: (a * b) / (a * c) -> b / c
+        if (l instanceof Mul && r instanceof Mul) {
+            if (l.left.toString() === r.left.toString()) return new Div(l.right, r.right).simplify();
+            if (l.left.toString() === r.right.toString()) return new Div(l.right, r.left).simplify();
+            if (l.right.toString() === r.left.toString()) return new Div(l.left, r.right).simplify();
+            if (l.right.toString() === r.right.toString()) return new Div(l.left, r.left).simplify();
         }
 
         // Simplify Powers in Division: x^a / x^b -> x^(a-b)
