@@ -200,6 +200,7 @@ class Sub extends BinaryOp {
         }
 
         if (r instanceof Num && r.value === 0) return l;
+        if (r instanceof Num && r.value < 0) return new Add(l, new Num(-r.value)).simplify();
 
         // x - (-y) -> x + y
         if (r instanceof Mul && r.left instanceof Num && r.left.value === -1) {
@@ -369,6 +370,9 @@ class Mul extends BinaryOp {
             if (this.right instanceof Sym || this.right instanceof Call || (this.right instanceof Pow && this.right.left instanceof Sym)) {
                 return `-${this.right.toLatex()}`;
             }
+            if (this.right instanceof Add || this.right instanceof Sub) {
+                return `-\\left(${this.right.toLatex()}\\right)`;
+            }
         }
 
         if (this.left instanceof Add || this.left instanceof Sub) lTex = `\\left(${lTex}\\right)`;
@@ -404,6 +408,11 @@ class Div extends BinaryOp {
         // Vector division by scalar: Vec / Num
         if (l instanceof Vec && r instanceof Num) {
             return new Vec(l.elements.map(e => new Div(e, r).simplify()));
+        }
+
+        // Generic sign simplification for negative denominator
+        if (r instanceof Num && r.value < 0) {
+            return new Div(new Mul(new Num(-1), l).simplify(), new Num(-r.value)).simplify();
         }
 
         if (l instanceof Num && l.value === 0) return new Num(0);
@@ -532,7 +541,7 @@ class Pow extends BinaryOp {
     }
     toLatex() {
         let lTex = this.left.toLatex();
-        if (this.left instanceof Add || this.left instanceof Sub || this.left instanceof Mul || this.left instanceof Div) lTex = `\\left(${lTex}\\right)`;
+        if (this.left instanceof Add || this.left instanceof Sub || this.left instanceof Mul || this.left instanceof Div || this.left instanceof Pow) lTex = `\\left(${lTex}\\right)`;
         return `{${lTex}}^{${this.right.toLatex()}}`;
     }
 }
