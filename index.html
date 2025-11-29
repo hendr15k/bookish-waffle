@@ -913,6 +913,60 @@
         <div class="tool-result"></div>
     </div>
 
+    <!-- FINANCE -->
+    <div id="tool-finance" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Finance</span>
+        </div>
+
+        <div class="tab-header">
+             <button class="tab-btn active" onclick="openTab(event, 'tab-fin-compound')">Compound Interest</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-fin-loan')">Loan Payment</button>
+        </div>
+
+        <div id="tab-fin-compound" class="tab-content active">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="fin-p">Principal (P)</label>
+                    <input type="number" class="form-input" id="fin-p" placeholder="e.g. 1000">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="fin-r">Rate (%) (r)</label>
+                    <input type="number" class="form-input" id="fin-r" placeholder="e.g. 5">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="fin-t">Time (years) (t)</label>
+                    <input type="number" class="form-input" id="fin-t" placeholder="e.g. 10">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="fin-n">Compounds/year (n)</label>
+                    <input type="number" class="form-input" id="fin-n" placeholder="e.g. 12" value="12">
+                </div>
+                <button class="action-btn" onclick="runFinance('compound')">Calculate Amount</button>
+            </div>
+        </div>
+
+        <div id="tab-fin-loan" class="tab-content">
+             <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="loan-p">Loan Amount (P)</label>
+                    <input type="number" class="form-input" id="loan-p" placeholder="e.g. 200000">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="loan-r">Rate (%) (Annual)</label>
+                    <input type="number" class="form-input" id="loan-r" placeholder="e.g. 3.5">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="loan-t">Term (years)</label>
+                    <input type="number" class="form-input" id="loan-t" placeholder="e.g. 30">
+                </div>
+                <button class="action-btn" onclick="runFinance('loan')">Calculate Payment</button>
+             </div>
+        </div>
+        <div class="tool-result"></div>
+    </div>
+
     <!-- VARIABLES APP -->
     <div id="tool-variables" class="tool-view">
         <div class="tool-header">

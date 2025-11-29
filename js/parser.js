@@ -183,7 +183,7 @@ class Parser {
                         this.eat(TOKEN_RPAREN);
                         return new Pow(new Call(name, [arg]), exponent);
                     } else if (this.isImplicitMulStart(this.currentToken)) {
-                         const arg = this.power();
+                         const arg = this.term();
                          return new Pow(new Call(name, [arg]), exponent);
                     }
                 } else {
@@ -236,7 +236,7 @@ class Parser {
                 if (knownFunctions.includes(name)) {
                      // If next is a factor start (implicit arg)
                      if (this.isImplicitMulStart(this.currentToken)) {
-                         const arg = this.power();
+                         const arg = this.term();
                          return new Call(name, [arg]);
                      }
                 }
