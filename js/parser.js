@@ -168,6 +168,50 @@ class Parser {
         } else if (token.type === TOKEN_IDENTIFIER) {
             const name = token.value;
             this.eat(TOKEN_IDENTIFIER);
+
+            // Handle sin^2(x)
+            if (this.currentToken.type === TOKEN_CARET) {
+                // Check if it's a known function that permits exponent syntax
+                const trigFunctions = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'sinh', 'cosh', 'tanh'];
+                if (trigFunctions.includes(name)) {
+                    this.eat(TOKEN_CARET);
+                    const exponent = this.unary(); // Use unary to handle sin^-1(x)
+
+                    if (this.currentToken.type === TOKEN_LPAREN) {
+                        this.eat(TOKEN_LPAREN);
+                        const arg = this.statement();
+                        this.eat(TOKEN_RPAREN);
+                        return new Pow(new Call(name, [arg]), exponent);
+                    } else if (this.isImplicitMulStart(this.currentToken)) {
+                         const arg = this.power();
+                         return new Pow(new Call(name, [arg]), exponent);
+                    }
+                } else {
+                     // For non-trig functions, `f^2(x)` is ambiguous. `(f^2)(x)`? or `f(x)^2`?
+                     // Usually treated as symbol power if f is var.
+                     // But we already ate identifier. We need to return Pow(Sym(name), exp)
+                     // If followed by LPAREN, it becomes implicit mul? `x^2(y)` -> `x^2 * y`?
+                     // Let's fallback to standard power logic if not special trig syntax.
+                     // But we are inside factor(). We processed ID.
+                     // We need to return Sym(name) and let `power()` handle the caret.
+                     // BUT we already ate the caret inside this if block if we matched trig.
+                     // If we are here, we matched caret.
+                     // If not trig, we construct Pow(Sym, exp).
+
+                     // Wait, `power()` calls `factor()`. `factor()` consumes ID. `power()` consumes caret.
+                     // So we should NOT consume caret here unless we are sure it is `sin^2(x)`.
+                     // If we are here, we ate ID.
+                     // If we see caret, we return Sym(name) and let `power()` handle it?
+                     // NO, `power` calls `factor` then checks caret.
+                     // If `factor` consumes caret, `power` won't see it.
+                     // So `sin^2(x)` logic must be inside `factor` OR `power`.
+
+                     // Actually `sin^n(x)` is tricky because `power` binds tighter than `call`?
+                     // If `sin` is handled as `Call` in `factor`, we never return to `power` with just `Sym`.
+                     // The loop in `factor` for `(` handles explicit calls.
+                }
+            }
+
             if (this.currentToken.type === TOKEN_LPAREN) {
                 this.eat(TOKEN_LPAREN);
                 const args = [];
@@ -192,15 +236,6 @@ class Parser {
                 if (knownFunctions.includes(name)) {
                      // If next is a factor start (implicit arg)
                      if (this.isImplicitMulStart(this.currentToken)) {
-                         // Parse the next factor/power as argument
-                         // We must be careful about precedence. `sin x^2` -> `sin(x^2)`?
-                         // Yes, usually function application binds weaker than power but stronger than mult.
-                         // Actually, `sin x` is usually `sin(x)`. `sin x^2` is `sin(x^2)`.
-                         // `sin 2x` -> `sin(2x)`? or `sin(2)*x`?
-                         // In many CAS, `sin 2 x` is `sin(2)*x`. But `sin x` is `sin(x)`.
-                         // Let's take the immediate Power as the argument.
-                         // But if we have `sin 2 * x`, `power` will consume `2`. `term` will handle `* x`.
-                         // So we call `this.power()`.
                          const arg = this.power();
                          return new Call(name, [arg]);
                      }
