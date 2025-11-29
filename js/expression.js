@@ -411,6 +411,7 @@ class Div extends BinaryOp {
         if (l instanceof Num && r instanceof Num) {
             if (r.value === 0) {
                  if (l.value === 0) return new Sym("NaN"); // 0/0
+                 if (l.value < 0) return new Mul(new Num(-1), new Sym("Infinity")); // -1/0 -> -Infinity
                  return new Sym("Infinity"); // 1/0
             }
             if (l.value % r.value === 0) return new Num(l.value / r.value);
@@ -483,6 +484,23 @@ class Div extends BinaryOp {
         if (this.right instanceof Num) {
             return new Mul(new Div(new Num(1), this.right), this.left.integrate(varName));
         }
+
+        // integrate(1/x^n, x)
+        if (this.left instanceof Num && this.left.value === 1 &&
+            this.right instanceof Pow &&
+            this.right.left instanceof Sym && this.right.left.name === varName.name &&
+            this.right.right instanceof Num) {
+
+            const n = this.right.right.value;
+            if (n !== 1) {
+                // x^(-n) -> x^(-n+1) / (-n+1)
+                const newExp = -n + 1;
+                return new Div(new Pow(this.right.left, new Num(newExp)), new Num(newExp));
+            } else {
+                 return new Call("ln", [varName]);
+            }
+        }
+
         return new Call("integrate", [this, varName]);
     }
     expand() {
@@ -825,6 +843,7 @@ class Call extends Expr {
              return new Div(u.diff(varName), new Mul(u, new Call('ln', [new Num(2)])));
         }
         if (this.funcName === 'sqrt') return new Div(u.diff(varName), new Mul(new Num(2), new Call('sqrt', [u])));
+        if (this.funcName === 'abs') return new Mul(new Call('sign', [u]), u.diff(varName));
         // Default to symbolic diff
         return new Call('diff', [this, varName]);
     }

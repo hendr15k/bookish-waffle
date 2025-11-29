@@ -14,6 +14,7 @@ const TOKEN_COMMA = 'COMMA';
 const TOKEN_ASSIGN = 'ASSIGN';
 const TOKEN_EQ = 'EQ';
 const TOKEN_SEMI = 'SEMI';
+const TOKEN_BANG = 'BANG';
 const TOKEN_EOF = 'EOF';
 
 class Token {
@@ -135,6 +136,7 @@ class Lexer {
             if (this.currentChar === ']') { this.advance(); return new Token(TOKEN_RBRACKET, ']'); }
             if (this.currentChar === ',') { this.advance(); return new Token(TOKEN_COMMA, ','); }
             if (this.currentChar === ';') { this.advance(); return new Token(TOKEN_SEMI, ';'); }
+            if (this.currentChar === '!') { this.advance(); return new Token(TOKEN_BANG, '!'); }
 
             throw new Error(`Invalid character: ${this.currentChar}`);
         }
@@ -183,7 +185,7 @@ class Parser {
                         this.eat(TOKEN_RPAREN);
                         return new Pow(new Call(name, [arg]), exponent);
                     } else if (this.isImplicitMulStart(this.currentToken)) {
-                         const arg = this.power();
+                         const arg = this.term();
                          return new Pow(new Call(name, [arg]), exponent);
                     }
                 } else {
@@ -236,7 +238,99 @@ class Parser {
                 if (knownFunctions.includes(name)) {
                      // If next is a factor start (implicit arg)
                      if (this.isImplicitMulStart(this.currentToken)) {
-                         const arg = this.power();
+                         const arg = this.term();
+                         return new Call(name, [arg]);
+                     }
+                }
+
+                return new Sym(name);
+            }
+        } else if (token.type === TOKEN_LPAREN) {
+            this.eat(TOKEN_LPAREN);
+            const node = this.statement();
+            this.eat(TOKEN_RPAREN);
+            return node;
+        } else if (token.type === TOKEN_LBRACKET) {
+            this.eat(TOKEN_LBRACKET);
+            const elements = [];
+            if (this.currentToken.type !== TOKEN_RBRACKET) {
+                elements.push(this.statement());
+                while (this.currentToken.type === TOKEN_COMMA) {
+                    this.eat(TOKEN_COMMA);
+                    elements.push(this.statement());
+                }
+            }
+            this.eat(TOKEN_RBRACKET);
+            return new Vec(elements);
+        }
+
+        const node = this.atom();
+        if (this.currentToken.type === TOKEN_BANG) {
+            this.eat(TOKEN_BANG);
+            return new Call('factorial', [node]);
+        }
+        return node;
+    }
+
+    atom() {
+        // Refactored from factor() to support postfix operators in factor()
+        const token = this.currentToken;
+        if (token.type === TOKEN_NUMBER) {
+            this.eat(TOKEN_NUMBER);
+            return new Num(token.value);
+        } else if (token.type === TOKEN_IDENTIFIER) {
+            const name = token.value;
+            this.eat(TOKEN_IDENTIFIER);
+
+            // Handle sin^2(x)
+            if (this.currentToken.type === TOKEN_CARET) {
+                // Check if it's a known function that permits exponent syntax
+                const trigFunctions = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'sinh', 'cosh', 'tanh'];
+                if (trigFunctions.includes(name)) {
+                    this.eat(TOKEN_CARET);
+                    const exponent = this.unary(); // Use unary to handle sin^-1(x)
+
+                    if (this.currentToken.type === TOKEN_LPAREN) {
+                        this.eat(TOKEN_LPAREN);
+                        const arg = this.statement();
+                        this.eat(TOKEN_RPAREN);
+                        return new Pow(new Call(name, [arg]), exponent);
+                    } else if (this.isImplicitMulStart(this.currentToken)) {
+                         const arg = this.term();
+                         return new Pow(new Call(name, [arg]), exponent);
+                    }
+                } else {
+                     // Non-trig function power or identifier power?
+                     // Currently ignoring
+                }
+            }
+
+            if (this.currentToken.type === TOKEN_LPAREN) {
+                this.eat(TOKEN_LPAREN);
+                const args = [];
+                if (this.currentToken.type !== TOKEN_RPAREN) {
+                    args.push(this.statement());
+                    while (this.currentToken.type === TOKEN_COMMA) {
+                        this.eat(TOKEN_COMMA);
+                        args.push(this.statement());
+                    }
+                }
+                this.eat(TOKEN_RPAREN);
+                return new Call(name, args);
+            } else {
+                // Check for implicit function call: sin x, log 10
+                const knownFunctions = [
+                    'sin', 'cos', 'tan', 'asin', 'acos', 'atan',
+                    'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
+                    'sec', 'csc', 'cot', 'asec', 'acsc', 'acot',
+                    'sqrt', 'log', 'ln', 'exp', 'abs', 'sign',
+                    'floor', 'ceil', 'round', 'fact', 'factorial', 'gamma',
+                    'isPrime', 'factor'
+                ];
+                if (knownFunctions.includes(name)) {
+                     // If next is a factor start (implicit arg)
+                     if (this.isImplicitMulStart(this.currentToken)) {
+                         const arg = this.term();
                          return new Call(name, [arg]);
                      }
                 }
@@ -277,6 +371,12 @@ class Parser {
 
     power() {
         let node = this.factor();
+        // Handle postfix factorial (binds tighter than power? usually x!^2 means (x!)^2)
+        // If we want x!^2 to work, factor should handle !.
+        // But let's check standard precedence.
+        // Usually Factorial > Power.
+        // So factor() should return the Factorial node.
+
         if (this.currentToken.type === TOKEN_CARET) {
             this.eat(TOKEN_CARET);
             node = new Pow(node, this.unary());
@@ -285,21 +385,29 @@ class Parser {
     }
 
     term() {
-        let node = this.unary();
+        let node = this.implicitMul();
         while (this.currentToken.type === TOKEN_STAR ||
-               this.currentToken.type === TOKEN_SLASH ||
-               this.isImplicitMulStart(this.currentToken)) {
+               this.currentToken.type === TOKEN_SLASH) {
 
             if (this.currentToken.type === TOKEN_STAR) {
                 this.eat(TOKEN_STAR);
-                node = new Mul(node, this.unary());
+                node = new Mul(node, this.implicitMul());
             } else if (this.currentToken.type === TOKEN_SLASH) {
                 this.eat(TOKEN_SLASH);
-                node = new Div(node, this.unary());
-            } else {
-                // Implicit multiplication: no operator consumed
-                node = new Mul(node, this.unary());
+                node = new Div(node, this.implicitMul());
             }
+        }
+        return node;
+    }
+
+    implicitMul() {
+        let node = this.unary();
+        // Check for implicit multiplication start
+        while (this.isImplicitMulStart(this.currentToken)) {
+             // Implicit multiplication has higher precedence than * /
+             // so it binds tight here.
+             const right = this.unary();
+             node = new Mul(node, right);
         }
         return node;
     }
