@@ -26,7 +26,11 @@ class Num extends Expr {
         super();
         this.value = value;
     }
-    toString() { return this.value.toString(); }
+    toString() {
+        if (Number.isInteger(this.value)) return this.value.toString();
+        const precision = 12;
+        return parseFloat(this.value.toPrecision(precision)).toString();
+    }
     simplify() { return this; }
     evaluateNumeric() { return this.value; }
     diff(varName) { return new Num(0); }
@@ -35,7 +39,11 @@ class Num extends Expr {
         return new Mul(this, varName);
     }
     substitute(varName, value) { return this; }
-    toLatex() { return this.value.toString(); }
+    toLatex() {
+        if (Number.isInteger(this.value)) return this.value.toString();
+        const precision = 12;
+        return parseFloat(this.value.toPrecision(precision)).toString();
+    }
     equals(other) { return other instanceof Num && this.value === other.value; }
 }
 
@@ -115,6 +123,26 @@ class Add extends BinaryOp {
         }
 
         if (l instanceof Num && r instanceof Num) return new Num(l.value + r.value);
+
+        // Fraction addition: Num + Div (e.g., 1 + 1/2) or Div + Div (e.g., 1/2 + 1/3)
+        // Convert Num to Div(Num, 1) and combine
+        if ((l instanceof Div && l.left instanceof Num && l.right instanceof Num) ||
+            (r instanceof Div && r.left instanceof Num && r.right instanceof Num) ||
+            (l instanceof Num && r instanceof Div) ||
+            (l instanceof Div && r instanceof Num)) {
+
+            const n1 = (l instanceof Div) ? l.left.value : l.value;
+            const d1 = (l instanceof Div) ? l.right.value : 1;
+            const n2 = (r instanceof Div) ? r.left.value : r.value;
+            const d2 = (r instanceof Div) ? r.right.value : 1;
+
+            if (d1 !== 0 && d2 !== 0) {
+                 const newNum = n1 * d2 + n2 * d1;
+                 const newDen = d1 * d2;
+                 return new Div(new Num(newNum), new Num(newDen)).simplify();
+            }
+        }
+
         if (l instanceof Num && l.value === 0) return r;
         if (r instanceof Num && r.value === 0) return l;
         if (r instanceof Num && r.value < 0) return new Sub(l, new Num(-r.value)).simplify();
@@ -152,6 +180,25 @@ class Sub extends BinaryOp {
         }
 
         if (l instanceof Num && r instanceof Num) return new Num(l.value - r.value);
+
+        // Fraction subtraction
+        if ((l instanceof Div && l.left instanceof Num && l.right instanceof Num) ||
+            (r instanceof Div && r.left instanceof Num && r.right instanceof Num) ||
+            (l instanceof Num && r instanceof Div) ||
+            (l instanceof Div && r instanceof Num)) {
+
+            const n1 = (l instanceof Div) ? l.left.value : l.value;
+            const d1 = (l instanceof Div) ? l.right.value : 1;
+            const n2 = (r instanceof Div) ? r.left.value : r.value;
+            const d2 = (r instanceof Div) ? r.right.value : 1;
+
+            if (d1 !== 0 && d2 !== 0) {
+                 const newNum = n1 * d2 - n2 * d1;
+                 const newDen = d1 * d2;
+                 return new Div(new Num(newNum), new Num(newDen)).simplify();
+            }
+        }
+
         if (r instanceof Num && r.value === 0) return l;
 
         // x - (-y) -> x + y
@@ -179,6 +226,10 @@ class Mul extends BinaryOp {
         if (l instanceof Sym && l.name === 'i' && r instanceof Sym && r.name === 'i') {
             return new Num(-1);
         }
+
+        // Fix i * 1 -> i
+        if (l instanceof Sym && l.name === 'i' && r instanceof Num && r.value === 1) return l;
+        if (r instanceof Sym && r.name === 'i' && l instanceof Num && l.value === 1) return r;
 
         // Matrix multiplication logic
         if (l instanceof Vec && r instanceof Vec) {
@@ -313,6 +364,13 @@ class Mul extends BinaryOp {
         if (this.left instanceof Sym && this.right instanceof Call) op = ""; // x sin(y)
         if (this.left instanceof Num && this.right instanceof Pow && this.right.left instanceof Sym) op = ""; // 2x^2
 
+        // Handle -1 coefficient
+        if (this.left instanceof Num && this.left.value === -1) {
+            if (this.right instanceof Sym || this.right instanceof Call || (this.right instanceof Pow && this.right.left instanceof Sym)) {
+                return `-${this.right.toLatex()}`;
+            }
+        }
+
         if (this.left instanceof Add || this.left instanceof Sub) lTex = `\\left(${lTex}\\right)`;
         if (this.right instanceof Add || this.right instanceof Sub) rTex = `\\left(${rTex}\\right)`;
         return `${lTex}${op}${rTex}`;
@@ -325,12 +383,22 @@ class Div extends BinaryOp {
         const l = this.left.simplify();
         const r = this.right.simplify();
         if (l instanceof Num && r instanceof Num) {
-            if (r.value === 0) throw new Error("Division by zero");
+            if (r.value === 0) {
+                 if (l.value === 0) return new Sym("NaN"); // 0/0
+                 return new Sym("Infinity"); // 1/0
+            }
             if (l.value % r.value === 0) return new Num(l.value / r.value);
             // Simplify signs: a/-b -> -a/b, -a/-b -> a/b
             if (r.value < 0) {
                 return new Div(new Num(-l.value), new Num(-r.value)).simplify();
             }
+            // GCD simplification for fractions
+            const gcd = (a, b) => !b ? a : gcd(b, a % b);
+            const common = gcd(Math.abs(l.value), Math.abs(r.value));
+            if (common > 1) {
+                return new Div(new Num(l.value / common), new Num(r.value / common));
+            }
+
             return new Div(l, r);
         }
         // Vector division by scalar: Vec / Num
@@ -392,7 +460,13 @@ class Div extends BinaryOp {
         if (l instanceof Add) return new Add(new Div(l.left, r).expand(), new Div(l.right, r).expand());
         return new Div(l, r);
     }
-    toLatex() { return `\\frac{${this.left.toLatex()}}{${this.right.toLatex()}}`; }
+    toLatex() {
+        // Pull out negative sign
+        if (this.left instanceof Num && this.left.value < 0 && this.right instanceof Num && this.right.value > 0) {
+             return `-\\frac{${Math.abs(this.left.value)}}{${this.right.value}}`;
+        }
+        return `\\frac{${this.left.toLatex()}}{${this.right.toLatex()}}`;
+    }
 }
 
 class Pow extends BinaryOp {
@@ -490,16 +564,11 @@ class Call extends Expr {
                 const absVal = Math.abs(arg.value);
                 const sqrtVal = Math.sqrt(absVal);
                 if (Number.isInteger(sqrtVal)) {
-                    return new Mul(new Sym('i'), new Num(sqrtVal));
+                    return new Mul(new Sym('i'), new Num(sqrtVal)).simplify();
                 }
-                return new Mul(new Sym('i'), new Call('sqrt', [new Num(absVal)]));
+                return new Mul(new Sym('i'), new Call('sqrt', [new Num(absVal)])).simplify();
             }
-            // sqrt(x) -> x^0.5
-            // Maybe keep as sqrt(x) for display?
-            // Xcas uses sqrt(x). Pow(0.5) is for calculus often.
-            // Let's keep sqrt(x) unless we want to normalize.
             return new Call('sqrt', simpleArgs);
-            // return new Pow(arg, new Num(0.5));
         }
 
         if (this.funcName === 'sin') {

@@ -181,6 +181,31 @@ class Parser {
                 this.eat(TOKEN_RPAREN);
                 return new Call(name, args);
             } else {
+                // Check for implicit function call: sin x, log 10
+                const knownFunctions = [
+                    'sin', 'cos', 'tan', 'asin', 'acos', 'atan',
+                    'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
+                    'sec', 'csc', 'cot', 'asec', 'acsc', 'acot',
+                    'sqrt', 'log', 'ln', 'exp', 'abs', 'sign',
+                    'floor', 'ceil', 'round', 'fact', 'factorial', 'gamma'
+                ];
+                if (knownFunctions.includes(name)) {
+                     // If next is a factor start (implicit arg)
+                     if (this.isImplicitMulStart(this.currentToken)) {
+                         // Parse the next factor/power as argument
+                         // We must be careful about precedence. `sin x^2` -> `sin(x^2)`?
+                         // Yes, usually function application binds weaker than power but stronger than mult.
+                         // Actually, `sin x` is usually `sin(x)`. `sin x^2` is `sin(x^2)`.
+                         // `sin 2x` -> `sin(2x)`? or `sin(2)*x`?
+                         // In many CAS, `sin 2 x` is `sin(2)*x`. But `sin x` is `sin(x)`.
+                         // Let's take the immediate Power as the argument.
+                         // But if we have `sin 2 * x`, `power` will consume `2`. `term` will handle `* x`.
+                         // So we call `this.power()`.
+                         const arg = this.power();
+                         return new Call(name, [arg]);
+                     }
+                }
+
                 return new Sym(name);
             }
         } else if (token.type === TOKEN_LPAREN) {
