@@ -165,6 +165,26 @@ class CAS {
                  if (isNaN(min)) min = -10;
                  if (isNaN(max)) max = 10;
 
+                 // Handle multiple expressions (Vec)
+                 if (expr instanceof Vec) {
+                     const plots = expr.elements.map(e => ({
+                         type: 'plot',
+                         expr: e,
+                         var: varNode,
+                         min: min,
+                         max: max
+                     }));
+                     return {
+                         type: 'plot',
+                         isMulti: true,
+                         plots: plots,
+                         min: min, // pass global min/max for bounds
+                         max: max,
+                         toString: () => `Plotting ${expr} from ${min} to ${max}`,
+                         toLatex: () => `\\text{Plotting } ${expr.toLatex()}`
+                     };
+                 }
+
                  // Return a special object that the frontend can recognize
                  return {
                      type: 'plot',
@@ -175,6 +195,52 @@ class CAS {
                      toString: () => `Plotting ${expr} from ${min} to ${max}`,
                      toLatex: () => `\\text{Plotting } ${expr.toLatex()}`
                  };
+            }
+
+            if (node.funcName === 'param') {
+                // param(x_expr, y_expr, t_var, [t_min, t_max])
+                if (args.length < 3) throw new Error("param requires at least 3 arguments: x(t), y(t), t");
+                const xExpr = args[0];
+                const yExpr = args[1];
+                const tVar = args[2];
+                let min = args.length > 3 ? args[3].evaluateNumeric() : 0;
+                let max = args.length > 4 ? args[4].evaluateNumeric() : 2 * Math.PI;
+                if (isNaN(min)) min = 0;
+                if (isNaN(max)) max = 2 * Math.PI;
+
+                return {
+                    type: 'plot',
+                    subtype: 'parametric',
+                    xExpr: xExpr,
+                    yExpr: yExpr,
+                    var: tVar,
+                    min: min, // t min
+                    max: max, // t max
+                    toString: () => `Parametric Plot [${xExpr}, ${yExpr}] for ${tVar} in [${min}, ${max}]`,
+                    toLatex: () => `\\text{Parametric Plot } \\begin{pmatrix} ${xExpr.toLatex()} \\\\ ${yExpr.toLatex()} \\end{pmatrix}`
+                };
+            }
+
+            if (node.funcName === 'polar') {
+                // polar(r_expr, theta_var, [min, max])
+                if (args.length < 2) throw new Error("polar requires at least 2 arguments: r(t), t");
+                const rExpr = args[0];
+                const tVar = args[1];
+                let min = args.length > 2 ? args[2].evaluateNumeric() : 0;
+                let max = args.length > 3 ? args[3].evaluateNumeric() : 2 * Math.PI;
+                if (isNaN(min)) min = 0;
+                if (isNaN(max)) max = 2 * Math.PI;
+
+                return {
+                    type: 'plot',
+                    subtype: 'polar',
+                    rExpr: rExpr,
+                    var: tVar,
+                    min: min,
+                    max: max,
+                    toString: () => `Polar Plot r=${rExpr} for ${tVar} in [${min}, ${max}]`,
+                    toLatex: () => `\\text{Polar Plot } r=${rExpr.toLatex()}`
+                };
             }
 
             if (node.funcName === 'taylor') {
@@ -320,6 +386,7 @@ limit(expr, var, val), taylor(expr, var, pt, order),
 sum(expr, var, start, end), product(expr, var, start, end),
 expand(expr), simplify(expr), solve(eq, var),
 det(M), trans(M), plot(expr, var, [min, max]),
+param(x, y, t, [min, max]), polar(r, t, [min, max]),
 gcd(a, b), lcm(a, b), factor(n), factorial(n),
 mean(list), variance(list),
 N(expr) [numeric eval], clear(), help()`;
@@ -331,6 +398,7 @@ N(expr) [numeric eval], clear(), help()`;
 \\sum(expr, var, a, b), \\; \\prod(expr, var, a, b), \\\\
 \\text{expand}(expr), \\; \\text{simplify}(expr), \\; \\text{solve}(eq, var), \\\\
 \\text{det}(M), \\; \\text{trans}(M), \\; \\text{plot}(expr, var, [min, max]), \\\\
+\\text{param}(x, y, t, [a, b]), \\; \\text{polar}(r, t, [a, b]), \\\\
 \\text{gcd}(a, b), \\; \\text{lcm}(a, b), \\; \\text{factor}(n), \\; n!, \\\\
 \\text{mean}(L), \\; \\text{variance}(L), \\; \\text{linearRegression}(L), \\\\
 \\text{normalPDF}(x, \\mu, \\sigma), \\; \\text{binomialPDF}(k, n, p), \\\\

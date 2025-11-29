@@ -648,25 +648,63 @@
         </div>
         <div class="tool-form">
             <div class="form-group">
-                <label class="form-label" for="plot-expr">Function y=</label>
-                <input type="text" class="form-input" id="plot-expr" placeholder="e.g. sin(x)">
+                <label class="form-label">Mode</label>
+                <select id="plot-mode" class="form-input" onchange="updatePlotInputs()">
+                    <option value="function">Function y=f(x)</option>
+                    <option value="parametric">Parametric (x(t), y(t))</option>
+                    <option value="polar">Polar r=f(t)</option>
+                </select>
             </div>
-            <div class="form-group">
-                <label class="form-label" for="plot-var">Variable</label>
-                <input type="text" class="form-input" id="plot-var" placeholder="e.g. x" value="x">
+
+            <div id="plot-inputs-function">
+                <div class="form-group">
+                    <label class="form-label" for="plot-expr">Function y=</label>
+                    <input type="text" class="form-input" id="plot-expr" placeholder="e.g. sin(x)">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="plot-var">Variable</label>
+                    <input type="text" class="form-input" id="plot-var" placeholder="e.g. x" value="x">
+                </div>
             </div>
+
+            <div id="plot-inputs-parametric" style="display:none;">
+                <div class="form-group">
+                    <label class="form-label" for="plot-param-x">x(t)=</label>
+                    <input type="text" class="form-input" id="plot-param-x" placeholder="e.g. cos(t)">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="plot-param-y">y(t)=</label>
+                    <input type="text" class="form-input" id="plot-param-y" placeholder="e.g. sin(t)">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="plot-param-t">Parameter</label>
+                    <input type="text" class="form-input" id="plot-param-t" placeholder="t" value="t">
+                </div>
+            </div>
+
+            <div id="plot-inputs-polar" style="display:none;">
+                <div class="form-group">
+                    <label class="form-label" for="plot-polar-r">Radius r(t)=</label>
+                    <input type="text" class="form-input" id="plot-polar-r" placeholder="e.g. 1 + cos(t)">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="plot-polar-t">Angle Variable</label>
+                    <input type="text" class="form-input" id="plot-polar-t" placeholder="t" value="t">
+                </div>
+            </div>
+
             <div class="form-row">
                  <div class="form-group" style="flex:1">
-                    <label class="form-label" for="plot-min">Min X</label>
+                    <label class="form-label" for="plot-min">Min</label>
                     <input type="number" class="form-input" id="plot-min" value="-10">
                 </div>
                  <div class="form-group" style="flex:1">
-                    <label class="form-label" for="plot-max">Max X</label>
+                    <label class="form-label" for="plot-max">Max</label>
                     <input type="number" class="form-input" id="plot-max" value="10">
                 </div>
             </div>
              <div class="action-grid">
-                <button class="action-btn" onclick="runTool('plot', ['plot-expr', 'plot-var', 'plot-min', 'plot-max'])">Plot</button>
+                <button class="action-btn" onclick="runPlottingTool()">Plot</button>
             </div>
         </div>
         <div id="palette-plotting"></div>
@@ -1334,6 +1372,29 @@
             updateVariables();
         }
 
+        function updatePlotInputs() {
+            const mode = document.getElementById('plot-mode').value;
+
+            document.getElementById('plot-inputs-function').style.display = 'none';
+            document.getElementById('plot-inputs-parametric').style.display = 'none';
+            document.getElementById('plot-inputs-polar').style.display = 'none';
+
+            document.getElementById('plot-inputs-' + mode).style.display = 'block';
+        }
+
+        function runPlottingTool() {
+            const mode = document.getElementById('plot-mode').value;
+            if (mode === 'function') {
+                runAndPlot('plot', ['plot-expr', 'plot-var', 'plot-min', 'plot-max']);
+            } else if (mode === 'parametric') {
+                // param(x, y, t, min, max)
+                runAndPlot('param', ['plot-param-x', 'plot-param-y', 'plot-param-t', 'plot-min', 'plot-max']);
+            } else if (mode === 'polar') {
+                // polar(r, t, min, max)
+                runAndPlot('polar', ['plot-polar-r', 'plot-polar-t', 'plot-min', 'plot-max']);
+            }
+        }
+
         function updateVariables() {
             const vars = cas.getVariables();
             const funcs = cas.getFunctions ? cas.getFunctions() : {};
@@ -1424,76 +1485,153 @@
             }
 
             // Determine global range
-            // If explicitBounds is provided (from zoom/pan), use them.
-            // Otherwise calculate default from args.
-
             let minX, maxX, minY, maxY;
 
+            // Heuristic for default bounds if explicitBounds not given
+            // For Function plots: minX/maxX come from args.
+            // For Parametric/Polar: min/max args are for 't', not X/Y.
+            // We need to auto-scale X and Y for Parametric/Polar if not explicit.
+
+            // First, calculate points. We need points to determine auto-scale.
+            const allPoints = [];
+            let calcMinX = Infinity, calcMaxX = -Infinity;
+            let calcMinY = Infinity, calcMaxY = -Infinity;
+
+            const steps = width;
+
+            // Define scatterPoints
+            const scatterPoints = [];
+            if (result.scatter) scatterPoints.push(result.scatter);
+            if (result.isMulti) {
+                for(const p of result.plots) if (p.scatter) scatterPoints.push(p.scatter);
+            }
+
+            // Calculate points
+            for(const p of plots) {
+                const points = [];
+
+                // Determine iteration range and steps
+                // For standard function y=f(x), iterate x from view minX to maxX.
+                // BUT we don't know view minX yet if we are auto-scaling.
+                // So we use p.min/p.max as the domain.
+
+                let tStart = parseFloat(p.min);
+                let tEnd = parseFloat(p.max);
+
+                // If explicit bounds (zoom), we should iterate x in that range for functions.
+                // For parametric/polar, we still iterate t in original range (or refined?)
+                // Usually parametric/polar t-range is fixed by definition (0..2pi), zooming changes viewport.
+
+                // Function Plot: Iterate x
+                if (!p.subtype) {
+                    let drawMinX = tStart;
+                    let drawMaxX = tEnd;
+                    if (explicitBounds) {
+                        drawMinX = explicitBounds.minX;
+                        drawMaxX = explicitBounds.maxX;
+                    }
+
+                    const drawSteps = width;
+                    for (let i = 0; i <= drawSteps; i++) {
+                        const x = drawMinX + (drawMaxX - drawMinX) * (i / drawSteps);
+                        try {
+                            const valExpr = p.expr.substitute(p.var, new Num(x));
+                            const simplified = valExpr.simplify();
+                            let y = NaN;
+                            if (simplified instanceof Num) y = simplified.value;
+                            else y = simplified.evaluateNumeric();
+
+                            if (!isNaN(y)) {
+                                // Keep +/- Infinity for asymptote handling
+                                points.push({x, y});
+                                if (isFinite(y)) {
+                                    if (y < calcMinY) calcMinY = y;
+                                    if (y > calcMaxY) calcMaxY = y;
+                                }
+                            } else {
+                                points.push({x, y: NaN}); // Gap
+                            }
+                        } catch(e) {}
+                    }
+                }
+                // Parametric Plot
+                else if (p.subtype === 'parametric') {
+                    const drawSteps = 1000; // Fixed resolution for parametric
+                    for (let i = 0; i <= drawSteps; i++) {
+                        const t = tStart + (tEnd - tStart) * (i / drawSteps);
+                        try {
+                            const valX = p.xExpr.substitute(p.var, new Num(t)).evaluateNumeric();
+                            const valY = p.yExpr.substitute(p.var, new Num(t)).evaluateNumeric();
+
+                            if (!isNaN(valX) && !isNaN(valY) && isFinite(valX) && isFinite(valY)) {
+                                points.push({x: valX, y: valY});
+                                if (valX < calcMinX) calcMinX = valX;
+                                if (valX > calcMaxX) calcMaxX = valX;
+                                if (valY < calcMinY) calcMinY = valY;
+                                if (valY > calcMaxY) calcMaxY = valY;
+                            }
+                        } catch(e) {}
+                    }
+                }
+                // Polar Plot
+                else if (p.subtype === 'polar') {
+                    const drawSteps = 1000;
+                    for (let i = 0; i <= drawSteps; i++) {
+                        const t = tStart + (tEnd - tStart) * (i / drawSteps);
+                        try {
+                            const r = p.rExpr.substitute(p.var, new Num(t)).evaluateNumeric();
+                            if (!isNaN(r) && isFinite(r)) {
+                                const valX = r * Math.cos(t);
+                                const valY = r * Math.sin(t);
+                                points.push({x: valX, y: valY});
+                                if (valX < calcMinX) calcMinX = valX;
+                                if (valX > calcMaxX) calcMaxX = valX;
+                                if (valY < calcMinY) calcMinY = valY;
+                                if (valY > calcMaxY) calcMaxY = valY;
+                            }
+                        } catch(e) {}
+                    }
+                }
+
+                allPoints.push(points);
+            }
+
+            // Determine Bounds
             if (explicitBounds) {
                 minX = explicitBounds.minX;
                 maxX = explicitBounds.maxX;
                 minY = explicitBounds.minY;
                 maxY = explicitBounds.maxY;
             } else {
-                minX = parseFloat(plots[0].min);
-                maxX = parseFloat(plots[0].max);
-
-                for(const p of plots) {
-                    if (p.min < minX) minX = parseFloat(p.min);
-                    if (p.max > maxX) maxX = parseFloat(p.max);
-                }
-            }
-
-            // Store current bounds on canvas for event handlers
-            canvas.plotBounds = { minX, maxX, minY, maxY };
-            canvas.plotResult = result;
-
-            // Calculate points for all plots
-            const allPoints = []; // Array of arrays of points
-            let calcMinY = Infinity;
-            let calcMaxY = -Infinity;
-
-            const steps = width; // Pixel precision
-
-            // Define scatterPoints
-            const scatterPoints = [];
-            if (result.scatter) {
-                scatterPoints.push(result.scatter);
-            }
-            if (result.isMulti) {
-                for(const p of result.plots) {
-                    if (p.scatter) scatterPoints.push(p.scatter);
-                }
-            }
-
-            for(const p of plots) {
-                const points = [];
-                // Respect plot definition range if stricter than view?
-                // Usually we want to view outside definition? No, function might be undefined.
-                // We plot in the intersection of view X and defined X.
-                // But simplified: just iterate view X.
-
-                for (let i = 0; i <= steps; i++) {
-                    const x = minX + (maxX - minX) * (i / steps);
-
-                    try {
-                        // Optimization: if simple num, skip parsing?
-                        // Using substitute is slow for high frequency.
-                        // Ideally we compile to JS function.
-                        const valExpr = p.expr.substitute(p.var, new Num(x));
-                        const simplified = valExpr.simplify();
-                        if (simplified instanceof Num) {
-                            const y = simplified.value;
-                            if (isNaN(y) || !isFinite(y)) continue;
-                            points.push({x, y});
-                            if (y < calcMinY) calcMinY = y;
-                            if (y > calcMaxY) calcMaxY = y;
+                // Auto-scale
+                if (plots[0].subtype) {
+                    // Parametric/Polar: Use calculated bounds
+                    if (calcMinX === Infinity) { minX = -10; maxX = 10; } // No data
+                    else {
+                        const marginX = (calcMaxX - calcMinX) * 0.1 || 1;
+                        minX = calcMinX - marginX;
+                        maxX = calcMaxX + marginX;
+                    }
+                } else {
+                    // Function: User defined X range
+                    minX = parseFloat(plots[0].min);
+                    maxX = parseFloat(plots[0].max);
+                    // Check other plots
+                    for(const p of plots) {
+                        if (!p.subtype) {
+                            if (p.min < minX) minX = parseFloat(p.min);
+                            if (p.max > maxX) maxX = parseFloat(p.max);
                         }
-                    } catch(e) {
-                        // Ignore
                     }
                 }
-                allPoints.push(points);
+
+                // Y Bounds
+                if (calcMinY === Infinity) { minY = -10; maxY = 10; }
+                else {
+                    const marginY = (calcMaxY - calcMinY) * 0.1 || 1;
+                    minY = calcMinY - marginY;
+                    maxY = calcMaxY + marginY;
+                }
             }
 
             if (!explicitBounds || explicitBounds.minY === undefined) {
@@ -1612,18 +1750,33 @@
                 ctx.strokeStyle = colors[i % colors.length];
                 ctx.lineWidth = 2;
                 ctx.beginPath();
+
                 let first = true;
+                let lastPy = null; // for asymptote detection
+
                 for (const p of points) {
+                    // Handle gaps (NaN)
+                    if (isNaN(p.y)) {
+                        first = true;
+                        lastPy = null;
+                        continue;
+                    }
+
                     const px = mapX(p.x);
                     const py = mapY(p.y);
 
-                    // Simple line plot
                     if (first) {
                         ctx.moveTo(px, py);
                         first = false;
                     } else {
-                        ctx.lineTo(px, py);
+                        // Asymptote detection: if y change is huge (> canvas height) skip line
+                        if (lastPy !== null && Math.abs(py - lastPy) > height) {
+                            ctx.moveTo(px, py); // Start new path segment
+                        } else {
+                            ctx.lineTo(px, py);
+                        }
                     }
+                    lastPy = py;
                 }
                 ctx.stroke();
             }
@@ -1902,6 +2055,87 @@
                     // Ignore errors
                 }
             }, 300);
+        };
+
+        window.runAndPlot = function(action, inputTokens) {
+            // Similar to runTool but specifically for plotting the result
+            // E.g. simplify(expr) -> expression -> plot(expression)
+            // Or diff(expr) -> derivative -> plot(derivative)
+
+            const args = inputTokens.map(token => {
+                const el = document.getElementById(token);
+                return el ? el.value : token;
+            });
+
+             if (args.some(a => a === '')) {
+                 addToHistory("Error", "Please fill in required fields", true);
+                 return;
+            }
+
+            // 1. Run the action to get the result
+            const command = `${action}(${args.join(', ')})`;
+
+            try {
+                const lexer = new Lexer(command);
+                const parser = new Parser(lexer);
+                const tree = parser.parse();
+                const result = cas.evaluate(tree);
+
+                // 2. Plot the result
+                // Determine the variable from the result expression
+                let varName = 'x';
+
+                // Collect variables from the result expression tree
+                const vars = new Set();
+                const collect = (node) => {
+                    if (!node) return;
+                    if (node instanceof Sym) {
+                        // Exclude constants if they are treated as symbols (e.g. pi, e, i)
+                        const consts = ['pi', 'e', 'i', 'Infinity', 'NaN'];
+                        if (!consts.includes(node.name)) {
+                            vars.add(node.name);
+                        }
+                    } else if (node instanceof Call) {
+                         node.args.forEach(collect);
+                    } else if (node instanceof BinaryOp || node instanceof Eq) {
+                        collect(node.left);
+                        collect(node.right);
+                    } else if (node instanceof Pow) {
+                        collect(node.left);
+                        collect(node.right);
+                    } else if (node instanceof FunctionDef) {
+                        // ignore params
+                        collect(node.body);
+                    }
+                };
+                collect(result);
+
+                if (vars.size > 0) {
+                    // Prefer 'x', then 't', then first found
+                    if (vars.has('x')) varName = 'x';
+                    else if (vars.has('t')) varName = 't';
+                    else varName = Array.from(vars)[0];
+                } else {
+                    // If no variables found in result (e.g. result is a number or constant),
+                    // check if the user specified a variable in the input (e.g. diff(..., t))
+                    if (args.length >= 2 && args[1].length === 1 && args[1].match(/[a-z]/i)) {
+                        varName = args[1];
+                    }
+                }
+
+                // Construct plot command: plot(result, var)
+                const plotCmd = `plot(${result.toString()}, ${varName})`;
+
+                // Add the calculation command to history
+                addToHistory(command, result.toString(), false, result.toLatex());
+
+                // Execute plot
+                input.value = plotCmd;
+                evaluate();
+
+            } catch(e) {
+                addToHistory(command, e.message, true);
+            }
         };
 
         function addToHistory(command, result, isError, latex) {

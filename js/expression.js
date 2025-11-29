@@ -593,18 +593,70 @@ class Pow extends BinaryOp {
     expand() {
         const l = this.left.expand();
         const r = this.right.expand();
-        // (a + b)^2 = a^2 + 2ab + b^2
-        if (r instanceof Num && l instanceof Add && r.value === 2) {
-            const a = l.left;
-            const b = l.right;
-            return new Add(new Add(new Pow(a, new Num(2)), new Mul(new Num(2), new Mul(a, b))), new Pow(b, new Num(2))).expand();
+
+        // (a + b)^n
+        if (r instanceof Num && Number.isInteger(r.value) && r.value > 1) {
+            const n = r.value;
+
+            if (l instanceof Add || l instanceof Sub) {
+                const a = l.left;
+                const b = l.right;
+                const isSub = (l instanceof Sub);
+
+                // Binomial expansion: sum( nCk * a^(n-k) * b^k )
+                // For sub: sum( nCk * a^(n-k) * (-b)^k ) => alternating signs if k is odd
+
+                // Helper to compute factorial
+                const factorial = (num) => {
+                    if (num <= 1) return 1;
+                    let res = 1;
+                    for(let i=2; i<=num; i++) res *= i;
+                    return res;
+                };
+
+                // Helper to compute nCk
+                const nCr = (n, k) => {
+                     return factorial(n) / (factorial(k) * factorial(n - k));
+                };
+
+                let result = null;
+
+                for(let k=0; k<=n; k++) {
+                    const coeffVal = nCr(n, k);
+                    const coeff = new Num(coeffVal);
+
+                    // Term: coeff * a^(n-k) * b^k
+                    // Simplify powers: x^0 = 1, x^1 = x
+
+                    let termA = null;
+                    if (n - k === 0) termA = new Num(1);
+                    else if (n - k === 1) termA = a;
+                    else termA = new Pow(a, new Num(n - k));
+
+                    let termB = null;
+                    if (k === 0) termB = new Num(1);
+                    else if (k === 1) termB = b;
+                    else termB = new Pow(b, new Num(k));
+
+                    // If subtraction and k is odd, term is negative
+                    let isNeg = false;
+                    if (isSub && k % 2 !== 0) isNeg = true;
+
+                    let term = new Mul(coeff, new Mul(termA, termB));
+
+                    if (result === null) {
+                         if (isNeg) result = new Mul(new Num(-1), term);
+                         else result = term;
+                    } else {
+                        if (isNeg) result = new Sub(result, term);
+                        else result = new Add(result, term);
+                    }
+                }
+
+                return result.expand().simplify();
+            }
         }
-        // (a - b)^2 = a^2 - 2ab + b^2
-        if (r instanceof Num && l instanceof Sub && r.value === 2) {
-            const a = l.left;
-            const b = l.right;
-            return new Sub(new Add(new Pow(a, new Num(2)), new Pow(b, new Num(2))), new Mul(new Num(2), new Mul(a, b))).expand();
-        }
+
         return new Pow(l, r);
     }
     toLatex() {
