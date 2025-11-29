@@ -411,6 +411,7 @@ class Div extends BinaryOp {
         if (l instanceof Num && r instanceof Num) {
             if (r.value === 0) {
                  if (l.value === 0) return new Sym("NaN"); // 0/0
+                 if (l.value < 0) return new Mul(new Num(-1), new Sym("Infinity")); // -1/0 -> -Infinity
                  return new Sym("Infinity"); // 1/0
             }
             if (l.value % r.value === 0) return new Num(l.value / r.value);
