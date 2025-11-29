@@ -582,7 +582,10 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
 
             if (num instanceof Num && den instanceof Num) {
                 if (den.value !== 0) return new Num(num.value / den.value);
-                if (num.value !== 0 && den.value === 0) return new Sym("Infinity");
+                if (num.value !== 0 && den.value === 0) {
+                     if (num.value < 0) return new Mul(new Num(-1), new Sym("Infinity"));
+                     return new Sym("Infinity");
+                }
             }
         }
 

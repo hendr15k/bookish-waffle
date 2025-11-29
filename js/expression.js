@@ -541,7 +541,7 @@ class Pow extends BinaryOp {
     }
     toLatex() {
         let lTex = this.left.toLatex();
-        if (this.left instanceof Add || this.left instanceof Sub || this.left instanceof Mul || this.left instanceof Div) lTex = `\\left(${lTex}\\right)`;
+        if (this.left instanceof Add || this.left instanceof Sub || this.left instanceof Mul || this.left instanceof Div || this.left instanceof Pow) lTex = `\\left(${lTex}\\right)`;
         return `{${lTex}}^{${this.right.toLatex()}}`;
     }
 }
