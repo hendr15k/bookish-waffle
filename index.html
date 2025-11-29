@@ -506,7 +506,8 @@
                 </div>
                 <div class="action-grid">
                     <button class="action-btn" onclick="runTool('diff', ['calc-expr', 'calc-var'])">Differentiate</button>
-                    <button class="action-btn" onclick="runTool('limit', ['calc-expr', 'calc-var', 'calc-pt'])">Limit</button>
+                    <button class="action-btn" onclick="runAndPlot('diff', ['calc-expr', 'calc-var'])" style="background-color: #28a745;">Plot Derivative</button>
+                    <button class="action-btn" onclick="runTool('limit', ['calc-expr', 'calc-var', 'calc-pt'])" style="grid-column: span 2;">Limit</button>
                 </div>
             </div>
         </div>
@@ -534,7 +535,8 @@
                 </div>
                 <div class="action-grid">
                     <button class="action-btn" onclick="runTool('integrate', ['int-expr', 'int-var'])">Indefinite</button>
-                    <button class="action-btn" onclick="runTool('integrate', ['int-expr', 'int-var', 'int-from', 'int-to'])">Definite</button>
+                    <button class="action-btn" onclick="runAndPlot('integrate', ['int-expr', 'int-var'])" style="background-color: #28a745;">Plot Result</button>
+                    <button class="action-btn" onclick="runTool('integrate', ['int-expr', 'int-var', 'int-from', 'int-to'])" style="grid-column: span 2;">Definite</button>
                 </div>
             </div>
         </div>
@@ -560,7 +562,10 @@
                         <input type="number" class="form-input" id="taylor-order" placeholder="4" value="4">
                     </div>
                 </div>
-                 <button class="action-btn" onclick="runTool('taylor', ['taylor-expr', 'taylor-var', 'taylor-pt', 'taylor-order'])">Calculate Series</button>
+                 <div class="action-grid">
+                     <button class="action-btn" onclick="runTool('taylor', ['taylor-expr', 'taylor-var', 'taylor-pt', 'taylor-order'])">Calculate</button>
+                     <button class="action-btn" onclick="runAndPlot('taylor', ['taylor-expr', 'taylor-var', 'taylor-pt', 'taylor-order'])" style="background-color: #28a745;">Compare & Plot</button>
+                 </div>
             </div>
         </div>
 
