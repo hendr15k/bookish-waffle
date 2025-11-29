@@ -483,6 +483,23 @@ class Div extends BinaryOp {
         if (this.right instanceof Num) {
             return new Mul(new Div(new Num(1), this.right), this.left.integrate(varName));
         }
+
+        // integrate(1/x^n, x)
+        if (this.left instanceof Num && this.left.value === 1 &&
+            this.right instanceof Pow &&
+            this.right.left instanceof Sym && this.right.left.name === varName.name &&
+            this.right.right instanceof Num) {
+
+            const n = this.right.right.value;
+            if (n !== 1) {
+                // x^(-n) -> x^(-n+1) / (-n+1)
+                const newExp = -n + 1;
+                return new Div(new Pow(this.right.left, new Num(newExp)), new Num(newExp));
+            } else {
+                 return new Call("ln", [varName]);
+            }
+        }
+
         return new Call("integrate", [this, varName]);
     }
     expand() {
