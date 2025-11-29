@@ -43,6 +43,143 @@ function toExpr(other) {
     throw new Error("Cannot convert to Expr: " + other);
 }
 
+function polyDiv(numerator, denominator) {
+    // Basic synthetic division for P(x) / (x - c)
+    // First, extract coefficients of numerator.
+    // We assume numerator is a polynomial in one variable.
+    // Denominator is (x - c).
+
+    let x, c;
+    if (denominator instanceof Sub) {
+        x = denominator.left;
+        c = denominator.right.value;
+    } else if (denominator instanceof Add) {
+        x = denominator.left;
+        c = -denominator.right.value;
+    } else {
+        return new Div(numerator, denominator);
+    }
+
+    // Helper to get degree and coefficient of a term
+    const getTermInfo = (term) => {
+        if (term instanceof Num) return { deg: 0, coeff: term.value };
+        if (term instanceof Sym && term.name === x.name) return { deg: 1, coeff: 1 };
+        if (term instanceof Mul && term.left instanceof Num && term.right instanceof Sym && term.right.name === x.name) return { deg: 1, coeff: term.left.value };
+        if (term instanceof Mul && term.right instanceof Num && term.left instanceof Sym && term.left.name === x.name) return { deg: 1, coeff: term.right.value }; // x*2
+        if (term instanceof Pow && term.left instanceof Sym && term.left.name === x.name && term.right instanceof Num) return { deg: term.right.value, coeff: 1 };
+        if (term instanceof Mul && term.left instanceof Num && term.right instanceof Pow && term.right.left instanceof Sym && term.right.left.name === x.name && term.right.right instanceof Num) {
+            return { deg: term.right.right.value, coeff: term.left.value };
+        }
+        // Handle negative terms -x -> -1*x
+        if (term instanceof Mul && term.left instanceof Num && term.left.value === -1 && term.right instanceof Sym && term.right.name === x.name) return { deg: 1, coeff: -1 };
+        return null; // Not a simple monomial
+    };
+
+    // Flatten Add/Sub tree to list of terms
+    const terms = [];
+    const collectTerms = (expr, sign = 1) => {
+        if (expr instanceof Add) {
+            collectTerms(expr.left, sign);
+            collectTerms(expr.right, sign);
+        } else if (expr instanceof Sub) {
+            collectTerms(expr.left, sign);
+            collectTerms(expr.right, -sign);
+        } else {
+            terms.push({ expr, sign });
+        }
+    };
+    collectTerms(numerator);
+
+    const coeffs = {};
+    let maxDeg = 0;
+
+    for (const item of terms) {
+        const info = getTermInfo(item.expr);
+        if (info) {
+             const deg = info.deg;
+             const val = info.coeff * item.sign;
+             coeffs[deg] = (coeffs[deg] || 0) + val;
+             if (deg > maxDeg) maxDeg = deg;
+        } else {
+            // Found non-polynomial term, abort
+            return new Div(numerator, denominator);
+        }
+    }
+
+    // Convert to array [deg0, deg1, ...]
+    const P = [];
+    for(let i=0; i<=maxDeg; i++) P[i] = coeffs[i] || 0;
+
+    // Synthetic division by c
+    // P(x) / (x - c)
+    // Coefficients are P[maxDeg], P[maxDeg-1], ... P[0]
+    // We want Q(x) coeffs.
+    // Q coeffs: q[n-1] = p[n]
+    // q[k] = p[k+1] + c * q[k+1]
+    // Remainder r = p[0] + c * q[0] (should be 0)
+
+    const Q = new Array(maxDeg).fill(0);
+    let carry = 0;
+    for (let i = maxDeg; i > 0; i--) {
+        const val = P[i] + carry; // Wait, standard synthetic division:
+        // Divisor is (x - c).
+        // Coeffs: a_n, a_{n-1}, ... a_0.
+        // b_{n-1} = a_n
+        // b_{n-2} = a_{n-1} + c * b_{n-1}
+        // ...
+        // b_0 = a_1 + c * b_1
+        // R = a_0 + c * b_0
+
+        // My P array is P[0]=const, P[1]=x, etc.
+        // So P[maxDeg] corresponds to a_n.
+
+        // Let's use indices corresponding to power.
+        // Q has degree maxDeg - 1.
+        // Q[maxDeg - 1] = P[maxDeg]
+        // Q[k] = P[k+1] + c * Q[k+1]  <-- Wait, usually it propagates down.
+
+        // Example: (x^2 - 1) / (x - 1). c=1. P=[ -1, 0, 1 ]. maxDeg=2.
+        // Q degree 1.
+        // Q[1] = P[2] = 1.
+        // Q[0] = P[1] + c*Q[1] = 0 + 1*1 = 1.
+        // R = P[0] + c*Q[0] = -1 + 1*1 = 0. Correct.
+    }
+
+    // Correct loop
+    for (let i = maxDeg - 1; i >= 0; i--) {
+        const p_next = P[i+1];
+        if (i === maxDeg - 1) {
+            Q[i] = p_next;
+        } else {
+            Q[i] = P[i+1] + c * Q[i+1];
+        }
+    }
+
+    // Construct Result Polynomial from Q
+    let result = new Num(0);
+    for (let i = 0; i < maxDeg; i++) {
+        const coeff = Q[i];
+        if (coeff === 0) continue;
+
+        let term;
+        if (i === 0) term = new Num(coeff);
+        else if (i === 1) {
+             if (coeff === 1) term = x;
+             else if (coeff === -1) term = new Mul(new Num(-1), x);
+             else term = new Mul(new Num(coeff), x);
+        } else {
+             const pow = new Pow(x, new Num(i));
+             if (coeff === 1) term = pow;
+             else if (coeff === -1) term = new Mul(new Num(-1), pow);
+             else term = new Mul(new Num(coeff), pow);
+        }
+
+        result = new Add(result, term);
+    }
+
+    return result.simplify();
+}
+
 class Num extends Expr {
     constructor(value) {
         super();
@@ -440,7 +577,7 @@ class Div extends BinaryOp {
 
         if (l instanceof Num && l.value === 0) return new Num(0);
         if (r instanceof Num && r.value === 1) return l;
-        if (r instanceof Sym && r.name === "Infinity" && l instanceof Num) return new Num(0); // Finite / Infinity -> 0
+        if (r instanceof Sym && (r.name === "Infinity" || r.name === "infinity") && l instanceof Num) return new Num(0); // Finite / Infinity -> 0
         if (l.toString() === r.toString()) return new Num(1);
 
         // Cancellation: (a * b) / a -> b
@@ -485,6 +622,27 @@ class Div extends BinaryOp {
         if (baseL.toString() === baseR.toString()) {
             const newExp = new Sub(expL, expR).simplify();
             return new Pow(baseL, newExp).simplify();
+        }
+
+        // Polynomial Division Simplification
+        // Check if denominator is linear: x - c or x + c
+        if (r instanceof Sub && r.left instanceof Sym && r.right instanceof Num) {
+            // Denominator: x - c. Root is c.
+            const x = r.left;
+            const c = r.right;
+            const remainder = l.substitute(x, c).simplify();
+            if (remainder instanceof Num && remainder.value === 0) {
+                 return polyDiv(l, r);
+            }
+        }
+        if (r instanceof Add && r.left instanceof Sym && r.right instanceof Num) {
+             // Denominator: x + c. Root is -c.
+             const x = r.left;
+             const c = new Num(-r.right.value);
+             const remainder = l.substitute(x, c).simplify();
+             if (remainder instanceof Num && remainder.value === 0) {
+                 return polyDiv(l, r);
+             }
         }
 
         return new Div(l, r);
@@ -702,16 +860,61 @@ class Call extends Expr {
 
         if (this.funcName === 'sin') {
             const arg = simpleArgs[0];
-            if (arg instanceof Num && arg.value === 0) return new Num(0);
-            if (arg instanceof Num && arg.value === Math.PI) return new Num(0);
+            const val = arg.evaluateNumeric();
+            if (!isNaN(val)) {
+                if (Math.abs(val) < 1e-10) return new Num(0);
+                // Check if multiple of pi/2
+                const multiple = val / (Math.PI / 2);
+                const eps = 1e-10;
+                if (Math.abs(multiple - Math.round(multiple)) < eps) {
+                    const k = Math.round(multiple);
+                    // k * pi/2
+                    // k % 4: 0 -> 0, 1 -> 1, 2 -> 0, 3 -> -1
+                    const rem = ((k % 4) + 4) % 4;
+                    if (rem === 0) return new Num(0);
+                    if (rem === 1) return new Num(1);
+                    if (rem === 2) return new Num(0);
+                    if (rem === 3) return new Num(-1);
+                }
+            }
         }
         if (this.funcName === 'cos') {
             const arg = simpleArgs[0];
-            if (arg instanceof Num && arg.value === 0) return new Num(1);
+            const val = arg.evaluateNumeric();
+            if (!isNaN(val)) {
+                if (Math.abs(val) < 1e-10) return new Num(1);
+                const multiple = val / (Math.PI / 2);
+                const eps = 1e-10;
+                if (Math.abs(multiple - Math.round(multiple)) < eps) {
+                    const k = Math.round(multiple);
+                    const rem = ((k % 4) + 4) % 4;
+                    if (rem === 0) return new Num(1);
+                    if (rem === 1) return new Num(0);
+                    if (rem === 2) return new Num(-1);
+                    if (rem === 3) return new Num(0);
+                }
+            }
         }
         if (this.funcName === 'tan') {
             const arg = simpleArgs[0];
-            if (arg instanceof Num && arg.value === 0) return new Num(0);
+            const val = arg.evaluateNumeric();
+            if (!isNaN(val)) {
+                if (Math.abs(val) < 1e-10) return new Num(0);
+                const multiple = val / (Math.PI / 4);
+                const eps = 1e-10;
+                if (Math.abs(multiple - Math.round(multiple)) < eps) {
+                    const k = Math.round(multiple);
+                    const rem = ((k % 8) + 8) % 8;
+                    if (rem === 0) return new Num(0);
+                    if (rem === 1) return new Num(1);
+                    if (rem === 2) return new Sym("Infinity");
+                    if (rem === 3) return new Num(-1);
+                    if (rem === 4) return new Num(0);
+                    if (rem === 5) return new Num(1);
+                    if (rem === 6) return new Sym("Infinity");
+                    if (rem === 7) return new Num(-1);
+                }
+            }
         }
         if (this.funcName === 'asin') {
             const arg = simpleArgs[0];
@@ -787,6 +990,11 @@ class Call extends Expr {
             const arg = simpleArgs[0];
             if (arg instanceof Num) return new Num(Math.sign(arg.value));
             if (arg instanceof Num && arg.value === 0) return new Num(0);
+        }
+
+        if (this.funcName === 'power') {
+             // Do not simplify to Pow or Num, keep as 'power' to preserve factorization structure
+             return new Call('power', simpleArgs);
         }
 
         if (this.funcName === 'floor') {
@@ -1055,6 +1263,10 @@ class Call extends Expr {
 
         if (this.funcName === 'nPr' && argsTex.length === 2) {
              return `{}_{${argsTex[0]}}P_{${argsTex[1]}}`;
+        }
+
+        if (this.funcName === 'power') {
+             return `{${argsTex[0]}}^{${argsTex[1]}}`;
         }
 
         return `\\text{${this.funcName}}\\left(${argsTex.join(", ")}\\right)`;
