@@ -336,6 +336,47 @@
         #mode-toggle:hover {
             background: rgba(0, 123, 255, 0.1);
         }
+
+        /* Tabs */
+        .tab-header {
+            display: flex;
+            overflow-x: auto;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 20px;
+            gap: 5px;
+            padding-bottom: 5px;
+            -webkit-overflow-scrolling: touch; /* smooth scroll on iOS */
+        }
+        .tab-btn {
+            background: none;
+            border: none;
+            padding: 10px 15px;
+            cursor: pointer;
+            font-size: 1em;
+            color: #666;
+            border-radius: 8px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .tab-btn:hover {
+            background-color: #f0f0f0;
+        }
+        .tab-btn.active {
+            background-color: var(--primary-color);
+            color: white;
+            font-weight: 600;
+        }
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.2s ease-out;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
 <body>
@@ -393,6 +434,14 @@
             <span class="app-icon" style="color: #6610f2;">⚖️</span>
             <span class="app-name">Converter</span>
         </div>
+        <div class="app-card" onclick="openTool('geometry')">
+            <span class="app-icon" style="color: #20c997;">📐</span>
+            <span class="app-name">Geometry</span>
+        </div>
+        <div class="app-card" onclick="openTool('finance')">
+            <span class="app-icon" style="color: #28a745;">💲</span>
+            <span class="app-name">Finance</span>
+        </div>
         <div class="app-card" onclick="openTool('settings')">
             <span class="app-icon" style="color: #007bff;">⚙️</span>
             <span class="app-name">Settings</span>
@@ -409,7 +458,7 @@
         <div class="tool-form">
             <div class="form-group" style="position: relative;">
                 <label for="calc-main-input" class="form-label" style="display:none;">Calculator Input</label>
-                <input type="text" class="form-input" id="calc-main-input" placeholder="Enter expression..." style="font-size: 1.5em; padding: 15px;" autocapitalize="off" autocorrect="off">
+                <input type="text" class="form-input" id="calc-main-input" placeholder="Enter expression..." style="font-size: 1.5em; padding: 15px;" autocapitalize="off" autocorrect="off" oninput="liveCalc()">
                 <button onclick="document.getElementById('calc-main-input').value = ''" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #999; font-size: 1.2em; cursor: pointer;">×</button>
             </div>
 
@@ -454,8 +503,12 @@
             <span class="tool-title">Algebra</span>
         </div>
 
-        <div class="tool-section">
-            <h3>Basic Operations</h3>
+        <div class="tab-header">
+            <button class="tab-btn active" onclick="openTab(event, 'tab-alg-basic')">Simplify & Expand</button>
+            <button class="tab-btn" onclick="openTab(event, 'tab-alg-solve')">Solve</button>
+        </div>
+
+        <div id="tab-alg-basic" class="tab-content active">
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="alg-expr">Expression</label>
@@ -470,8 +523,7 @@
             </div>
         </div>
 
-        <div class="tool-section">
-            <h3>Solve Equation</h3>
+        <div id="tab-alg-solve" class="tab-content">
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="alg-eq">Equation (= 0)</label>
@@ -496,8 +548,14 @@
             <span class="tool-title">Calculus</span>
         </div>
 
-        <div class="tool-section">
-            <h3>Differentiation & Limit</h3>
+        <div class="tab-header">
+            <button class="tab-btn active" onclick="openTab(event, 'tab-calc-diff')">Diff & Limit</button>
+            <button class="tab-btn" onclick="openTab(event, 'tab-calc-int')">Integration</button>
+            <button class="tab-btn" onclick="openTab(event, 'tab-calc-series')">Taylor Series</button>
+        </div>
+
+        <!-- Diff & Limit Tab -->
+        <div id="tab-calc-diff" class="tab-content active">
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="calc-expr">Expression</label>
@@ -521,8 +579,8 @@
             </div>
         </div>
 
-        <div class="tool-section">
-            <h3>Integration</h3>
+        <!-- Integration Tab -->
+        <div id="tab-calc-int" class="tab-content">
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="int-expr">Expression</label>
@@ -550,8 +608,8 @@
             </div>
         </div>
 
-        <div class="tool-section">
-            <h3>Taylor Series</h3>
+        <!-- Series Tab -->
+        <div id="tab-calc-series" class="tab-content">
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="taylor-expr">Function</label>
@@ -622,8 +680,13 @@
             <span class="tool-title">Linear Algebra</span>
         </div>
 
-        <div class="tool-section">
-            <h3>Matrix Operations</h3>
+        <div class="tab-header">
+             <button class="tab-btn active" onclick="openTab(event, 'tab-lin-ops')">Operations</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-lin-build')">Builder</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-lin-vec')">Vectors</button>
+        </div>
+
+        <div id="tab-lin-ops" class="tab-content active">
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="lin-expr">Matrix (as nested lists)</label>
@@ -638,8 +701,7 @@
             </div>
         </div>
 
-        <div class="tool-section">
-            <h3>Matrix Builder</h3>
+        <div id="tab-lin-build" class="tab-content">
             <div class="tool-form">
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -657,8 +719,7 @@
             </div>
         </div>
 
-        <div class="tool-section">
-             <h3>Vector Cross Product</h3>
+        <div id="tab-lin-vec" class="tab-content">
              <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="vec-a">Vector A</label>
@@ -682,21 +743,28 @@
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Statistics</span>
         </div>
-        <div class="tool-form">
-            <div class="form-group">
-                <label class="form-label" for="stat-list">Data List</label>
-                <input type="text" class="form-input" id="stat-list" placeholder="e.g. [1, 2, 3, 4, 5]">
-            </div>
-            <div class="action-grid">
-                <button class="action-btn" onclick="runTool('mean', ['stat-list'])">Mean</button>
-                <button class="action-btn" onclick="runTool('variance', ['stat-list'])">Variance</button>
-                <button class="action-btn" onclick="runTool('median', ['stat-list'])">Median</button>
-                <button class="action-btn" onclick="runTool('std', ['stat-list'])">Std Dev</button>
+
+        <div class="tab-header">
+             <button class="tab-btn active" onclick="openTab(event, 'tab-stat-desc')">Descriptive</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-stat-reg')">Regression</button>
+        </div>
+
+        <div id="tab-stat-desc" class="tab-content active">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="stat-list">Data List</label>
+                    <input type="text" class="form-input" id="stat-list" placeholder="e.g. [1, 2, 3, 4, 5]">
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('mean', ['stat-list'])">Mean</button>
+                    <button class="action-btn" onclick="runTool('variance', ['stat-list'])">Variance</button>
+                    <button class="action-btn" onclick="runTool('median', ['stat-list'])">Median</button>
+                    <button class="action-btn" onclick="runTool('std', ['stat-list'])">Std Dev</button>
+                </div>
             </div>
         </div>
 
-        <div class="tool-section">
-            <h3>Linear Regression</h3>
+        <div id="tab-stat-reg" class="tab-content">
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="reg-data">Points [[x1,y1], [x2,y2]...]</label>
@@ -782,6 +850,51 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- GEOMETRY -->
+    <div id="tool-geometry" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Geometry</span>
+        </div>
+
+        <div class="tab-header">
+             <button class="tab-btn active" onclick="openTab(event, 'tab-geo-2d')">2D Shapes</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-geo-3d')">3D Objects</button>
+        </div>
+
+        <div id="tab-geo-2d" class="tab-content active">
+             <div class="tool-form">
+                 <div class="form-group">
+                     <label class="form-label">Shape</label>
+                     <select id="geo-2d-shape" class="form-input" onchange="updateGeoInputs('2d')">
+                         <option value="circle">Circle</option>
+                         <option value="triangle">Triangle</option>
+                         <option value="rectangle">Rectangle</option>
+                     </select>
+                 </div>
+                 <div id="geo-2d-inputs"></div>
+                 <button class="action-btn" onclick="runGeometry('2d')">Calculate</button>
+             </div>
+        </div>
+
+        <div id="tab-geo-3d" class="tab-content">
+             <div class="tool-form">
+                 <div class="form-group">
+                     <label class="form-label">Object</label>
+                     <select id="geo-3d-shape" class="form-input" onchange="updateGeoInputs('3d')">
+                         <option value="sphere">Sphere</option>
+                         <option value="cylinder">Cylinder</option>
+                         <option value="cube">Cube</option>
+                     </select>
+                 </div>
+                 <div id="geo-3d-inputs"></div>
+                 <button class="action-btn" onclick="runGeometry('3d')">Calculate</button>
+             </div>
+        </div>
+
+        <div class="tool-result"></div>
     </div>
 
     <!-- VARIABLES APP -->
@@ -941,6 +1054,10 @@
             if (toolName === 'converter') {
                 updateConvUnits();
             }
+            if (toolName === 'geometry') {
+                updateGeoInputs('2d');
+                updateGeoInputs('3d');
+            }
         };
 
         window.closeTool = function() {
@@ -950,6 +1067,31 @@
 
             if (isMobileMode) {
                 document.getElementById('app-grid').style.display = 'grid';
+            }
+        };
+
+        window.openTab = function(evt, tabId) {
+            // Find parent tool view
+            const toolView = evt.target.closest('.tool-view');
+            if (!toolView) return;
+
+            // Hide all tab contents in this tool
+            const contents = toolView.querySelectorAll('.tab-content');
+            contents.forEach(c => c.classList.remove('active'));
+
+            // Deactivate all tab buttons in this tool
+            const btns = toolView.querySelectorAll('.tab-btn');
+            btns.forEach(b => b.classList.remove('active'));
+
+            // Activate selected
+            const target = document.getElementById(tabId);
+            if(target) target.classList.add('active');
+            evt.target.classList.add('active');
+
+            // Auto-focus first input in new tab
+            if(target) {
+                const firstInput = target.querySelector('input');
+                if (firstInput) lastFocusedInput = firstInput.id;
             }
         };
 
@@ -1644,6 +1786,54 @@
             canvas.addEventListener('wheel', onWheel, {passive: false});
         }
 
+        function manualZoom(canvas, factor) {
+            const b = canvas.plotBounds;
+            if(!b) return;
+            const xRange = b.maxX - b.minX;
+            const yRange = b.maxY - b.minY;
+            const centerX = (b.minX + b.maxX) / 2;
+            const centerY = (b.minY + b.maxY) / 2;
+
+            const newXRange = xRange * factor;
+            const newYRange = yRange * factor;
+
+            const newBounds = {
+                minX: centerX - newXRange / 2,
+                maxX: centerX + newXRange / 2,
+                minY: centerY - newYRange / 2,
+                maxY: centerY + newYRange / 2
+            };
+            drawPlot(canvas, canvas.plotResult, newBounds);
+        }
+
+        let calcDebounce;
+        window.liveCalc = function() {
+            clearTimeout(calcDebounce);
+            calcDebounce = setTimeout(() => {
+                const val = document.getElementById('calc-main-input').value;
+                if(!val) return;
+                try {
+                    const lexer = new Lexer(val);
+                    const parser = new Parser(lexer);
+                    const tree = parser.parse();
+                    const res = cas.evaluate(tree);
+
+                    const resultBox = document.querySelector('#tool-calculator .tool-result');
+                    if(resultBox) {
+                        if(res && res.toLatex) {
+                             resultBox.innerHTML = `\\[${res.toLatex()}\\]`;
+                             if(window.MathJax) MathJax.typesetPromise([resultBox]).catch(()=>{});
+                        } else {
+                             resultBox.innerText = res.toString();
+                        }
+                        resultBox.style.display = 'block';
+                    }
+                } catch(e) {
+                    // Ignore errors
+                }
+            }, 300);
+        };
+
         function addToHistory(command, result, isError, latex) {
             const entryDiv = document.createElement('div');
             entryDiv.className = 'entry';
@@ -1731,11 +1921,34 @@
 
             if (result && typeof result === 'object' && result.type === 'plot') {
                 // Handle Plot
+                const container = document.createElement('div');
+                container.style.position = 'relative';
+                container.style.display = 'inline-block';
+                container.style.maxWidth = '100%';
+
                 const canvas = document.createElement('canvas');
                 canvas.width = 400;
                 canvas.height = 300;
                 canvas.style.cursor = 'move';
-                resultDiv.appendChild(canvas);
+                container.appendChild(canvas);
+
+                // Zoom Buttons
+                const btnStyle = "position: absolute; right: 10px; width: 30px; height: 30px; background: rgba(255,255,255,0.9); border: 1px solid #ccc; border-radius: 4px; font-weight: bold; cursor: pointer; color:#333;";
+
+                const zoomIn = document.createElement('button');
+                zoomIn.innerText = "+";
+                zoomIn.style.cssText = btnStyle + "bottom: 45px;";
+                zoomIn.onclick = (e) => { e.stopPropagation(); manualZoom(canvas, 0.8); };
+
+                const zoomOut = document.createElement('button');
+                zoomOut.innerText = "-";
+                zoomOut.style.cssText = btnStyle + "bottom: 10px;";
+                zoomOut.onclick = (e) => { e.stopPropagation(); manualZoom(canvas, 1.25); };
+
+                container.appendChild(zoomIn);
+                container.appendChild(zoomOut);
+
+                resultDiv.appendChild(container);
 
                 // Draw after appending
                 setTimeout(() => {
@@ -2268,6 +2481,160 @@
         // Initial welcome
         addToHistory("System Ready", "Welcome to Client-Side CAS", false);
         updateVariables();
+
+        // Geometry Logic
+        window.updateGeoInputs = function(type) {
+             const shape = document.getElementById(`geo-${type}-shape`).value;
+             const container = document.getElementById(`geo-${type}-inputs`);
+             container.innerHTML = '';
+
+             const createInput = (id, label) => {
+                 const div = document.createElement('div');
+                 div.className = 'form-group';
+                 div.innerHTML = `<label class="form-label" for="${id}">${label}</label><input type="number" class="form-input" id="${id}">`;
+                 return div;
+             };
+
+             if (type === '2d') {
+                 if (shape === 'circle') container.appendChild(createInput('geo-r', 'Radius (r)'));
+                 if (shape === 'triangle') {
+                     const row = document.createElement('div'); row.className = 'form-row';
+                     const g1 = document.createElement('div'); g1.className='form-group'; g1.style.flex='1';
+                     g1.innerHTML = `<label class="form-label">Base (b)</label><input type="number" class="form-input" id="geo-b">`;
+                     const g2 = document.createElement('div'); g2.className='form-group'; g2.style.flex='1';
+                     g2.innerHTML = `<label class="form-label">Height (h)</label><input type="number" class="form-input" id="geo-h">`;
+                     row.appendChild(g1); row.appendChild(g2);
+                     container.appendChild(row);
+                 }
+                 if (shape === 'rectangle') {
+                      const row = document.createElement('div'); row.className = 'form-row';
+                      const g1 = document.createElement('div'); g1.className='form-group'; g1.style.flex='1';
+                      g1.innerHTML = `<label class="form-label">Width (w)</label><input type="number" class="form-input" id="geo-w">`;
+                      const g2 = document.createElement('div'); g2.className='form-group'; g2.style.flex='1';
+                      g2.innerHTML = `<label class="form-label">Length (l)</label><input type="number" class="form-input" id="geo-l">`;
+                      row.appendChild(g1); row.appendChild(g2);
+                      container.appendChild(row);
+                 }
+             } else {
+                 if (shape === 'sphere') container.appendChild(createInput('geo-r3', 'Radius (r)'));
+                 if (shape === 'cylinder') {
+                      const row = document.createElement('div'); row.className = 'form-row';
+                      const g1 = document.createElement('div'); g1.className='form-group'; g1.style.flex='1';
+                      g1.innerHTML = `<label class="form-label">Radius (r)</label><input type="number" class="form-input" id="geo-r3">`;
+                      const g2 = document.createElement('div'); g2.className='form-group'; g2.style.flex='1';
+                      g2.innerHTML = `<label class="form-label">Height (h)</label><input type="number" class="form-input" id="geo-h3">`;
+                      row.appendChild(g1); row.appendChild(g2);
+                      container.appendChild(row);
+                 }
+                 if (shape === 'cube') container.appendChild(createInput('geo-s', 'Side (s)'));
+             }
+        };
+
+        window.runGeometry = function(type) {
+             const shape = document.getElementById(`geo-${type}-shape`).value;
+             let result = "";
+
+             if (type === '2d') {
+                 if (shape === 'circle') {
+                     const r = parseFloat(document.getElementById('geo-r').value);
+                     if (isNaN(r)) return;
+                     const area = Math.PI * r * r;
+                     const circ = 2 * Math.PI * r;
+                     result = `Area = ${area.toFixed(4)}\nCircumference = ${circ.toFixed(4)}`;
+                 }
+                 if (shape === 'triangle') {
+                     const b = parseFloat(document.getElementById('geo-b').value);
+                     const h = parseFloat(document.getElementById('geo-h').value);
+                     if (isNaN(b) || isNaN(h)) return;
+                     const area = 0.5 * b * h;
+                     result = `Area = ${area.toFixed(4)}`;
+                 }
+                 if (shape === 'rectangle') {
+                     const w = parseFloat(document.getElementById('geo-w').value);
+                     const l = parseFloat(document.getElementById('geo-l').value);
+                     if (isNaN(w) || isNaN(l)) return;
+                     const area = w * l;
+                     const perim = 2 * (w + l);
+                     result = `Area = ${area.toFixed(4)}\nPerimeter = ${perim.toFixed(4)}`;
+                 }
+             } else {
+                 if (shape === 'sphere') {
+                     const r = parseFloat(document.getElementById('geo-r3').value);
+                     if (isNaN(r)) return;
+                     const vol = (4/3) * Math.PI * Math.pow(r, 3);
+                     const surf = 4 * Math.PI * r * r;
+                     result = `Volume = ${vol.toFixed(4)}\nSurface Area = ${surf.toFixed(4)}`;
+                 }
+                 if (shape === 'cylinder') {
+                     const r = parseFloat(document.getElementById('geo-r3').value);
+                     const h = parseFloat(document.getElementById('geo-h3').value);
+                     if (isNaN(r) || isNaN(h)) return;
+                     const vol = Math.PI * r * r * h;
+                     const surf = 2 * Math.PI * r * h + 2 * Math.PI * r * r;
+                     result = `Volume = ${vol.toFixed(4)}\nSurface Area = ${surf.toFixed(4)}`;
+                 }
+                 if (shape === 'cube') {
+                     const s = parseFloat(document.getElementById('geo-s').value);
+                     if (isNaN(s)) return;
+                     const vol = Math.pow(s, 3);
+                     const surf = 6 * s * s;
+                     result = `Volume = ${vol.toFixed(4)}\nSurface Area = ${surf.toFixed(4)}`;
+                 }
+             }
+
+             const info = { type: 'info', text: result };
+             addToHistory(`Geometry ${shape}`, info, false);
+
+             // Manually show result
+             const visibleTool = document.querySelector('.tool-view[style*="block"]');
+             if(visibleTool) {
+                 const resBox = visibleTool.querySelector('.tool-result');
+                 resBox.innerText = result;
+                 resBox.style.display = 'block';
+             }
+        };
+
+        // Finance Logic
+        window.runFinance = function(type) {
+             let result = "";
+             if (type === 'compound') {
+                 const P = parseFloat(document.getElementById('fin-p').value);
+                 const r = parseFloat(document.getElementById('fin-r').value) / 100;
+                 const t = parseFloat(document.getElementById('fin-t').value);
+                 const n = parseFloat(document.getElementById('fin-n').value);
+
+                 if(isNaN(P) || isNaN(r) || isNaN(t)) return;
+
+                 const A = P * Math.pow((1 + r/n), n*t);
+                 result = `Future Value (A) = ${A.toFixed(2)}`;
+             }
+             if (type === 'loan') {
+                 const P = parseFloat(document.getElementById('loan-p').value);
+                 const r = parseFloat(document.getElementById('loan-r').value) / 100 / 12; // Monthly rate
+                 const t = parseFloat(document.getElementById('loan-t').value);
+                 const n = t * 12; // Total months
+
+                 if(isNaN(P) || isNaN(r) || isNaN(t)) return;
+
+                 if (r === 0) {
+                     const M = P / n;
+                     result = `Monthly Payment = ${M.toFixed(2)}`;
+                 } else {
+                     const M = P * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+                     result = `Monthly Payment = ${M.toFixed(2)}`;
+                 }
+             }
+
+             const info = { type: 'info', text: result };
+             addToHistory(`Finance ${type}`, info, false);
+
+             const visibleTool = document.querySelector('.tool-view[style*="block"]');
+             if(visibleTool) {
+                 const resBox = visibleTool.querySelector('.tool-result');
+                 resBox.innerText = result;
+                 resBox.style.display = 'block';
+             }
+        };
     </script>
 </body>
 </html>
