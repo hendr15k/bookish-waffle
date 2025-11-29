@@ -285,21 +285,29 @@ class Parser {
     }
 
     term() {
-        let node = this.unary();
+        let node = this.implicitMul();
         while (this.currentToken.type === TOKEN_STAR ||
-               this.currentToken.type === TOKEN_SLASH ||
-               this.isImplicitMulStart(this.currentToken)) {
+               this.currentToken.type === TOKEN_SLASH) {
 
             if (this.currentToken.type === TOKEN_STAR) {
                 this.eat(TOKEN_STAR);
-                node = new Mul(node, this.unary());
+                node = new Mul(node, this.implicitMul());
             } else if (this.currentToken.type === TOKEN_SLASH) {
                 this.eat(TOKEN_SLASH);
-                node = new Div(node, this.unary());
-            } else {
-                // Implicit multiplication: no operator consumed
-                node = new Mul(node, this.unary());
+                node = new Div(node, this.implicitMul());
             }
+        }
+        return node;
+    }
+
+    implicitMul() {
+        let node = this.unary();
+        // Check for implicit multiplication start
+        while (this.isImplicitMulStart(this.currentToken)) {
+             // Implicit multiplication has higher precedence than * /
+             // so it binds tight here.
+             const right = this.unary();
+             node = new Mul(node, right);
         }
         return node;
     }
