@@ -298,6 +298,11 @@ class CAS {
                 return this._variance(args[0]);
             }
 
+            if (node.funcName === 'median') {
+                if (args.length !== 1) throw new Error("median requires 1 argument (list)");
+                return this._median(args[0]);
+            }
+
             if (node.funcName === 'linearRegression') {
                 if (args.length !== 1) throw new Error("linearRegression requires 1 argument (list of points)");
                 return this._linearRegression(args[0]);
@@ -798,7 +803,7 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
             for(const base in counts) {
                 const p = counts[base];
                 if (p === 1) exprs.push(new Num(parseInt(base)));
-                else exprs.push(new Pow(new Num(parseInt(base)), new Num(p)));
+                else exprs.push(new Call('power', [new Num(parseInt(base)), new Num(p)]));
             }
 
             if (exprs.length === 1) return exprs[0];
@@ -828,6 +833,29 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
             return new Div(sum, new Num(list.elements.length)).simplify();
         }
         return new Call('mean', [list]);
+    }
+
+    _median(list) {
+        if (list instanceof Vec) {
+            const n = list.elements.length;
+            if (n === 0) return new Num(0);
+
+            // Sort elements based on numeric value
+            const sorted = [...list.elements].sort((a, b) => {
+                const va = a.evaluateNumeric();
+                const vb = b.evaluateNumeric();
+                return va - vb;
+            });
+
+            if (n % 2 === 1) {
+                return sorted[Math.floor(n / 2)];
+            } else {
+                const mid1 = sorted[n / 2 - 1];
+                const mid2 = sorted[n / 2];
+                return new Div(new Add(mid1, mid2), new Num(2)).simplify();
+            }
+        }
+        return new Call('median', [list]);
     }
 
     _variance(list) {
