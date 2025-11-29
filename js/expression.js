@@ -440,6 +440,7 @@ class Div extends BinaryOp {
 
         if (l instanceof Num && l.value === 0) return new Num(0);
         if (r instanceof Num && r.value === 1) return l;
+        if (r instanceof Sym && r.name === "Infinity" && l instanceof Num) return new Num(0); // Finite / Infinity -> 0
         if (l.toString() === r.toString()) return new Num(1);
 
         // Cancellation: (a * b) / a -> b
