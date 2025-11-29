@@ -435,7 +435,10 @@
                 <button class="function-btn" style="background-color: #ffe8cc; border-color: #ffc107;" onclick="insertAtCursor('calc-main-input', 'ans')">Ans</button>
             </div>
 
-            <button class="action-btn" style="font-size: 1.2em; padding: 16px;" onclick="runTool('simplify', ['calc-main-input'])">Calculate</button>
+            <div class="action-grid">
+                <button class="action-btn" style="font-size: 1.2em; padding: 16px;" onclick="runTool('simplify', ['calc-main-input'])">Calculate</button>
+                <button class="action-btn" style="font-size: 1.2em; padding: 16px; background-color: #28a745;" onclick="runAndPlot('simplify', ['calc-main-input'])">Plot</button>
+            </div>
         </div>
         <div class="tool-result" style="font-size: 1.5em; min-height: 80px;"></div>
     </div>
@@ -458,6 +461,7 @@
                     <button class="action-btn" onclick="runTool('simplify', ['alg-expr'])">Simplify</button>
                     <button class="action-btn" onclick="runTool('expand', ['alg-expr'])">Expand</button>
                     <button class="action-btn" onclick="runTool('sqrt', ['alg-expr'])">Sqrt</button>
+                    <button class="action-btn" onclick="runAndPlot('simplify', ['alg-expr'])" style="background-color: #28a745;">Plot</button>
                 </div>
             </div>
         </div>
