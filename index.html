@@ -408,6 +408,7 @@
         </div>
         <div class="tool-form">
             <div class="form-group" style="position: relative;">
+                <label for="calc-main-input" class="form-label" style="display:none;">Calculator Input</label>
                 <input type="text" class="form-input" id="calc-main-input" placeholder="Enter expression..." style="font-size: 1.5em; padding: 15px;" autocapitalize="off" autocorrect="off">
                 <button onclick="document.getElementById('calc-main-input').value = ''" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #999; font-size: 1.2em; cursor: pointer;">×</button>
             </div>
@@ -454,7 +455,7 @@
             <h3>Basic Operations</h3>
             <div class="tool-form">
                 <div class="form-group">
-                    <label class="form-label">Expression</label>
+                    <label class="form-label" for="alg-expr">Expression</label>
                     <input type="text" class="form-input" id="alg-expr" placeholder="e.g. (x+1)^2">
                 </div>
                 <div class="action-grid">
@@ -470,11 +471,11 @@
             <h3>Solve Equation</h3>
             <div class="tool-form">
                 <div class="form-group">
-                    <label class="form-label">Equation (= 0)</label>
+                    <label class="form-label" for="alg-eq">Equation (= 0)</label>
                     <input type="text" class="form-input" id="alg-eq" placeholder="e.g. x^2 - 4">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Variable</label>
+                    <label class="form-label" for="alg-var">Variable</label>
                     <input type="text" class="form-input" id="alg-var" placeholder="x" value="x">
                 </div>
                 <button class="action-btn" onclick="runTool('solve', ['alg-eq', 'alg-var'])">Solve for Variable</button>
@@ -495,16 +496,16 @@
             <h3>Differentiation & Limit</h3>
             <div class="tool-form">
                 <div class="form-group">
-                    <label class="form-label">Expression</label>
+                    <label class="form-label" for="calc-expr">Expression</label>
                     <input type="text" class="form-input" id="calc-expr" placeholder="e.g. sin(x)">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex: 1;">
-                        <label class="form-label">Var</label>
+                        <label class="form-label" for="calc-var">Var</label>
                         <input type="text" class="form-input" id="calc-var" placeholder="x" value="x">
                     </div>
                     <div class="form-group" style="flex: 1;">
-                        <label class="form-label">Pt (Limit)</label>
+                        <label class="form-label" for="calc-pt">Pt (Limit)</label>
                         <input type="text" class="form-input" id="calc-pt" placeholder="0" value="0">
                     </div>
                 </div>
@@ -520,20 +521,20 @@
             <h3>Integration</h3>
             <div class="tool-form">
                 <div class="form-group">
-                    <label class="form-label">Expression</label>
+                    <label class="form-label" for="int-expr">Expression</label>
                     <input type="text" class="form-input" id="int-expr" placeholder="e.g. x^2">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Variable</label>
+                    <label class="form-label" for="int-var">Variable</label>
                     <input type="text" class="form-input" id="int-var" placeholder="x" value="x">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
-                        <label class="form-label">From (opt)</label>
+                        <label class="form-label" for="int-from">From (opt)</label>
                         <input type="text" class="form-input" id="int-from" placeholder="">
                     </div>
                     <div class="form-group" style="flex:1">
-                        <label class="form-label">To (opt)</label>
+                        <label class="form-label" for="int-to">To (opt)</label>
                         <input type="text" class="form-input" id="int-to" placeholder="">
                     </div>
                 </div>
@@ -549,20 +550,20 @@
             <h3>Taylor Series</h3>
             <div class="tool-form">
                 <div class="form-group">
-                    <label class="form-label">Function</label>
+                    <label class="form-label" for="taylor-expr">Function</label>
                     <input type="text" class="form-input" id="taylor-expr" placeholder="e.g. cos(x)">
                 </div>
                  <div class="form-row">
                     <div class="form-group" style="flex: 1;">
-                        <label class="form-label">Var</label>
+                        <label class="form-label" for="taylor-var">Var</label>
                         <input type="text" class="form-input" id="taylor-var" placeholder="x" value="x">
                     </div>
                     <div class="form-group" style="flex: 1;">
-                        <label class="form-label">Point</label>
+                        <label class="form-label" for="taylor-pt">Point</label>
                         <input type="text" class="form-input" id="taylor-pt" placeholder="0" value="0">
                     </div>
                      <div class="form-group" style="flex: 1;">
-                        <label class="form-label">Order</label>
+                        <label class="form-label" for="taylor-order">Order</label>
                         <input type="number" class="form-input" id="taylor-order" placeholder="4" value="4">
                     </div>
                 </div>
@@ -584,20 +585,20 @@
         </div>
         <div class="tool-form">
             <div class="form-group">
-                <label class="form-label">Function y=</label>
+                <label class="form-label" for="plot-expr">Function y=</label>
                 <input type="text" class="form-input" id="plot-expr" placeholder="e.g. sin(x)">
             </div>
             <div class="form-group">
-                <label class="form-label">Variable</label>
+                <label class="form-label" for="plot-var">Variable</label>
                 <input type="text" class="form-input" id="plot-var" placeholder="e.g. x" value="x">
             </div>
             <div class="form-row">
                  <div class="form-group" style="flex:1">
-                    <label class="form-label">Min X</label>
+                    <label class="form-label" for="plot-min">Min X</label>
                     <input type="number" class="form-input" id="plot-min" value="-10">
                 </div>
                  <div class="form-group" style="flex:1">
-                    <label class="form-label">Max X</label>
+                    <label class="form-label" for="plot-max">Max X</label>
                     <input type="number" class="form-input" id="plot-max" value="10">
                 </div>
             </div>
@@ -619,7 +620,7 @@
             <h3>Matrix Operations</h3>
             <div class="tool-form">
                 <div class="form-group">
-                    <label class="form-label">Matrix (as nested lists)</label>
+                    <label class="form-label" for="lin-expr">Matrix (as nested lists)</label>
                     <input type="text" class="form-input" id="lin-expr" placeholder="[[1,2],[3,4]]">
                 </div>
                 <div class="action-grid">
@@ -636,11 +637,11 @@
             <div class="tool-form">
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
-                        <label class="form-label">Rows</label>
+                        <label class="form-label" for="mat-rows">Rows</label>
                         <input type="number" class="form-input" id="mat-rows" value="2" min="1" max="5">
                     </div>
                     <div class="form-group" style="flex:1">
-                        <label class="form-label">Cols</label>
+                        <label class="form-label" for="mat-cols">Cols</label>
                         <input type="number" class="form-input" id="mat-cols" value="2" min="1" max="5">
                     </div>
                 </div>
@@ -654,11 +655,11 @@
              <h3>Vector Cross Product</h3>
              <div class="tool-form">
                 <div class="form-group">
-                    <label class="form-label">Vector A</label>
+                    <label class="form-label" for="vec-a">Vector A</label>
                     <input type="text" class="form-input" id="vec-a" placeholder="[1, 0, 0]">
                 </div>
                  <div class="form-group">
-                    <label class="form-label">Vector B</label>
+                    <label class="form-label" for="vec-b">Vector B</label>
                     <input type="text" class="form-input" id="vec-b" placeholder="[0, 1, 0]">
                 </div>
                 <button class="action-btn" onclick="runTool('cross', ['vec-a', 'vec-b'])">Cross Product</button>
@@ -676,7 +677,7 @@
         </div>
         <div class="tool-form">
             <div class="form-group">
-                <label class="form-label">Data List</label>
+                <label class="form-label" for="stat-list">Data List</label>
                 <input type="text" class="form-input" id="stat-list" placeholder="e.g. [1, 2, 3, 4, 5]">
             </div>
             <div class="action-grid">
@@ -691,7 +692,7 @@
             <h3>Linear Regression</h3>
             <div class="tool-form">
                 <div class="form-group">
-                    <label class="form-label">Points [[x1,y1], [x2,y2]...]</label>
+                    <label class="form-label" for="reg-data">Points [[x1,y1], [x2,y2]...]</label>
                     <input type="text" class="form-input" id="reg-data" placeholder="[[1,1], [2,3], [3,2]]">
                 </div>
                 <button class="action-btn" onclick="runRegression()">Calculate & Plot</button>
@@ -708,11 +709,11 @@
         </div>
         <div class="tool-form">
             <div class="form-group">
-                <label class="form-label">Number A / n</label>
+                <label class="form-label" for="num-a">Number A / n</label>
                 <input type="text" class="form-input" id="num-a" placeholder="e.g. 12">
             </div>
              <div class="form-group">
-                <label class="form-label">Number B / k (Optional)</label>
+                <label class="form-label" for="num-b">Number B / k (Optional)</label>
                 <input type="text" class="form-input" id="num-b" placeholder="e.g. 15">
             </div>
             <div class="action-grid">
@@ -730,15 +731,15 @@
             <h3>Base Converter</h3>
             <div class="tool-form">
                 <div class="form-group">
-                    <label class="form-label">Decimal</label>
+                    <label class="form-label" for="base-dec">Decimal</label>
                     <input type="number" class="form-input" id="base-dec" oninput="updateBaseConversion('base-dec')">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Binary</label>
+                    <label class="form-label" for="base-bin">Binary</label>
                     <input type="text" class="form-input" id="base-bin" oninput="updateBaseConversion('base-bin')">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Hex</label>
+                    <label class="form-label" for="base-hex">Hex</label>
                     <input type="text" class="form-input" id="base-hex" oninput="updateBaseConversion('base-hex')">
                 </div>
             </div>
@@ -754,7 +755,7 @@
         </div>
         <div class="tool-form">
             <div class="form-group">
-                <label class="form-label">Category</label>
+                <label class="form-label" for="conv-category">Category</label>
                 <select id="conv-category" class="form-input" onchange="updateConvUnits()">
                     <option value="length">Length</option>
                     <option value="mass">Mass</option>
@@ -763,12 +764,12 @@
             </div>
             <div class="form-row">
                 <div class="form-group" style="flex:1">
-                    <label class="form-label">From</label>
+                    <label class="form-label" for="conv-val-from">From</label>
                     <input type="number" class="form-input" id="conv-val-from" oninput="runConverter('from')">
                     <select id="conv-unit-from" class="form-input" onchange="runConverter('from')"></select>
                 </div>
                 <div class="form-group" style="flex:1">
-                    <label class="form-label">To</label>
+                    <label class="form-label" for="conv-val-to">To</label>
                     <input type="number" class="form-input" id="conv-val-to" oninput="runConverter('to')">
                     <select id="conv-unit-to" class="form-input" onchange="runConverter('from')"></select>
                 </div>
@@ -811,7 +812,7 @@
             <h3>Appearance</h3>
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <span>Dark Mode</span>
-                <label class="switch">
+                <label class="switch" for="dark-mode-toggle">
                     <input type="checkbox" id="dark-mode-toggle">
                     <span class="slider round"></span>
                 </label>
@@ -968,11 +969,11 @@
                  // For Integrate, args are [expr, var, from, to].
                  // If from/to are empty, we should run indefinite.
                  if (action === 'integrate' && args.length === 4 && (args[2] === '' || args[3] === '')) {
-                     alert("For definite integrals, please specify both 'From' and 'To' values.");
+                     addToHistory("Error", "For definite integrals, please specify both 'From' and 'To' values.", true);
                      return;
                  }
                  // For plot min/max, we have defaults? No, we pass them.
-                 alert("Please fill in required fields");
+                 addToHistory("Error", "Please fill in required fields", true);
                  return;
             }
 
@@ -1003,6 +1004,16 @@
                                 const clone = resultDiv.cloneNode(true);
                                 resultBox.appendChild(clone);
                                 resultBox.style.display = 'block';
+
+                                // Handle Canvas Re-draw (cloneNode doesn't copy canvas context)
+                                const origCanvas = resultDiv.querySelector('canvas');
+                                if (origCanvas && origCanvas.plotResult) {
+                                    const newCanvas = clone.querySelector('canvas');
+                                    if (newCanvas) {
+                                        drawPlot(newCanvas, origCanvas.plotResult);
+                                        setupInteractivePlot(newCanvas);
+                                    }
+                                }
 
                                 // Re-render MathJax if needed
                                 if (window.MathJax && typeof MathJax.typesetPromise === 'function') {
@@ -1141,8 +1152,16 @@
 
             const steps = width; // Pixel precision
 
-            // Define scatterPoints if not defined to prevent error, though it's likely unused here
+            // Define scatterPoints
             const scatterPoints = [];
+            if (result.scatter) {
+                scatterPoints.push(result.scatter);
+            }
+            if (result.isMulti) {
+                for(const p of result.plots) {
+                    if (p.scatter) scatterPoints.push(p.scatter);
+                }
+            }
 
             for(const p of plots) {
                 const points = [];
@@ -1376,6 +1395,7 @@
             let isDragging = false;
             let lastX = 0;
             let lastY = 0;
+            let initialPinchDistance = null;
 
             const getPos = (e) => {
                 const rect = canvas.getBoundingClientRect();
@@ -1385,21 +1405,59 @@
                 return { x: e.clientX - rect.left, y: e.clientY - rect.top };
             };
 
+            const getDistance = (e) => {
+                if (e.touches.length < 2) return null;
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                return Math.sqrt(dx * dx + dy * dy);
+            };
+
             const onStart = (e) => {
-                isDragging = true;
-                const pos = getPos(e);
-                lastX = pos.x;
-                lastY = pos.y;
-                e.preventDefault(); // Prevent scroll on mobile
+                if (e.touches && e.touches.length === 2) {
+                    initialPinchDistance = getDistance(e);
+                    isDragging = false;
+                } else {
+                    isDragging = true;
+                    const pos = getPos(e);
+                    lastX = pos.x;
+                    lastY = pos.y;
+                }
+                e.preventDefault();
             };
 
             const onMove = (e) => {
-                const pos = getPos(e);
                 const b = canvas.plotBounds;
                 const width = canvas.width;
                 const height = canvas.height;
                 const xRange = b.maxX - b.minX;
                 const yRange = b.maxY - b.minY;
+
+                if (e.touches && e.touches.length === 2 && initialPinchDistance) {
+                    // Pinch Zoom
+                    e.preventDefault();
+                    const currentDistance = getDistance(e);
+                    if (currentDistance) {
+                        const zoomFactor = initialPinchDistance / currentDistance; // >1 zooms out (range increases)
+                        initialPinchDistance = currentDistance;
+
+                        const centerX = (b.minX + b.maxX) / 2;
+                        const centerY = (b.minY + b.maxY) / 2;
+
+                        const newXRange = xRange * zoomFactor;
+                        const newYRange = yRange * zoomFactor;
+
+                        const newBounds = {
+                            minX: centerX - newXRange / 2,
+                            maxX: centerX + newXRange / 2,
+                            minY: centerY - newYRange / 2,
+                            maxY: centerY + newYRange / 2
+                        };
+                        drawPlot(canvas, canvas.plotResult, newBounds);
+                    }
+                    return;
+                }
+
+                const pos = getPos(e);
 
                 if (isDragging) {
                     e.preventDefault();
@@ -1421,6 +1479,9 @@
                     drawPlot(canvas, canvas.plotResult, newBounds);
                 } else {
                     // Hover effect (Crosshair & Coords)
+                    // Only if not touching
+                    if (e.touches && e.touches.length > 0) return;
+
                     drawPlot(canvas, canvas.plotResult, canvas.plotBounds);
 
                     const ctx = canvas.getContext('2d');
@@ -1454,6 +1515,7 @@
 
             const onEnd = (e) => {
                 isDragging = false;
+                initialPinchDistance = null;
             };
 
             const onWheel = (e) => {
@@ -1717,7 +1779,7 @@
                     const td = document.createElement('td');
                     const inp = document.createElement('input');
                     inp.type = 'number';
-                    inp.className = 'form-input';
+                    inp.className = 'form-input matrix-cell';
                     inp.style.width = '50px';
                     inp.style.padding = '5px';
                     inp.dataset.row = i;
@@ -1866,41 +1928,6 @@
         });
 
         // Matrix Builder Logic
-        window.generateMatrixGrid = function() {
-            const rows = parseInt(document.getElementById('mat-rows').value);
-            const cols = parseInt(document.getElementById('mat-cols').value);
-            const container = document.getElementById('matrix-builder-container');
-            container.innerHTML = '';
-            container.style.marginBottom = '10px';
-
-            const table = document.createElement('table');
-            table.style.margin = '0 auto';
-            table.style.borderCollapse = 'collapse';
-
-            for (let i = 0; i < rows; i++) {
-                const tr = document.createElement('tr');
-                for (let j = 0; j < cols; j++) {
-                    const td = document.createElement('td');
-                    td.style.padding = '5px';
-                    const input = document.createElement('input');
-                    input.type = 'text';
-                    input.className = 'matrix-cell';
-                    input.dataset.row = i;
-                    input.dataset.col = j;
-                    input.style.width = '50px';
-                    input.style.textAlign = 'center';
-                    input.style.padding = '8px';
-                    input.style.border = '1px solid #ddd';
-                    input.style.borderRadius = '4px';
-                    input.placeholder = '0';
-                    td.appendChild(input);
-                    tr.appendChild(td);
-                }
-                table.appendChild(tr);
-            }
-            container.appendChild(table);
-        };
-
         window.insertMatrix = function() {
             const rows = parseInt(document.getElementById('mat-rows').value);
             const cols = parseInt(document.getElementById('mat-cols').value);
@@ -1928,21 +1955,99 @@
         // Linear Regression Logic
         window.runRegression = function() {
             const dataStr = document.getElementById('reg-data').value;
-            // Evaluate in CAS first to get the linear equation
-            // We want to run: linearRegression(data)
-            // But we also want to PLOT it.
-            // So we construct a block command:
-            // L := data; f := linearRegression(L); plot(f, x, minX, maxX); plot(L) ??
-            // Our plot command supports plotting functions. Does it support plotting list of points?
-            // js/cas.js _recursiveEval for plot returns a plot object.
-            // It uses `expr.substitute(val)`. A list cannot be substituted.
-            // We need a Scatter Plot feature.
+            if (!dataStr) return;
 
-            // Let's modify the plan: just calculate equation first.
-            window.runTool('linearRegression', ['reg-data']);
+            // 1. Calculate Regression Line
+            let lineExpr;
+            try {
+                 const cmd = `linearRegression(${dataStr})`;
+                 const lex = new Lexer(cmd);
+                 const par = new Parser(lex);
+                 const tree = par.parse();
+                 lineExpr = cas.evaluate(tree);
+            } catch(e) {
+                addToHistory("Regression Error", e.message, true);
+                return;
+            }
 
-            // Note: True scatter plotting requires CAS update or special handling here.
-            // For now, getting the equation is the primary goal.
+            // 2. Parse data for plotting points
+            let points = [];
+            try {
+                // Try JSON parse first for speed
+                const rawData = JSON.parse(dataStr);
+                points = rawData.map(p => ({x: p[0], y: p[1]}));
+            } catch(e) {
+                // Fallback to CAS parser
+                try {
+                     const lex = new Lexer(dataStr);
+                     const par = new Parser(lex);
+                     const vec = par.parse();
+                     if (vec instanceof Vec) {
+                         for(const el of vec.elements) {
+                             if (el instanceof Vec && el.elements.length >= 2) {
+                                 const x = el.elements[0].evaluateNumeric();
+                                 const y = el.elements[1].evaluateNumeric();
+                                 points.push({x, y});
+                             }
+                         }
+                     }
+                } catch(e2) {}
+            }
+
+            // 3. Construct Plot Object
+            let minX = -10, maxX = 10;
+            if (points.length > 0) {
+                const xs = points.map(p => p.x);
+                const min = Math.min(...xs);
+                const max = Math.max(...xs);
+                const margin = (max - min) * 0.2 || 1;
+                minX = min - margin;
+                maxX = max + margin;
+            }
+
+            const plotObj = {
+                type: 'plot',
+                expr: lineExpr,
+                var: new Sym('x'),
+                min: minX,
+                max: maxX,
+                scatter: points,
+                toLatex: () => `\\text{Regression: } ${lineExpr.toLatex()}`
+            };
+
+            addToHistory(`linearRegression(${dataStr})`, plotObj, false, null);
+
+            // Manually update the tool result since we bypassed runTool
+             setTimeout(() => {
+                const resultBox = document.querySelector('#tool-statistics .tool-result');
+                if (resultBox) {
+                     const entries = document.querySelectorAll('.entry');
+                     if (entries.length > 0) {
+                         const lastEntry = entries[entries.length - 1];
+                         const resultDiv = lastEntry.querySelector('.result');
+                         if (resultDiv) {
+                             resultBox.innerHTML = '';
+                             const clone = resultDiv.cloneNode(true);
+                             resultBox.appendChild(clone);
+                             resultBox.style.display = 'block';
+
+                             // Handle Canvas Re-draw
+                             const origCanvas = resultDiv.querySelector('canvas');
+                             if (origCanvas && origCanvas.plotResult) {
+                                 const newCanvas = clone.querySelector('canvas');
+                                 if (newCanvas) {
+                                     drawPlot(newCanvas, origCanvas.plotResult);
+                                     setupInteractivePlot(newCanvas);
+                                 }
+                             }
+
+                             if (window.MathJax && typeof MathJax.typesetPromise === 'function') {
+                                MathJax.typesetPromise([resultBox]).catch(err => console.error(err));
+                            }
+                         }
+                     }
+                }
+            }, 50);
         };
 
         // Base Converter Logic
