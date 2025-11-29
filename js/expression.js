@@ -10,7 +10,29 @@ class Expr {
     evaluateNumeric() { return NaN; }
     diff(varName) { throw new Error("diff not implemented"); }
     integrate(varName) { throw new Error("integrate not implemented for " + this.constructor.name); }
-    expand() { return this; }
+    expand() {
+        // Expand properties like log(a*b) -> log(a) + log(b)
+        // Only if user explicitly calls expand()
+        if (this.funcName === 'log' || this.funcName === 'ln') {
+            const arg = this.args[0].expand();
+            if (arg instanceof Mul) {
+                // log(a*b) = log(a) + log(b)
+                return new Add(new Call(this.funcName, [arg.left]), new Call(this.funcName, [arg.right])).expand();
+            }
+            if (arg instanceof Div) {
+                // log(a/b) = log(a) - log(b)
+                return new Sub(new Call(this.funcName, [arg.left]), new Call(this.funcName, [arg.right])).expand();
+            }
+            if (arg instanceof Pow) {
+                // log(a^b) = b * log(a)
+                return new Mul(arg.right, new Call(this.funcName, [arg.left])).expand();
+            }
+        }
+        if (this.args) {
+            return new Call(this.funcName, this.args.map(a => a.expand()));
+        }
+        return this;
+    }
     substitute(varName, value) { return this; }
     toLatex() { return this.toString(); }
 }
@@ -200,6 +222,7 @@ class Sub extends BinaryOp {
         }
 
         if (r instanceof Num && r.value === 0) return l;
+        if (r instanceof Num && r.value < 0) return new Add(l, new Num(-r.value)).simplify();
 
         // x - (-y) -> x + y
         if (r instanceof Mul && r.left instanceof Num && r.left.value === -1) {
@@ -369,6 +392,9 @@ class Mul extends BinaryOp {
             if (this.right instanceof Sym || this.right instanceof Call || (this.right instanceof Pow && this.right.left instanceof Sym)) {
                 return `-${this.right.toLatex()}`;
             }
+            if (this.right instanceof Add || this.right instanceof Sub) {
+                return `-\\left(${this.right.toLatex()}\\right)`;
+            }
         }
 
         if (this.left instanceof Add || this.left instanceof Sub) lTex = `\\left(${lTex}\\right)`;
@@ -404,6 +430,11 @@ class Div extends BinaryOp {
         // Vector division by scalar: Vec / Num
         if (l instanceof Vec && r instanceof Num) {
             return new Vec(l.elements.map(e => new Div(e, r).simplify()));
+        }
+
+        // Generic sign simplification for negative denominator
+        if (r instanceof Num && r.value < 0) {
+            return new Div(new Mul(new Num(-1), l).simplify(), new Num(-r.value)).simplify();
         }
 
         if (l instanceof Num && l.value === 0) return new Num(0);
@@ -492,6 +523,16 @@ class Pow extends BinaryOp {
         if (r instanceof Num && r.value === 0) return new Num(1);
         if (r instanceof Num && r.value === 1) return l;
         if (l instanceof Num && r instanceof Num) return new Num(Math.pow(l.value, r.value));
+
+        // Simplify roots: (x^a)^(1/b) -> x^(a/b) ?
+        // Simplification rule: (a^b)^c = a^(b*c)
+        if (l instanceof Pow) {
+             const base = l.left;
+             const exp1 = l.right;
+             const exp2 = r;
+             return new Pow(base, new Mul(exp1, exp2).simplify()).simplify();
+        }
+
         return new Pow(l, r);
     }
     evaluateNumeric() { return Math.pow(this.left.evaluateNumeric(), this.right.evaluateNumeric()); }
@@ -532,7 +573,7 @@ class Pow extends BinaryOp {
     }
     toLatex() {
         let lTex = this.left.toLatex();
-        if (this.left instanceof Add || this.left instanceof Sub || this.left instanceof Mul || this.left instanceof Div) lTex = `\\left(${lTex}\\right)`;
+        if (this.left instanceof Add || this.left instanceof Sub || this.left instanceof Mul || this.left instanceof Div || this.left instanceof Pow) lTex = `\\left(${lTex}\\right)`;
         return `{${lTex}}^{${this.right.toLatex()}}`;
     }
 }
