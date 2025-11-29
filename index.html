@@ -1482,9 +1482,14 @@
                         // Ideally we compile to JS function.
                         const valExpr = p.expr.substitute(p.var, new Num(x));
                         const simplified = valExpr.simplify();
+                        let y = NaN;
                         if (simplified instanceof Num) {
-                            const y = simplified.value;
-                            if (isNaN(y) || !isFinite(y)) continue;
+                             y = simplified.value;
+                        } else {
+                             y = simplified.evaluateNumeric();
+                        }
+
+                        if (!isNaN(y) && isFinite(y)) {
                             points.push({x, y});
                             if (y < calcMinY) calcMinY = y;
                             if (y > calcMaxY) calcMaxY = y;
@@ -1902,6 +1907,87 @@
                     // Ignore errors
                 }
             }, 300);
+        };
+
+        window.runAndPlot = function(action, inputTokens) {
+            // Similar to runTool but specifically for plotting the result
+            // E.g. simplify(expr) -> expression -> plot(expression)
+            // Or diff(expr) -> derivative -> plot(derivative)
+
+            const args = inputTokens.map(token => {
+                const el = document.getElementById(token);
+                return el ? el.value : token;
+            });
+
+             if (args.some(a => a === '')) {
+                 addToHistory("Error", "Please fill in required fields", true);
+                 return;
+            }
+
+            // 1. Run the action to get the result
+            const command = `${action}(${args.join(', ')})`;
+
+            try {
+                const lexer = new Lexer(command);
+                const parser = new Parser(lexer);
+                const tree = parser.parse();
+                const result = cas.evaluate(tree);
+
+                // 2. Plot the result
+                // Determine the variable from the result expression
+                let varName = 'x';
+
+                // Collect variables from the result expression tree
+                const vars = new Set();
+                const collect = (node) => {
+                    if (!node) return;
+                    if (node instanceof Sym) {
+                        // Exclude constants if they are treated as symbols (e.g. pi, e, i)
+                        const consts = ['pi', 'e', 'i', 'Infinity', 'NaN'];
+                        if (!consts.includes(node.name)) {
+                            vars.add(node.name);
+                        }
+                    } else if (node instanceof Call) {
+                         node.args.forEach(collect);
+                    } else if (node instanceof BinaryOp || node instanceof Eq) {
+                        collect(node.left);
+                        collect(node.right);
+                    } else if (node instanceof Pow) {
+                        collect(node.left);
+                        collect(node.right);
+                    } else if (node instanceof FunctionDef) {
+                        // ignore params
+                        collect(node.body);
+                    }
+                };
+                collect(result);
+
+                if (vars.size > 0) {
+                    // Prefer 'x', then 't', then first found
+                    if (vars.has('x')) varName = 'x';
+                    else if (vars.has('t')) varName = 't';
+                    else varName = Array.from(vars)[0];
+                } else {
+                    // If no variables found in result (e.g. result is a number or constant),
+                    // check if the user specified a variable in the input (e.g. diff(..., t))
+                    if (args.length >= 2 && args[1].length === 1 && args[1].match(/[a-z]/i)) {
+                        varName = args[1];
+                    }
+                }
+
+                // Construct plot command: plot(result, var)
+                const plotCmd = `plot(${result.toString()}, ${varName})`;
+
+                // Add the calculation command to history
+                addToHistory(command, result.toString(), false, result.toLatex());
+
+                // Execute plot
+                input.value = plotCmd;
+                evaluate();
+
+            } catch(e) {
+                addToHistory(command, e.message, true);
+            }
         };
 
         function addToHistory(command, result, isError, latex) {
