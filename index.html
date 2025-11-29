@@ -407,8 +407,9 @@
             <span class="tool-title">Scientific Calculator</span>
         </div>
         <div class="tool-form">
-            <div class="form-group">
-                <input type="text" class="form-input" id="calc-main-input" placeholder="Enter expression..." style="font-size: 1.5em; padding: 15px;">
+            <div class="form-group" style="position: relative;">
+                <input type="text" class="form-input" id="calc-main-input" placeholder="Enter expression..." style="font-size: 1.5em; padding: 15px;" autocapitalize="off" autocorrect="off">
+                <button onclick="document.getElementById('calc-main-input').value = ''" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #999; font-size: 1.2em; cursor: pointer;">×</button>
             </div>
 
             <div class="function-grid">
@@ -1854,6 +1855,210 @@
                 evaluate();
             }
         });
+
+        // Matrix Builder Logic
+        window.generateMatrixGrid = function() {
+            const rows = parseInt(document.getElementById('mat-rows').value);
+            const cols = parseInt(document.getElementById('mat-cols').value);
+            const container = document.getElementById('matrix-builder-container');
+            container.innerHTML = '';
+            container.style.marginBottom = '10px';
+
+            const table = document.createElement('table');
+            table.style.margin = '0 auto';
+            table.style.borderCollapse = 'collapse';
+
+            for (let i = 0; i < rows; i++) {
+                const tr = document.createElement('tr');
+                for (let j = 0; j < cols; j++) {
+                    const td = document.createElement('td');
+                    td.style.padding = '5px';
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.className = 'matrix-cell';
+                    input.dataset.row = i;
+                    input.dataset.col = j;
+                    input.style.width = '50px';
+                    input.style.textAlign = 'center';
+                    input.style.padding = '8px';
+                    input.style.border = '1px solid #ddd';
+                    input.style.borderRadius = '4px';
+                    input.placeholder = '0';
+                    td.appendChild(input);
+                    tr.appendChild(td);
+                }
+                table.appendChild(tr);
+            }
+            container.appendChild(table);
+        };
+
+        window.insertMatrix = function() {
+            const rows = parseInt(document.getElementById('mat-rows').value);
+            const cols = parseInt(document.getElementById('mat-cols').value);
+            let matrixStr = '[';
+            for (let i = 0; i < rows; i++) {
+                matrixStr += '[';
+                for (let j = 0; j < cols; j++) {
+                    const cell = document.querySelector(`.matrix-cell[data-row="${i}"][data-col="${j}"]`);
+                    let val = cell.value.trim();
+                    if (!val) val = '0';
+                    matrixStr += val;
+                    if (j < cols - 1) matrixStr += ',';
+                }
+                matrixStr += ']';
+                if (i < rows - 1) matrixStr += ',';
+            }
+            matrixStr += ']';
+
+            const linExpr = document.getElementById('lin-expr');
+            linExpr.value = matrixStr;
+            // Highlight to show it happened
+            linExpr.focus();
+        };
+
+        // Linear Regression Logic
+        window.runRegression = function() {
+            const dataStr = document.getElementById('reg-data').value;
+            // Evaluate in CAS first to get the linear equation
+            // We want to run: linearRegression(data)
+            // But we also want to PLOT it.
+            // So we construct a block command:
+            // L := data; f := linearRegression(L); plot(f, x, minX, maxX); plot(L) ??
+            // Our plot command supports plotting functions. Does it support plotting list of points?
+            // js/cas.js _recursiveEval for plot returns a plot object.
+            // It uses `expr.substitute(val)`. A list cannot be substituted.
+            // We need a Scatter Plot feature.
+
+            // Let's modify the plan: just calculate equation first.
+            window.runTool('linearRegression', ['reg-data']);
+
+            // Note: True scatter plotting requires CAS update or special handling here.
+            // For now, getting the equation is the primary goal.
+        };
+
+        // Base Converter Logic
+        window.updateBaseConversion = function(sourceId) {
+            const val = document.getElementById(sourceId).value;
+            if (val === '') return;
+
+            const decInput = document.getElementById('base-dec');
+            const binInput = document.getElementById('base-bin');
+            const hexInput = document.getElementById('base-hex');
+
+            try {
+                let decValue;
+                if (sourceId === 'base-dec') {
+                    decValue = parseInt(val, 10);
+                } else if (sourceId === 'base-bin') {
+                    decValue = parseInt(val, 2);
+                } else if (sourceId === 'base-hex') {
+                    decValue = parseInt(val, 16);
+                }
+
+                if (isNaN(decValue)) return;
+
+                if (sourceId !== 'base-dec') decInput.value = decValue;
+                if (sourceId !== 'base-bin') binInput.value = decValue.toString(2);
+                if (sourceId !== 'base-hex') hexInput.value = decValue.toString(16).toUpperCase();
+            } catch (e) {
+                // ignore
+            }
+        };
+
+        // Unit Converter Logic
+        const conversionRates = {
+            length: {
+                'm': 1, 'cm': 0.01, 'mm': 0.001, 'km': 1000,
+                'in': 0.0254, 'ft': 0.3048, 'yd': 0.9144, 'mi': 1609.34
+            },
+            mass: {
+                'kg': 1, 'g': 0.001, 'mg': 0.000001,
+                'lb': 0.453592, 'oz': 0.0283495
+            },
+            temp: {
+                'C': 'c', 'F': 'f', 'K': 'k' // Special handling
+            }
+        };
+
+        window.updateConvUnits = function() {
+            const category = document.getElementById('conv-category').value;
+            const units = Object.keys(conversionRates[category]);
+            const fromSel = document.getElementById('conv-unit-from');
+            const toSel = document.getElementById('conv-unit-to');
+
+            fromSel.innerHTML = '';
+            toSel.innerHTML = '';
+
+            units.forEach(u => {
+                fromSel.add(new Option(u, u));
+                toSel.add(new Option(u, u));
+            });
+
+            // Defaults
+            if (category === 'length') { fromSel.value = 'm'; toSel.value = 'ft'; }
+            if (category === 'mass') { fromSel.value = 'kg'; toSel.value = 'lb'; }
+            if (category === 'temp') { fromSel.value = 'C'; toSel.value = 'F'; }
+
+            runConverter('from');
+        };
+
+        window.runConverter = function(direction) {
+            const category = document.getElementById('conv-category').value;
+            const fromUnit = document.getElementById('conv-unit-from').value;
+            const toUnit = document.getElementById('conv-unit-to').value;
+
+            const fromInput = document.getElementById('conv-val-from');
+            const toInput = document.getElementById('conv-val-to');
+
+            let val = parseFloat(direction === 'from' ? fromInput.value : toInput.value);
+            if (isNaN(val)) {
+                if (direction === 'from') toInput.value = '';
+                else fromInput.value = '';
+                return;
+            }
+
+            let result;
+            if (category === 'temp') {
+                // Convert to Kelvin first
+                let k;
+                if (direction === 'from') {
+                    if (fromUnit === 'C') k = val + 273.15;
+                    else if (fromUnit === 'F') k = (val - 32) * 5/9 + 273.15;
+                    else k = val;
+
+                    // Convert K to target
+                    if (toUnit === 'C') result = k - 273.15;
+                    else if (toUnit === 'F') result = (k - 273.15) * 9/5 + 32;
+                    else result = k;
+
+                    toInput.value = Number(result.toPrecision(6)); // formatting
+                } else {
+                    // Reverse logic mirrors above, essentially same func just swapped inputs
+                    // But simpler to just trigger 'from' logic? No, input is different.
+                    // Copy paste logic inverted.
+                     if (toUnit === 'C') k = val + 273.15;
+                    else if (toUnit === 'F') k = (val - 32) * 5/9 + 273.15;
+                    else k = val;
+
+                    if (fromUnit === 'C') result = k - 273.15;
+                    else if (fromUnit === 'F') result = (k - 273.15) * 9/5 + 32;
+                    else result = k;
+
+                    fromInput.value = Number(result.toPrecision(6));
+                }
+            } else {
+                const rates = conversionRates[category];
+                const baseVal = direction === 'from' ? val * rates[fromUnit] : val * rates[toUnit];
+
+                if (direction === 'from') {
+                    result = baseVal / rates[toUnit];
+                    toInput.value = Number(result.toPrecision(6));
+                } else {
+                    result = baseVal / rates[fromUnit];
+                    fromInput.value = Number(result.toPrecision(6));
+                }
+            }
+        };
 
         // Initial welcome
         addToHistory("System Ready", "Welcome to Client-Side CAS", false);
