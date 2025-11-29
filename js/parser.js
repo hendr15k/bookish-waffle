@@ -355,3 +355,16 @@ class Parser {
         return new Block(statements);
     }
 }
+
+// Export classes for Global/CommonJS environments
+(function() {
+    const exports = {
+        Token, Lexer, Parser
+    };
+    if (typeof globalThis !== 'undefined') {
+        Object.assign(globalThis, exports);
+    }
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = exports;
+    }
+})();

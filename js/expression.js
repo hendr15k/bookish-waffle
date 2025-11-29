@@ -944,3 +944,16 @@ class Block extends Expr {
         return this.statements.map(s => s.toLatex()).join("; \\; ");
     }
 }
+
+// Export classes for Global/CommonJS environments
+(function() {
+    const exports = {
+        Expr, Num, Sym, BinaryOp, Add, Sub, Mul, Div, Pow, Call, Assignment, Eq, Vec, FunctionDef, Block, toExpr
+    };
+    if (typeof globalThis !== 'undefined') {
+        Object.assign(globalThis, exports);
+    }
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = exports;
+    }
+})();
