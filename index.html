@@ -1133,9 +1133,6 @@
 
             // Define scatterPoints if not defined to prevent error, though it's likely unused here
             const scatterPoints = [];
-            if (result.scatter && Array.isArray(result.scatter)) {
-                scatterPoints.push(result.scatter);
-            }
 
             for(const p of plots) {
                 const points = [];
