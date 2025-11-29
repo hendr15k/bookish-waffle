@@ -313,6 +313,27 @@ class Add extends BinaryOp {
         }
 
         if (l.toString() === r.toString()) return new Mul(new Num(2), l);
+
+        // Pythagorean Identity: sin(x)^2 + cos(x)^2 -> 1
+        if ((l instanceof Pow && r instanceof Pow) || (l instanceof Pow && r instanceof Mul) || (l instanceof Mul && r instanceof Pow)) {
+             // Helper to check for sin(x)^2
+             const isTrigSq = (expr, func) => {
+                 return expr instanceof Pow &&
+                        expr.left instanceof Call &&
+                        expr.left.funcName === func &&
+                        expr.right instanceof Num &&
+                        expr.right.value === 2;
+             };
+
+             if ((isTrigSq(l, 'sin') && isTrigSq(r, 'cos')) ||
+                 (isTrigSq(l, 'cos') && isTrigSq(r, 'sin'))) {
+                 // Check if arguments match
+                 if (l.left.args[0].toString() === r.left.args[0].toString()) {
+                     return new Num(1);
+                 }
+             }
+        }
+
         return new Add(l, r);
     }
     evaluateNumeric() { return this.left.evaluateNumeric() + this.right.evaluateNumeric(); }
@@ -946,14 +967,35 @@ class Call extends Expr {
         }
         if (this.funcName === 'sec') {
             const arg = simpleArgs[0];
-            if (arg instanceof Num && arg.value === 0) return new Num(1);
+            const val = arg.evaluateNumeric();
+            if (!isNaN(val)) {
+                // sec(x) = 1/cos(x)
+                if (Math.abs(val) < 1e-10) return new Num(1);
+                const cosVal = Math.cos(val);
+                if (Math.abs(cosVal) > 1e-10) return new Num(1 / cosVal);
+                // undefined
+            }
         }
         if (this.funcName === 'csc') {
-             // undefined at 0
+             const arg = simpleArgs[0];
+             const val = arg.evaluateNumeric();
+             if (!isNaN(val)) {
+                 // csc(x) = 1/sin(x)
+                 const sinVal = Math.sin(val);
+                 if (Math.abs(sinVal) > 1e-10) return new Num(1 / sinVal);
+                 // undefined
+             }
         }
         if (this.funcName === 'cot') {
-             // undefined at 0
-             if (arg instanceof Num && arg.value === Math.PI/2) return new Num(0);
+             const arg = simpleArgs[0];
+             const val = arg.evaluateNumeric();
+             if (!isNaN(val)) {
+                 // cot(x) = 1/tan(x) = cos(x)/sin(x)
+                 if (Math.abs(val - Math.PI/2) < 1e-10) return new Num(0);
+                 const tanVal = Math.tan(val);
+                 if (Math.abs(tanVal) > 1e-10) return new Num(1 / tanVal);
+                 // undefined or infinity?
+             }
         }
 
         if (this.funcName === 'ln') {

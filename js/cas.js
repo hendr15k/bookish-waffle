@@ -17,6 +17,13 @@ class CAS {
     }
 
     evaluate(exprTree) {
+        // Handle explicit assignment with '=' (Eq) at top level
+        // e.g. "myvar = 42" parses as Eq(Sym(myvar), Num(42))
+        // We convert this to Assignment(Sym(myvar), Num(42))
+        if (exprTree instanceof Eq && exprTree.left instanceof Sym) {
+            exprTree = new Assignment(exprTree.left, exprTree.right);
+        }
+
         let evaluated = this._recursiveEval(exprTree);
         if (evaluated && typeof evaluated.simplify === 'function') {
             evaluated = evaluated.simplify();
