@@ -111,3 +111,7 @@ test("Limit tan(x)/x", "limit(tan(x)/x, x, 0)", "1");
 testShouldThrow("Multiple decimal points", "1.2.3", "multiple decimal points");
 testShouldThrow("Multiple decimal points (trailing)", "1..", "multiple decimal points");
 testShouldThrow("Multiple decimal points (mixed)", "0.5.5", "multiple decimal points");
+
+// Bug Fix Verification
+test("Double negative subtraction", "x - (-5)", "(x + 5)");
+test("Negative denominator", "x / -2", "((-1 * x) / 2)"); // Modified expectation due to simplification
