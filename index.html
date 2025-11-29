@@ -424,8 +424,8 @@
                 <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'tan(')">tan</button>
                 <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'pi')">π</button>
 
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'ln(')">ln</button>
-                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'log(')">log</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'x')">x</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'y')">y</button>
                 <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'e')">e</button>
                 <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'i')">i</button>
 
@@ -433,6 +433,9 @@
                 <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'acos(')">acos</button>
                 <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'atan(')">atan</button>
                 <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'abs(')">abs</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'ln(')">ln</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', 'log(')">log</button>
+                <button class="function-btn" onclick="insertAtCursor('calc-main-input', ',')">,</button>
                 <button class="function-btn" style="background-color: #ffe8cc; border-color: #ffc107;" onclick="insertAtCursor('calc-main-input', 'ans')">Ans</button>
             </div>
 
@@ -482,6 +485,7 @@
             </div>
         </div>
 
+        <div id="palette-algebra"></div>
         <div class="tool-result"></div>
     </div>
 
@@ -574,6 +578,7 @@
             </div>
         </div>
 
+        <div id="palette-calculus"></div>
         <div class="tool-result"></div>
     </div>
 
@@ -606,6 +611,7 @@
                 <button class="action-btn" onclick="runTool('plot', ['plot-expr', 'plot-var', 'plot-min', 'plot-max'])">Plot</button>
             </div>
         </div>
+        <div id="palette-plotting"></div>
         <div class="tool-result"></div>
     </div>
 
@@ -666,6 +672,7 @@
              </div>
         </div>
 
+        <div id="palette-linear"></div>
         <div class="tool-result"></div>
     </div>
 
@@ -867,6 +874,14 @@
         const modeToggle = document.getElementById('mode-toggle');
         const darkModeToggle = document.getElementById('dark-mode-toggle');
         let isMobileMode = false;
+        let lastFocusedInput = 'command-input';
+
+        // Track focused input
+        document.addEventListener('focusin', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                lastFocusedInput = e.target.id;
+            }
+        });
 
         // Dark Mode Logic
         try {
@@ -905,7 +920,14 @@
         // App/Tool Logic
         window.openTool = function(toolName) {
             document.getElementById('app-grid').style.display = 'none';
-            document.getElementById('tool-' + toolName).style.display = 'block';
+            const tool = document.getElementById('tool-' + toolName);
+            tool.style.display = 'block';
+
+            // Auto-focus logic: set lastFocusedInput to the first input of the tool
+            const firstInput = tool.querySelector('input');
+            if (firstInput) {
+                lastFocusedInput = firstInput.id;
+            }
 
             // Special initialization for specific tools
             if (toolName === 'variables') {
@@ -954,6 +976,75 @@
             }
             field.focus();
         };
+
+        window.insertToken = function(val) {
+            if (!lastFocusedInput) return;
+            insertAtCursor(lastFocusedInput, val);
+        };
+
+        window.injectMathPalette = function(containerId, extras = []) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            container.innerHTML = ''; // Clear
+
+            const common = [
+                {label: 'x', val: 'x'}, {label: 'y', val: 'y'}, {label: '^', val: '^'}, {label: '(', val: '('}, {label: ')', val: ')'},
+                {label: '√', val: 'sqrt('}, {label: 'sin', val: 'sin('}, {label: 'cos', val: 'cos('},
+                {label: '+', val: '+'}, {label: '-', val: '-'}, {label: '*', val: '*'}, {label: '/', val: '/'}
+            ];
+
+            // Merge extras
+            const buttons = [...common, ...extras];
+
+            const grid = document.createElement('div');
+            grid.className = 'function-grid';
+            grid.style.marginTop = '15px';
+
+            buttons.forEach(btn => {
+                const b = document.createElement('button');
+                b.className = 'function-btn';
+                b.textContent = btn.label;
+                if (btn.style) b.setAttribute('style', btn.style);
+
+                // Prevent default mousedown to avoid focus loss before click?
+                // But we want to simulate typing.
+                b.onclick = function(e) {
+                    e.preventDefault();
+                    insertToken(btn.val);
+                };
+                grid.appendChild(b);
+            });
+
+            container.appendChild(grid);
+        };
+
+        window.addEventListener('DOMContentLoaded', () => {
+             // Inject palettes into tools
+             injectMathPalette('palette-algebra');
+             injectMathPalette('palette-calculus');
+             injectMathPalette('palette-plotting');
+
+             // Linear Algebra special palette
+             const linearContainer = document.getElementById('palette-linear');
+             if (linearContainer) {
+                 const linearBtns = [
+                     {label: '[', val: '['}, {label: ']', val: ']'}, {label: ',', val: ','},
+                     {label: '1', val: '1'}, {label: '0', val: '0'}, {label: 'x', val: 'x'}
+                 ];
+                 // Create custom grid for linear
+                  const grid = document.createElement('div');
+                    grid.className = 'function-grid';
+                    grid.style.marginTop = '15px';
+                    linearBtns.forEach(btn => {
+                        const b = document.createElement('button');
+                        b.className = 'function-btn';
+                        b.textContent = btn.label;
+                        b.onclick = (e) => { e.preventDefault(); insertToken(btn.val); };
+                        grid.appendChild(b);
+                    });
+                    linearContainer.appendChild(grid);
+             }
+        });
 
         window.runTool = function(action, inputTokens) {
             // Check if argument is an ID (element exists) or a literal string
