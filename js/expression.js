@@ -447,7 +447,11 @@ class Div extends BinaryOp {
             if (l.left.toString() === r.toString()) return l.right;
             if (l.right.toString() === r.toString()) return l.left;
         }
-        // Cancellation: a / (a * b) -> 1/b (Not full implementation but basic)
+        // Cancellation: a / (a * b) -> 1/b
+        if (r instanceof Mul) {
+            if (r.left.toString() === l.toString()) return new Div(new Num(1), r.right).simplify();
+            if (r.right.toString() === l.toString()) return new Div(new Num(1), r.left).simplify();
+        }
 
         // Simplify Powers in Division: x^a / x^b -> x^(a-b)
         let baseL = l;
