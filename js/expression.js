@@ -1049,7 +1049,15 @@ class Call extends Expr {
         }
         if (this.funcName === 'round') {
             const arg = simpleArgs[0];
-            if (arg instanceof Num) return new Num(Math.round(arg.value));
+            if (simpleArgs.length === 1) {
+                if (arg instanceof Num) return new Num(Math.round(arg.value));
+            } else if (simpleArgs.length === 2) {
+                const decimals = simpleArgs[1];
+                if (arg instanceof Num && decimals instanceof Num) {
+                    const factor = Math.pow(10, decimals.value);
+                    return new Num(Math.round(arg.value * factor) / factor);
+                }
+            }
         }
         if (this.funcName === 'abs') {
             const arg = simpleArgs[0];
@@ -1112,7 +1120,13 @@ class Call extends Expr {
         if (this.funcName === 'sign') return Math.sign(argsVal[0]);
         if (this.funcName === 'floor') return Math.floor(argsVal[0]);
         if (this.funcName === 'ceil') return Math.ceil(argsVal[0]);
-        if (this.funcName === 'round') return Math.round(argsVal[0]);
+        if (this.funcName === 'round') {
+            if (argsVal.length === 2) {
+                const factor = Math.pow(10, argsVal[1]);
+                return Math.round(argsVal[0] * factor) / factor;
+            }
+            return Math.round(argsVal[0]);
+        }
         return NaN; // Unknown
     }
     diff(varName) {
@@ -1309,6 +1323,44 @@ class Call extends Expr {
 
         if (this.funcName === 'power') {
              return `{${argsTex[0]}}^{${argsTex[1]}}`;
+        }
+
+        if (this.funcName === 'grad' && argsTex.length === 2) {
+             return `\\nabla ${argsTex[0]}`;
+        }
+        if (this.funcName === 'curl' && argsTex.length === 2) {
+             return `\\nabla \\times ${argsTex[0]}`;
+        }
+        if ((this.funcName === 'divergence' || this.funcName === 'div') && argsTex.length === 2) {
+             return `\\nabla \\cdot ${argsTex[0]}`;
+        }
+        if (this.funcName === 'norm' && argsTex.length === 1) {
+             return `\\left\\|${argsTex[0]}\\right\\|`;
+        }
+        if (this.funcName === 'size' && argsTex.length === 1) {
+             return `\\left|${argsTex[0]}\\right|`;
+        }
+        if (this.funcName === 'arg' && argsTex.length === 1) {
+             return `\\arg\\left(${argsTex[0]}\\right)`;
+        }
+        if (this.funcName === 'approx') {
+             return argsTex[0];
+        }
+
+        if (this.funcName === 'seq') {
+             return `\\text{seq}\\left(${argsTex.join(", ")}\\right)`;
+        }
+        if (this.funcName === 'range') {
+             return `\\text{range}\\left(${argsTex.join(", ")}\\right)`;
+        }
+        if (this.funcName === 'sort') {
+             return `\\text{sort}\\left(${argsTex[0]}\\right)`;
+        }
+        if (this.funcName === 'degree' && argsTex.length === 2) {
+             return `\\deg_{${argsTex[1]}}\\left(${argsTex[0]}\\right)`;
+        }
+        if (this.funcName === 'coeff') {
+             return `\\text{coeff}\\left(${argsTex.join(", ")}\\right)`;
         }
 
         return `\\text{${this.funcName}}\\left(${argsTex.join(", ")}\\right)`;
