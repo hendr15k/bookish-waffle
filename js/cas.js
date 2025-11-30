@@ -219,14 +219,49 @@ class CAS {
                 return this._inv(args[0]);
             }
 
+            if (node.funcName === 'rref') {
+                if (args.length !== 1) throw new Error("rref requires 1 argument");
+                return this._rref(args[0]);
+            }
+
+            if (node.funcName === 'rank') {
+                if (args.length !== 1) throw new Error("rank requires 1 argument");
+                return this._rank(args[0]);
+            }
+
             if (node.funcName === 'cross') {
                 if (args.length !== 2) throw new Error("cross requires 2 arguments");
                 return this._cross(args[0], args[1]);
             }
 
-            if (node.funcName === 'trans') {
+            if (node.funcName === 'trans' || node.funcName === 'transpose') {
                 if (args.length !== 1) throw new Error("trans requires 1 argument");
                 return this._trans(args[0]);
+            }
+
+            if (node.funcName === 'eye' || node.funcName === 'idn') {
+                if (args.length !== 1) throw new Error("eye requires 1 argument");
+                return this._identity(args[0]);
+            }
+
+            if (node.funcName === 'zeros') {
+                if (args.length !== 2) throw new Error("zeros requires 2 arguments: rows, cols");
+                return this._zeros(args[0], args[1]);
+            }
+
+            if (node.funcName === 'ones') {
+                if (args.length !== 2) throw new Error("ones requires 2 arguments: rows, cols");
+                return this._ones(args[0], args[1]);
+            }
+
+            if (node.funcName === 'binomial') {
+                if (args.length !== 2) throw new Error("binomial requires 2 arguments");
+                return this._nCr(args[0], args[1]);
+            }
+
+            if (node.funcName === 'divisors') {
+                if (args.length !== 1) throw new Error("divisors requires 1 argument");
+                return this._divisors(args[0]);
             }
 
             if (node.funcName === 'clear') {
@@ -826,6 +861,128 @@ size, concat, clear, N`;
         }
 
         return new Vec(invRows);
+    }
+
+    _rref(matrix) {
+        if (!(matrix instanceof Vec)) throw new Error("rref requires a matrix");
+        const rows = matrix.elements.length;
+        if (rows === 0) return matrix;
+        if (!(matrix.elements[0] instanceof Vec)) throw new Error("rref requires a matrix");
+        const cols = matrix.elements[0].elements.length;
+
+        // Clone matrix to avoid modifying original
+        const M = [];
+        for(let i=0; i<rows; i++) {
+            const row = [];
+            for(let j=0; j<cols; j++) {
+                row.push(matrix.elements[i].elements[j]);
+            }
+            M.push(row);
+        }
+
+        let lead = 0;
+        for (let r = 0; r < rows; r++) {
+            if (cols <= lead) break;
+            let i = r;
+            while (M[i][lead].evaluateNumeric() === 0) {
+                i++;
+                if (rows === i) {
+                    i = r;
+                    lead++;
+                    if (cols === lead) return new Vec(M.map(row => new Vec(row)));
+                }
+            }
+
+            // Swap rows i and r
+            const temp = M[i];
+            M[i] = M[r];
+            M[r] = temp;
+
+            const val = M[r][lead];
+            // Divide row r by val
+            for (let j = 0; j < cols; j++) {
+                M[r][j] = new Div(M[r][j], val).simplify();
+            }
+
+            for (let i = 0; i < rows; i++) {
+                if (i !== r) {
+                    const sub = M[i][lead];
+                    for (let j = 0; j < cols; j++) {
+                        // M[i][j] = M[i][j] - sub * M[r][j]
+                        M[i][j] = new Sub(M[i][j], new Mul(sub, M[r][j])).simplify();
+                    }
+                }
+            }
+            lead++;
+        }
+
+        return new Vec(M.map(row => new Vec(row)));
+    }
+
+    _rank(matrix) {
+        // Rank is the number of non-zero rows in RREF
+        const rref = this._rref(matrix);
+        let rank = 0;
+        for(const row of rref.elements) {
+            let isZero = true;
+            for(const el of row.elements) {
+                const val = el.evaluateNumeric();
+                if (isNaN(val) || Math.abs(val) > 1e-10) {
+                    isZero = false;
+                    break;
+                }
+            }
+            if (!isZero) rank++;
+        }
+        return new Num(rank);
+    }
+
+    _zeros(rows, cols) {
+        if (!(rows instanceof Num) || !(cols instanceof Num)) return new Call('zeros', [rows, cols]);
+        const r = rows.value;
+        const c = cols.value;
+        const res = [];
+        for(let i=0; i<r; i++) {
+            const row = [];
+            for(let j=0; j<c; j++) {
+                row.push(new Num(0));
+            }
+            res.push(new Vec(row));
+        }
+        return new Vec(res);
+    }
+
+    _ones(rows, cols) {
+        if (!(rows instanceof Num) || !(cols instanceof Num)) return new Call('ones', [rows, cols]);
+        const r = rows.value;
+        const c = cols.value;
+        const res = [];
+        for(let i=0; i<r; i++) {
+            const row = [];
+            for(let j=0; j<c; j++) {
+                row.push(new Num(1));
+            }
+            res.push(new Vec(row));
+        }
+        return new Vec(res);
+    }
+
+    _divisors(n) {
+        n = n.simplify();
+        if (n instanceof Num && Number.isInteger(n.value)) {
+            const val = Math.abs(n.value);
+            const res = [];
+            for(let i=1; i*i <= val; i++) {
+                if (val % i === 0) {
+                    res.push(new Num(i));
+                    if (i*i !== val) res.push(new Num(val/i));
+                }
+            }
+            // Sort
+            res.sort((a, b) => a.value - b.value);
+            return new Vec(res);
+        }
+        return new Call('divisors', [n]);
     }
 
     _cross(v1, v2) {
