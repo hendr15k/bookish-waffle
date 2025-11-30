@@ -325,6 +325,73 @@ class CAS {
                 return this._binomialPDF(args[0], args[1], args[2]);
             }
 
+            if (node.funcName === 'dot') {
+                if (args.length !== 2) throw new Error("dot requires 2 arguments");
+                // dot(u, v) is u * v (Mul handles dot product for vectors)
+                return new Mul(args[0], args[1]).simplify();
+            }
+
+            if (node.funcName === 'norm') {
+                if (args.length !== 1) throw new Error("norm requires 1 argument");
+                // L2 norm: sqrt(v . v)
+                const v = args[0];
+                const dot = new Mul(v, v).simplify();
+                return new Call('sqrt', [dot]).simplify();
+            }
+
+            if (node.funcName === 'grad') {
+                if (args.length !== 2) throw new Error("grad requires 2 arguments: expression and list of variables");
+                return this._grad(args[0], args[1]);
+            }
+
+            if (node.funcName === 'curl') {
+                if (args.length !== 2) throw new Error("curl requires 2 arguments: vector field and list of variables");
+                return this._curl(args[0], args[1]);
+            }
+
+            if (node.funcName === 'divergence' || node.funcName === 'div') { // 'div' might conflict with division if not careful, but funcName is safe
+                 if (args.length !== 2) throw new Error("divergence requires 2 arguments: vector field and list of variables");
+                 return this._divergence(args[0], args[1]);
+            }
+
+            if (node.funcName === 'rem') {
+                if (args.length !== 2) throw new Error("rem requires 2 arguments");
+                return this._rem(args[0], args[1]);
+            }
+
+            if (node.funcName === 'quo') {
+                if (args.length !== 2) throw new Error("quo requires 2 arguments");
+                return this._quo(args[0], args[1]);
+            }
+
+            if (node.funcName === 'mod') {
+                if (args.length !== 2) throw new Error("mod requires 2 arguments");
+                return this._mod(args[0], args[1]);
+            }
+
+            if (node.funcName === 'size' || node.funcName === 'dim') {
+                if (args.length !== 1) throw new Error("size/dim requires 1 argument");
+                if (args[0] instanceof Vec) {
+                    return new Num(args[0].elements.length);
+                }
+                return new Call(node.funcName, args);
+            }
+
+            if (node.funcName === 'concat') {
+                if (args.length < 2) throw new Error("concat requires at least 2 arguments");
+                return this._concat(args);
+            }
+
+            if (node.funcName === 'approx') {
+                if (args.length !== 1) throw new Error("approx requires 1 argument");
+                return new Num(args[0].evaluateNumeric());
+            }
+
+            if (node.funcName === 'arg') {
+                if (args.length !== 1) throw new Error("arg requires 1 argument");
+                return this._arg(args[0]);
+            }
+
             if (node.funcName === 'help') {
                 const helpText = `Available commands:
 diff(expr, var), integrate(expr, var, [lower, upper]),
@@ -334,6 +401,9 @@ expand(expr), simplify(expr), solve(eq, var),
 det(M), trans(M), plot(expr, var, [min, max]),
 gcd(a, b), lcm(a, b), factor(n), factorial(n),
 mean(list), variance(list),
+dot(u, v), norm(v), grad(expr, vars), curl(v, vars), divergence(v, vars),
+rem(a, b), quo(a, b), mod(a, b),
+size(L), concat(L1, L2),
 N(expr) [numeric eval], clear(), help()`;
 
                 const latexHelp = `\\begin{array}{l}
@@ -346,6 +416,9 @@ N(expr) [numeric eval], clear(), help()`;
 \\text{gcd}(a, b), \\; \\text{lcm}(a, b), \\; \\text{factor}(n), \\; n!, \\\\
 \\text{mean}(L), \\; \\text{variance}(L), \\; \\text{linearRegression}(L), \\\\
 \\text{normalPDF}(x, \\mu, \\sigma), \\; \\text{binomialPDF}(k, n, p), \\\\
+\\text{dot}(u, v), \\; \\text{norm}(v), \\; \\text{grad}(f, V), \\; \\text{curl}(F, V), \\; \\text{div}(F, V), \\\\
+\\text{rem}(a, b), \\; \\text{quo}(a, b), \\; \\text{mod}(a, b), \\\\
+\\text{size}(L), \\; \\text{concat}(L_1, L_2), \\\\
 N(expr), \\; \\text{clear}(), \\; \\text{help}()
 \\end{array}`;
 
@@ -541,6 +614,7 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
     }
 
     _factorial(n) {
+
         if (n === 0 || n === 1) return 1;
         let res = 1;
         for (let i = 2; i <= n; i++) res *= i;
@@ -548,6 +622,7 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
     }
 
     _fibonacci(n) {
+
         if (n === 0) return 0;
         if (n === 1) return 1;
         let a = 0, b = 1;
@@ -761,6 +836,9 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
     }
 
     _gcd(a, b) {
+        a = a.simplify();
+        b = b.simplify();
+
         if (a instanceof Num && b instanceof Num && Number.isInteger(a.value) && Number.isInteger(b.value)) {
             const x = Math.abs(a.value);
             const y = Math.abs(b.value);
@@ -772,6 +850,9 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
     }
 
     _lcm(a, b) {
+        a = a.simplify();
+        b = b.simplify();
+
          if (a instanceof Num && b instanceof Num && Number.isInteger(a.value) && Number.isInteger(b.value)) {
             const x = Math.abs(a.value);
             const y = Math.abs(b.value);
@@ -783,6 +864,8 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
     }
 
     _factor(n) {
+        n = n.simplify();
+
         if (n instanceof Num && Number.isInteger(n.value)) {
             let val = n.value;
             if (val === 0) return new Num(0);
@@ -929,6 +1012,10 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
     }
 
     _normalPDF(x, mu, sigma) {
+        x = x.simplify();
+        mu = mu.simplify();
+        sigma = sigma.simplify();
+
         if (x instanceof Num && mu instanceof Num && sigma instanceof Num) {
             const xv = x.value;
             const mv = mu.value;
@@ -946,6 +1033,10 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
     }
 
     _binomialPDF(k, n, p) {
+        k = k.simplify();
+        n = n.simplify();
+        p = p.simplify();
+
         if (k instanceof Num && n instanceof Num && p instanceof Num) {
             const kv = k.value;
             const nv = n.value;
@@ -962,6 +1053,9 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
     }
 
     _nCr(n, k) {
+        n = n.simplify();
+        k = k.simplify();
+
         if (n instanceof Num && k instanceof Num && Number.isInteger(n.value) && Number.isInteger(k.value)) {
             const valN = n.value;
             const valK = k.value;
@@ -972,6 +1066,9 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
     }
 
     _nPr(n, k) {
+        n = n.simplify();
+        k = k.simplify();
+
         if (n instanceof Num && k instanceof Num && Number.isInteger(n.value) && Number.isInteger(k.value)) {
             const valN = n.value;
             const valK = k.value;
@@ -982,6 +1079,8 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
     }
 
     _isPrime(n) {
+        n = n.simplify();
+
         if (n instanceof Num && Number.isInteger(n.value)) {
             const val = n.value;
             if (val < 2) return new Num(0);
@@ -1010,6 +1109,124 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
             return sum.simplify();
         }
         return new Call('trace', [matrix]);
+    }
+
+    _grad(expr, vars) {
+        if (!(vars instanceof Vec)) throw new Error("Second argument to grad must be a vector of variables");
+        const elements = vars.elements.map(v => expr.diff(v).simplify());
+        return new Vec(elements);
+    }
+
+    _divergence(v, vars) {
+        if (!(v instanceof Vec) || !(vars instanceof Vec)) throw new Error("Arguments to divergence must be vectors");
+        if (v.elements.length !== vars.elements.length) throw new Error("Vector dimension mismatch in divergence");
+
+        let sum = new Num(0);
+        for(let i=0; i<v.elements.length; i++) {
+            sum = new Add(sum, v.elements[i].diff(vars.elements[i])).simplify();
+        }
+        return sum;
+    }
+
+    _curl(v, vars) {
+        if (!(v instanceof Vec) || !(vars instanceof Vec)) throw new Error("Arguments to curl must be vectors");
+        if (v.elements.length !== 3 || vars.elements.length !== 3) throw new Error("Curl requires 3D vectors");
+
+        // curl F = (dFz/dy - dFy/dz, dFx/dz - dFz/dx, dFy/dx - dFx/dy)
+        // v = [Fx, Fy, Fz], vars = [x, y, z]
+        const Fx = v.elements[0], Fy = v.elements[1], Fz = v.elements[2];
+        const x = vars.elements[0], y = vars.elements[1], z = vars.elements[2];
+
+        const c1 = new Sub(Fz.diff(y), Fy.diff(z)).simplify();
+        const c2 = new Sub(Fx.diff(z), Fz.diff(x)).simplify();
+        const c3 = new Sub(Fy.diff(x), Fx.diff(y)).simplify();
+
+        return new Vec([c1, c2, c3]);
+    }
+
+    _rem(a, b) {
+        a = a.simplify();
+        b = b.simplify();
+
+        a = a.simplify(); b = b.simplify(); if (a instanceof Num && b instanceof Num) {
+             return new Num(a.value % b.value);
+        }
+        // Polynomial remainder
+        // rem(P, Q)
+        // Check if b is linear (x-c) handled in Div.simplify via polyDiv
+        // But we want explicit rem.
+        // We can use division: rem = a - b * quo(a, b)
+        // But we need quo first.
+
+        // Simple case: b is a Number. rem(P, c)
+        // If coefficients are integers, rem(P, c) might mean rem of coeffs?
+        // Usually rem(P, Q) is polynomial remainder.
+
+        // For cleanroom, if we don't have full poly div, we return symbolic Call.
+        return new Call('rem', [a, b]);
+    }
+
+    _quo(a, b) {
+        a = a.simplify();
+        b = b.simplify();
+
+        a = a.simplify(); b = b.simplify(); if (a instanceof Num && b instanceof Num) {
+             return new Num(Math.trunc(a.value / b.value));
+        }
+        // Polynomial quotient
+        // If b divides a exactly, Div(a, b).simplify() returns it.
+        // But quo(a, b) should return quotient even if remainder != 0.
+
+        // If b is linear (x-c), we can use synthetic division logic from expression.js
+        // But that is internal to Div.simplify.
+        // We might want to expose polyDiv or reimplement it here.
+
+        return new Call('quo', [a, b]);
+    }
+
+    _mod(a, b) {
+        a = a.simplify();
+        b = b.simplify();
+
+        a = a.simplify(); b = b.simplify(); if (a instanceof Num && b instanceof Num) {
+             // Mathematical modulo (always positive for positive modulus)
+             const m = b.value;
+             return new Num(((a.value % m) + m) % m);
+        }
+        return new Call('mod', [a, b]);
+    }
+
+    _concat(args) {
+        let elements = [];
+        for(const arg of args) {
+            if (arg instanceof Vec) {
+                elements = elements.concat(arg.elements);
+            } else {
+                elements.push(arg);
+            }
+        }
+        return new Vec(elements);
+    }
+
+    _arg(z) {
+        z = z.simplify();
+
+        if (z instanceof Num) {
+             if (z.value >= 0) return new Num(0);
+             return new Num(Math.PI);
+        }
+        // complex z = x + iy?
+        // We don't have a standard Complex class, just Exprs.
+        // arg(x + i*y) = atan2(y, x)
+
+        // Check if z is of form a + b*i
+        // or a*i, or just a.
+
+        // Simplistic check
+        // If z is Mul(b, i) -> arg is pi/2 or -pi/2 depending on sign of b.
+        // If z is Add(a, Mul(b, i)) -> atan(b/a) ...
+
+        return new Call('arg', [z]);
     }
 }
 

@@ -1311,6 +1311,28 @@ class Call extends Expr {
              return `{${argsTex[0]}}^{${argsTex[1]}}`;
         }
 
+        if (this.funcName === 'grad' && argsTex.length === 2) {
+             return `\\nabla ${argsTex[0]}`;
+        }
+        if (this.funcName === 'curl' && argsTex.length === 2) {
+             return `\\nabla \\times ${argsTex[0]}`;
+        }
+        if ((this.funcName === 'divergence' || this.funcName === 'div') && argsTex.length === 2) {
+             return `\\nabla \\cdot ${argsTex[0]}`;
+        }
+        if (this.funcName === 'norm' && argsTex.length === 1) {
+             return `\\left\\|${argsTex[0]}\\right\\|`;
+        }
+        if (this.funcName === 'size' && argsTex.length === 1) {
+             return `\\left|${argsTex[0]}\\right|`;
+        }
+        if (this.funcName === 'arg' && argsTex.length === 1) {
+             return `\\arg\\left(${argsTex[0]}\\right)`;
+        }
+        if (this.funcName === 'approx') {
+             return argsTex[0];
+        }
+
         return `\\text{${this.funcName}}\\left(${argsTex.join(", ")}\\right)`;
     }
 }
