@@ -133,15 +133,27 @@ class CAS {
             }
 
             if (node.funcName === 'sum') {
+                if (args.length === 1) return this._sumList(args[0]);
                 // sum(expr, var, start, end)
-                if (args.length !== 4) throw new Error("sum requires 4 arguments: expression, variable, start, end");
+                if (args.length !== 4) throw new Error("sum requires 1 argument (list) or 4 arguments: expression, variable, start, end");
                 return this._sum(args[0], args[1], args[2], args[3]);
             }
 
             if (node.funcName === 'product') {
+                if (args.length === 1) return this._productList(args[0]);
                 // product(expr, var, start, end)
-                if (args.length !== 4) throw new Error("product requires 4 arguments: expression, variable, start, end");
+                if (args.length !== 4) throw new Error("product requires 1 argument (list) or 4 arguments: expression, variable, start, end");
                 return this._product(args[0], args[1], args[2], args[3]);
+            }
+
+            if (node.funcName === 'cumsum') {
+                if (args.length !== 1) throw new Error("cumsum requires 1 argument (list)");
+                return this._cumsum(args[0]);
+            }
+
+            if (node.funcName === 'flatten') {
+                if (args.length !== 1) throw new Error("flatten requires 1 argument (list)");
+                return this._flatten(args[0]);
             }
 
             if (node.funcName === 'expand') {
@@ -214,9 +226,69 @@ class CAS {
                 return this._det(args[0]);
             }
 
+            if (node.funcName === 'jacobian') {
+                if (args.length !== 2) throw new Error("jacobian requires 2 arguments: functions, variables");
+                return this._jacobian(args[0], args[1]);
+            }
+
+            if (node.funcName === 'hessian') {
+                if (args.length !== 2) throw new Error("hessian requires 2 arguments: expression, variables");
+                return this._hessian(args[0], args[1]);
+            }
+
             if (node.funcName === 'inv') {
                 if (args.length !== 1) throw new Error("inv requires 1 argument");
                 return this._inv(args[0]);
+            }
+
+            if (node.funcName === 'rref') {
+                if (args.length !== 1) throw new Error("rref requires 1 argument");
+                return this._rref(args[0]);
+            }
+
+            if (node.funcName === 'rank') {
+                if (args.length !== 1) throw new Error("rank requires 1 argument");
+                return this._rank(args[0]);
+            }
+
+            if (node.funcName === 'kernel' || node.funcName === 'nullspace') {
+                if (args.length !== 1) throw new Error("kernel requires 1 argument");
+                return this._kernel(args[0]);
+            }
+
+            if (node.funcName === 'lu') {
+                if (args.length !== 1) throw new Error("lu requires 1 argument");
+                return this._lu(args[0]);
+            }
+
+            if (node.funcName === 'qr') {
+                if (args.length !== 1) throw new Error("qr requires 1 argument");
+                return this._qr(args[0]);
+            }
+
+            if (node.funcName === 'linsolve') {
+                if (args.length !== 2) throw new Error("linsolve requires 2 arguments: equations, variables");
+                return this._linsolve(args[0], args[1]);
+            }
+
+            if (node.funcName === 'gramschmidt') {
+                if (args.length !== 1) throw new Error("gramschmidt requires 1 argument");
+                return this._gramschmidt(args[0]);
+            }
+
+            if (node.funcName === 'basis') {
+                if (args.length !== 1) throw new Error("basis requires 1 argument");
+                return this._basis(args[0]);
+            }
+
+            if (node.funcName === 'matrix') {
+                if (args.length !== 3) throw new Error("matrix requires 3 arguments: rows, cols, func");
+                return this._matrix(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'eigenvals' || node.funcName === 'eig') {
+                if (args.length !== 1) throw new Error("eigenvals requires 1 argument");
+                return this._eigenvals(args[0]);
             }
 
             if (node.funcName === 'cross') {
@@ -224,9 +296,34 @@ class CAS {
                 return this._cross(args[0], args[1]);
             }
 
-            if (node.funcName === 'trans') {
+            if (node.funcName === 'trans' || node.funcName === 'transpose') {
                 if (args.length !== 1) throw new Error("trans requires 1 argument");
                 return this._trans(args[0]);
+            }
+
+            if (node.funcName === 'eye' || node.funcName === 'idn') {
+                if (args.length !== 1) throw new Error("eye requires 1 argument");
+                return this._identity(args[0]);
+            }
+
+            if (node.funcName === 'zeros') {
+                if (args.length !== 2) throw new Error("zeros requires 2 arguments: rows, cols");
+                return this._zeros(args[0], args[1]);
+            }
+
+            if (node.funcName === 'ones') {
+                if (args.length !== 2) throw new Error("ones requires 2 arguments: rows, cols");
+                return this._ones(args[0], args[1]);
+            }
+
+            if (node.funcName === 'binomial') {
+                if (args.length !== 2) throw new Error("binomial requires 2 arguments");
+                return this._nCr(args[0], args[1]);
+            }
+
+            if (node.funcName === 'divisors') {
+                if (args.length !== 1) throw new Error("divisors requires 1 argument");
+                return this._divisors(args[0]);
             }
 
             if (node.funcName === 'clear') {
@@ -300,14 +397,34 @@ class CAS {
                 return this._mean(args[0]);
             }
 
-            if (node.funcName === 'variance') {
+            if (node.funcName === 'variance' || node.funcName === 'var') {
                 if (args.length !== 1) throw new Error("variance requires 1 argument (list)");
                 return this._variance(args[0]);
+            }
+
+            if (node.funcName === 'std' || node.funcName === 'stddev') {
+                if (args.length !== 1) throw new Error("std requires 1 argument (list)");
+                return this._std(args[0]);
+            }
+
+            if (node.funcName === 'cov') {
+                if (args.length !== 2) throw new Error("cov requires 2 arguments (list1, list2)");
+                return this._cov(args[0], args[1]);
+            }
+
+            if (node.funcName === 'corr') {
+                if (args.length !== 2) throw new Error("corr requires 2 arguments (list1, list2)");
+                return this._corr(args[0], args[1]);
             }
 
             if (node.funcName === 'median') {
                 if (args.length !== 1) throw new Error("median requires 1 argument (list)");
                 return this._median(args[0]);
+            }
+
+            if (node.funcName === 'charpoly') {
+                if (args.length !== 2) throw new Error("charpoly requires 2 arguments: matrix, variable");
+                return this._charpoly(args[0], args[1]);
             }
 
             if (node.funcName === 'linearRegression') {
@@ -563,6 +680,120 @@ size, concat, clear, N`;
             prod = new Mul(prod, term).simplify();
         }
         return prod;
+    }
+
+    _sumList(list) {
+        if (list instanceof Vec) {
+            let sum = new Num(0);
+            for(const e of list.elements) sum = new Add(sum, e);
+            return sum.simplify();
+        }
+        return new Call('sum', [list]);
+    }
+
+    _productList(list) {
+        if (list instanceof Vec) {
+            let prod = new Num(1);
+            for(const e of list.elements) prod = new Mul(prod, e);
+            return prod.simplify();
+        }
+        return new Call('product', [list]);
+    }
+
+    _cumsum(list) {
+        if (list instanceof Vec) {
+            let sum = new Num(0);
+            const res = [];
+            for(const e of list.elements) {
+                sum = new Add(sum, e).simplify();
+                res.push(sum);
+            }
+            return new Vec(res);
+        }
+        return new Call('cumsum', [list]);
+    }
+
+    _flatten(list) {
+        if (list instanceof Vec) {
+            const res = [];
+            const recurse = (v) => {
+                if (v instanceof Vec) {
+                    for(const e of v.elements) recurse(e);
+                } else {
+                    res.push(v);
+                }
+            };
+            recurse(list);
+            return new Vec(res);
+        }
+        return new Call('flatten', [list]);
+    }
+
+    _std(list) {
+        // sqrt(variance)
+        const v = this._variance(list);
+        return new Call('sqrt', [v]).simplify();
+    }
+
+    _cov(list1, list2) {
+        if (list1 instanceof Vec && list2 instanceof Vec) {
+             const n = list1.elements.length;
+             if (n !== list2.elements.length) throw new Error("cov requires lists of equal length");
+             if (n < 2) return new Num(0);
+
+             const m1 = this._mean(list1);
+             const m2 = this._mean(list2);
+
+             let sum = new Num(0);
+             for(let i=0; i<n; i++) {
+                 const diff1 = new Sub(list1.elements[i], m1);
+                 const diff2 = new Sub(list2.elements[i], m2);
+                 sum = new Add(sum, new Mul(diff1, diff2));
+             }
+             // Sample covariance (n-1)
+             return new Div(sum, new Num(n - 1)).simplify();
+        }
+        return new Call('cov', [list1, list2]);
+    }
+
+    _corr(list1, list2) {
+         if (list1 instanceof Vec && list2 instanceof Vec) {
+             const cov = this._cov(list1, list2);
+             const std1 = this._std(list1);
+             const std2 = this._std(list2);
+             if ((std1 instanceof Num && std1.value === 0) || (std2 instanceof Num && std2.value === 0)) {
+                 return new Num(0); // Undefined if std is 0
+             }
+             return new Div(cov, new Mul(std1, std2)).simplify();
+         }
+         return new Call('corr', [list1, list2]);
+    }
+
+    _charpoly(matrix, varNode) {
+        if (!(matrix instanceof Vec)) throw new Error("charpoly requires a matrix");
+        if (!(varNode instanceof Sym)) throw new Error("charpoly requires a symbol variable");
+
+        // det(M - lambda * I)
+        const rows = matrix.elements.length;
+        if (rows === 0) return new Num(0);
+        const cols = matrix.elements[0].elements.length;
+        if (rows !== cols) throw new Error("charpoly requires a square matrix");
+
+        const M_minus_lambdaI = [];
+        for(let i=0; i<rows; i++) {
+            const row = [];
+            for(let j=0; j<cols; j++) {
+                let val = matrix.elements[i].elements[j];
+                if (i === j) {
+                    // val - lambda
+                    val = new Sub(val, varNode).simplify();
+                }
+                row.push(val);
+            }
+            M_minus_lambdaI.push(new Vec(row));
+        }
+        const mat = new Vec(M_minus_lambdaI);
+        return this._det(mat);
     }
 
     // ... (rest of the methods: _solve, _taylor, _factorial, _limit, _det, _trans)
@@ -826,6 +1057,568 @@ size, concat, clear, N`;
         }
 
         return new Vec(invRows);
+    }
+
+    _rref(matrix) {
+        if (!(matrix instanceof Vec)) throw new Error("rref requires a matrix");
+        const rows = matrix.elements.length;
+        if (rows === 0) return matrix;
+        if (!(matrix.elements[0] instanceof Vec)) throw new Error("rref requires a matrix");
+        const cols = matrix.elements[0].elements.length;
+
+        // Clone matrix to avoid modifying original
+        const M = [];
+        for(let i=0; i<rows; i++) {
+            const row = [];
+            for(let j=0; j<cols; j++) {
+                row.push(matrix.elements[i].elements[j]);
+            }
+            M.push(row);
+        }
+
+        let lead = 0;
+        for (let r = 0; r < rows; r++) {
+            if (cols <= lead) break;
+            let i = r;
+            while (M[i][lead].evaluateNumeric() === 0) {
+                i++;
+                if (rows === i) {
+                    i = r;
+                    lead++;
+                    if (cols === lead) return new Vec(M.map(row => new Vec(row)));
+                }
+            }
+
+            // Swap rows i and r
+            const temp = M[i];
+            M[i] = M[r];
+            M[r] = temp;
+
+            const val = M[r][lead];
+            // Divide row r by val
+            for (let j = 0; j < cols; j++) {
+                M[r][j] = new Div(M[r][j], val).simplify();
+            }
+
+            for (let i = 0; i < rows; i++) {
+                if (i !== r) {
+                    const sub = M[i][lead];
+                    for (let j = 0; j < cols; j++) {
+                        // M[i][j] = M[i][j] - sub * M[r][j]
+                        M[i][j] = new Sub(M[i][j], new Mul(sub, M[r][j])).simplify();
+                    }
+                }
+            }
+            lead++;
+        }
+
+        return new Vec(M.map(row => new Vec(row)));
+    }
+
+    _rank(matrix) {
+        // Rank is the number of non-zero rows in RREF
+        const rref = this._rref(matrix);
+        let rank = 0;
+        for(const row of rref.elements) {
+            let isZero = true;
+            for(const el of row.elements) {
+                const val = el.evaluateNumeric();
+                if (isNaN(val) || Math.abs(val) > 1e-10) {
+                    isZero = false;
+                    break;
+                }
+            }
+            if (!isZero) rank++;
+        }
+        return new Num(rank);
+    }
+
+    _kernel(matrix) {
+         if (!(matrix instanceof Vec)) throw new Error("kernel requires a matrix");
+         // Calculate nullspace basis using RREF
+         // Ax = 0. RREF(A)x = 0.
+         // Identify free variables (columns without pivots).
+         const rref = this._rref(matrix);
+         const rows = rref.elements.length;
+         if (rows === 0) return new Vec([]);
+         const cols = rref.elements[0].elements.length;
+
+         // Identify pivots
+         const pivots = []; // [col_index] for each row
+         const pivotCols = new Set();
+         for(let i=0; i<rows; i++) {
+             let found = false;
+             for(let j=0; j<cols; j++) {
+                 const val = rref.elements[i].elements[j].evaluateNumeric();
+                 if (Math.abs(val) > 1e-10) { // Found pivot (approx non-zero)
+                      pivots.push({row: i, col: j});
+                      pivotCols.add(j);
+                      found = true;
+                      break;
+                 }
+             }
+             if (!found) break; // Zero rows
+         }
+
+         const freeCols = [];
+         for(let j=0; j<cols; j++) {
+             if (!pivotCols.has(j)) freeCols.push(j);
+         }
+
+         // Construct basis vectors
+         // For each free variable x_f, set x_f = 1, other free vars = 0.
+         // Solve for pivot vars.
+         const basis = [];
+         for(const freeCol of freeCols) {
+             const vec = new Array(cols).fill(new Num(0));
+             vec[freeCol] = new Num(1);
+
+             // Back substitution for pivots
+             // Row i corresponds to pivot at pivots[i].col
+             // eq: x_{pivot} + sum(A_ik * x_k) = 0
+             // x_{pivot} = - sum(A_ik * x_k)
+             for(let i = pivots.length - 1; i >= 0; i--) {
+                 const pCol = pivots[i].col;
+                 const pRow = pivots[i].row;
+                 // Sum over columns > pCol (which include free vars and already computed pivots)
+                 // Actually, in RREF, pivots are only dependent on free vars to the right?
+                 // RREF: 1 0 2 0 3
+                 //       0 1 4 0 5
+                 // Pivot cols 0, 1. Free cols 2, 4.
+                 // Row 0: x0 + 2x2 + 3x4 = 0 => x0 = -2x2 - 3x4
+                 let sum = new Num(0);
+                 for(let j = pCol + 1; j < cols; j++) {
+                      const coef = rref.elements[pRow].elements[j];
+                      sum = new Add(sum, new Mul(coef, vec[j])).simplify();
+                 }
+                 vec[pCol] = new Mul(new Num(-1), sum).simplify();
+             }
+             basis.push(new Vec(vec));
+         }
+
+         return new Vec(basis);
+    }
+
+    _lu(matrix) {
+        if (!(matrix instanceof Vec)) throw new Error("lu requires a matrix");
+        const n = matrix.elements.length;
+        if (n === 0) throw new Error("Empty matrix");
+        const m = matrix.elements[0].elements.length;
+        if (n !== m) throw new Error("lu requires a square matrix");
+
+        // Doolittle's Algorithm? Or Gaussian elimination.
+        // Returns P, L, U such that PA = LU.
+        // Implementing simple LU without pivoting first? Or with P?
+        // Xcas `lu` returns [L, U, P].
+
+        // Initialize L = I, U = A, P = I
+        const L = [];
+        const U = [];
+        const P = [];
+
+        // Clone U from matrix
+        for(let i=0; i<n; i++) {
+            const rowU = [];
+            const rowL = [];
+            const rowP = [];
+            for(let j=0; j<n; j++) {
+                rowU.push(matrix.elements[i].elements[j]);
+                rowL.push(new Num(i === j ? 1 : 0));
+                rowP.push(new Num(i === j ? 1 : 0));
+            }
+            U.push(rowU);
+            L.push(rowL);
+            P.push(rowP);
+        }
+
+        // Gaussian Elimination
+        for(let k=0; k<n; k++) {
+             // Pivot strategy: find max in column k, rows k..n-1
+             let maxVal = -1;
+             let pivotRow = -1;
+             for(let i=k; i<n; i++) {
+                  const val = Math.abs(U[i][k].evaluateNumeric());
+                  if (val > maxVal) {
+                      maxVal = val;
+                      pivotRow = i;
+                  }
+             }
+
+             if (maxVal < 1e-10) continue; // Singular or zero column
+
+             // Swap rows in U, P. Swap rows in L (only up to k-1 to keep L lower triangular?)
+             // Actually, for PA=LU, we swap rows in U, P, and "the part of L computed so far" (columns 0..k-1).
+             if (pivotRow !== k) {
+                  // Swap U rows
+                  let temp = U[k]; U[k] = U[pivotRow]; U[pivotRow] = temp;
+                  // Swap P rows
+                  temp = P[k]; P[k] = P[pivotRow]; P[pivotRow] = temp;
+                  // Swap L rows (elements 0..k-1)
+                  for(let j=0; j<k; j++) {
+                       let t = L[k][j]; L[k][j] = L[pivotRow][j]; L[pivotRow][j] = t;
+                  }
+             }
+
+             for(let i=k+1; i<n; i++) {
+                  // factor = U[i][k] / U[k][k]
+                  const factor = new Div(U[i][k], U[k][k]).simplify();
+                  L[i][k] = factor;
+                  for(let j=k; j<n; j++) {
+                       // U[i][j] = U[i][j] - factor * U[k][j]
+                       U[i][j] = new Sub(U[i][j], new Mul(factor, U[k][j])).simplify();
+                  }
+             }
+        }
+
+        const vecL = new Vec(L.map(r => new Vec(r)));
+        const vecU = new Vec(U.map(r => new Vec(r)));
+        const vecP = new Vec(P.map(r => new Vec(r)));
+
+        // Xcas returns permutation p as a vector of indices? Or matrix?
+        // Documentation says [L, U, P] where P is permutation matrix.
+        return new Vec([vecL, vecU, vecP]);
+    }
+
+    _qr(matrix) {
+         if (!(matrix instanceof Vec)) throw new Error("qr requires a matrix");
+         const rows = matrix.elements.length;
+         if (rows === 0) throw new Error("Empty matrix");
+         const cols = matrix.elements[0].elements.length;
+
+         // Gram-Schmidt
+         // Q cols are orthonormal basis. R is upper triangular.
+         // A = [a1, ..., an]
+         // u1 = a1, e1 = u1/|u1|
+         // u2 = a2 - proj_u1(a2), e2 = u2/|u2|
+         // ...
+
+         // Transpose matrix to work with columns easily?
+         const A_cols = [];
+         for(let j=0; j<cols; j++) {
+              const col = [];
+              for(let i=0; i<rows; i++) col.push(matrix.elements[i].elements[j]);
+              A_cols.push(new Vec(col));
+         }
+
+         const Q_cols = [];
+         const R_elements = []; // Matrix R
+
+         for(let j=0; j<cols; j++) {
+              let u = A_cols[j];
+              // Subtract projections onto previous e_i
+              for(let i=0; i<j; i++) {
+                  // proj = (a_j . e_i) * e_i
+                  // dot
+                  const dot = new Mul(A_cols[j], Q_cols[i]).simplify(); // Vector dot product via Mul
+                  // R_ij = dot
+                  // We need to store R properly.
+                  // u = u - dot * e_i
+                  u = new Sub(u, new Mul(dot, Q_cols[i])).simplify();
+              }
+
+              // Norm
+              const normSq = new Mul(u, u).simplify();
+              const norm = new Call('sqrt', [normSq]).simplify();
+              const e = new Div(u, norm).simplify();
+              Q_cols.push(e);
+         }
+
+         // Construct Q matrix from columns
+         const Q_rows = [];
+         for(let i=0; i<rows; i++) {
+              const row = [];
+              for(let j=0; j<cols; j++) {
+                   // e_j[i]
+                   row.push(Q_cols[j].elements[i]);
+              }
+              Q_rows.push(new Vec(row));
+         }
+
+         // Construct R matrix
+         // R_ij = e_i . a_j (for i <= j)
+         const R_rows = [];
+         for(let i=0; i<cols; i++) {
+              const row = [];
+              for(let j=0; j<cols; j++) {
+                   if (i > j) {
+                        row.push(new Num(0));
+                   } else {
+                        const val = new Mul(Q_cols[i], A_cols[j]).simplify();
+                        row.push(val);
+                   }
+              }
+              R_rows.push(new Vec(row));
+         }
+
+         return new Vec([new Vec(Q_rows), new Vec(R_rows)]);
+    }
+
+    _eigenvals(matrix) {
+         if (!(matrix instanceof Vec)) throw new Error("eigenvals requires a matrix");
+         // solve(charpoly(M, x) = 0, x)
+         const x = new Sym("lambda_" + Date.now()); // Unique variable
+         const cp = this._charpoly(matrix, x);
+         const roots = this._solve(cp, x);
+         // roots might be a "set" call or single value.
+         // We want a list (Vec).
+         if (roots instanceof Call && roots.funcName === 'set') {
+             return new Vec(roots.args);
+         }
+         return new Vec([roots]);
+    }
+
+    _linsolve(eqs, vars) {
+        if (!(eqs instanceof Vec) || !(vars instanceof Vec)) throw new Error("linsolve requires list of equations and list of variables");
+        const m = eqs.elements.length;
+        const n = vars.elements.length;
+        // Construct Augmented Matrix [A|b]
+        // A_ij is coeff of var_j in eq_i.
+        // b_i is constant term (moved to RHS).
+
+        const rows = [];
+        for(let i=0; i<m; i++) {
+            let eq = eqs.elements[i];
+            // Normalize eq to expr = 0
+            let expr;
+            if (eq instanceof Eq) {
+                expr = new Sub(eq.left, eq.right).simplify();
+            } else {
+                expr = eq.simplify();
+            }
+
+            // Extract coeffs
+            // We need to assume linear in vars.
+            // coeff(expr, var)
+            const row = [];
+            let currentExpr = expr;
+
+            for(let j=0; j<n; j++) {
+                const v = vars.elements[j];
+                // coeff of v^1
+                const c = this._coeff(currentExpr, v, new Num(1));
+                row.push(c);
+                // terms without v (constant with respect to v)
+                currentExpr = this._coeff(currentExpr, v, new Num(0));
+            }
+            // currentExpr is now the constant term (independent of all vars)
+            // LHS + ... + const = 0  =>  ... = -const
+            row.push(new Mul(new Num(-1), currentExpr).simplify());
+            rows.push(new Vec(row));
+        }
+
+        const augmented = new Vec(rows);
+        const rref = this._rref(augmented);
+
+        // Extract solution
+        // If unique solution (rank = n, and m>=n), then identity on left.
+        // x_i = column n (last col)
+
+        // Check for consistency?
+        // Basic extraction for unique solution case:
+        const sol = [];
+        for(let j=0; j<n; j++) {
+            // Find pivot for col j
+            let pivotRow = -1;
+            for(let i=0; i<m; i++) {
+                // Check if leading entry of row i is at column j
+                // A leading entry is the first non-zero entry in the row.
+                // Since it's RREF, it must be 1.
+                // We iterate columns to find the first non-zero.
+                let leadingCol = -1;
+                for(let k=0; k<n; k++) { // only check variable columns
+                    const val = rref.elements[i].elements[k].evaluateNumeric();
+                    if (Math.abs(val) > 1e-10) {
+                        leadingCol = k;
+                        break;
+                    }
+                }
+
+                if (leadingCol === j) {
+                    pivotRow = i;
+                    break;
+                }
+            }
+
+            if (pivotRow !== -1) {
+                 sol.push(rref.elements[pivotRow].elements[n]);
+            } else {
+                 sol.push(new Num(0)); // Free variable or undetermined, default to 0
+            }
+        }
+        return new Vec(sol);
+    }
+
+    _gramschmidt(matrix) {
+         if (!(matrix instanceof Vec)) throw new Error("gramschmidt requires a matrix");
+         // It's the Q part of QR.
+         // But Gram-Schmidt usually applies to a list of vectors (basis).
+         // If input is matrix, we treat columns as vectors? Or rows?
+         // Xcas gramschmidt(basis) -> orthogonal basis.
+         // If input is list of vectors, orthogonalize them.
+
+         let inputVectors = [];
+         if (matrix.elements.length > 0 && matrix.elements[0] instanceof Vec) {
+             // Matrix. Treat rows or columns?
+             // Usually column space basis.
+             // But QR code used columns.
+             // If input is [v1, v2, ...], it is a list of vectors.
+             // Let's assume input is list of vectors.
+             inputVectors = matrix.elements;
+         } else {
+             throw new Error("gramschmidt requires a list of vectors");
+         }
+
+         const orth = [];
+         for(let j=0; j<inputVectors.length; j++) {
+              let u = inputVectors[j];
+              for(let i=0; i<j; i++) {
+                  // proj = (u . e_i) * e_i (since e_i is normalized)
+                  const e = orth[i];
+                  const dotUE = new Mul(u, e).simplify(); // dot
+                  const proj = new Mul(dotUE, e).simplify();
+                  u = new Sub(u, proj).simplify();
+              }
+              // Do we normalize? Gram-Schmidt vs Orthonormal Gram-Schmidt.
+              // Xcas `gramschmidt` usually orthonormalizes?
+              // The QR implementation normalized.
+              // Let's normalize.
+              const normSq = new Mul(u, u).simplify();
+              const norm = new Call('sqrt', [normSq]).simplify();
+              // e = u / norm. Since Div(Vec, Scalar) might not simplify to Vec if scalar is symbolic,
+              // we manually distribute.
+              if (u instanceof Vec) {
+                  const e_elements = u.elements.map(el => new Div(el, norm).simplify());
+                  orth.push(new Vec(e_elements));
+              } else {
+                  const e = new Div(u, norm).simplify();
+                  orth.push(e);
+              }
+         }
+         return new Vec(orth);
+    }
+
+    _basis(matrix) {
+        if (!(matrix instanceof Vec)) throw new Error("basis requires a matrix");
+        // Returns basis of column space.
+        // 1. Transpose? No, RREF on A identifies pivot columns of A.
+        // Pivot columns of A form a basis for Col(A).
+
+        const rref = this._rref(matrix);
+        const rows = rref.elements.length;
+        if (rows === 0) return new Vec([]);
+        const cols = rref.elements[0].elements.length;
+
+        const pivotCols = [];
+        let pRow = 0;
+        for(let j=0; j<cols; j++) {
+            if (pRow < rows) {
+                const val = rref.elements[pRow].elements[j].evaluateNumeric();
+                if (Math.abs(val) > 1e-10) { // Found pivot
+                    pivotCols.push(j);
+                    pRow++;
+                }
+            }
+        }
+
+        // Extract columns from ORIGINAL matrix
+        const basisVectors = [];
+        for(const colIdx of pivotCols) {
+            const col = [];
+            for(let i=0; i<matrix.elements.length; i++) {
+                col.push(matrix.elements[i].elements[colIdx]);
+            }
+            basisVectors.push(new Vec(col));
+        }
+
+        return new Vec(basisVectors);
+    }
+
+    _matrix(rows, cols, funcName) {
+        // matrix(r, c, func)
+        if (!(rows instanceof Num) || !(cols instanceof Num)) throw new Error("matrix dimensions must be numbers");
+
+        const r = rows.value;
+        const c = cols.value;
+        const res = [];
+
+        // Check if funcName is a defined function
+        const funcDef = (funcName instanceof Sym) ? this.functions[funcName.name] : null;
+        const isBuiltin = (funcName instanceof Sym) ? ['sin','cos','exp','log', 'pow'].includes(funcName.name) : false; // etc
+
+        for(let i=0; i<r; i++) {
+            const row = [];
+            for(let j=0; j<c; j++) {
+                // Call func(i, j)
+                // If it's a Call object or expression we need to evaluate?
+                // Xcas: matrix(2, 2, (j,k)->j+k)
+                // Here we might pass a function name.
+
+                if (funcDef) {
+                    // Evaluate user function
+                    const call = new Call(funcName.name, [new Num(i), new Num(j)]);
+                    row.push(this.evaluate(call));
+                } else if (isBuiltin) {
+                     // e.g. matrix(2,2, 'random')?
+                     // Not supported nicely yet without Call wrapper
+                     row.push(new Num(0));
+                } else {
+                    // Maybe funcName is an expression with 'j', 'k'?
+                    // Too complex for cleanroom without parser integration.
+                    // Fallback: 0
+                    row.push(new Num(0));
+                }
+            }
+            res.push(new Vec(row));
+        }
+        return new Vec(res);
+    }
+
+    _zeros(rows, cols) {
+        if (!(rows instanceof Num) || !(cols instanceof Num)) return new Call('zeros', [rows, cols]);
+        const r = rows.value;
+        const c = cols.value;
+        const res = [];
+        for(let i=0; i<r; i++) {
+            const row = [];
+            for(let j=0; j<c; j++) {
+                row.push(new Num(0));
+            }
+            res.push(new Vec(row));
+        }
+        return new Vec(res);
+    }
+
+    _ones(rows, cols) {
+        if (!(rows instanceof Num) || !(cols instanceof Num)) return new Call('ones', [rows, cols]);
+        const r = rows.value;
+        const c = cols.value;
+        const res = [];
+        for(let i=0; i<r; i++) {
+            const row = [];
+            for(let j=0; j<c; j++) {
+                row.push(new Num(1));
+            }
+            res.push(new Vec(row));
+        }
+        return new Vec(res);
+    }
+
+    _divisors(n) {
+        n = n.simplify();
+        if (n instanceof Num && Number.isInteger(n.value)) {
+            const val = Math.abs(n.value);
+            const res = [];
+            for(let i=1; i*i <= val; i++) {
+                if (val % i === 0) {
+                    res.push(new Num(i));
+                    if (i*i !== val) res.push(new Num(val/i));
+                }
+            }
+            // Sort
+            res.sort((a, b) => a.value - b.value);
+            return new Vec(res);
+        }
+        return new Call('divisors', [n]);
     }
 
     _cross(v1, v2) {
@@ -1176,6 +1969,36 @@ size, concat, clear, N`;
         const c3 = new Sub(Fy.diff(x), Fx.diff(y)).simplify();
 
         return new Vec([c1, c2, c3]);
+    }
+
+    _jacobian(funcs, vars) {
+        if (!(funcs instanceof Vec) || !(vars instanceof Vec)) throw new Error("jacobian requires two vectors");
+        // J_ij = d(f_i)/d(x_j)
+        const rows = [];
+        for(const f of funcs.elements) {
+            const row = [];
+            for(const v of vars.elements) {
+                row.push(f.diff(v).simplify());
+            }
+            rows.push(new Vec(row));
+        }
+        return new Vec(rows);
+    }
+
+    _hessian(expr, vars) {
+        if (!(vars instanceof Vec)) throw new Error("hessian requires a vector of variables");
+        // H_ij = d^2f / dx_i dx_j
+        const rows = [];
+        for(const vi of vars.elements) {
+            const row = [];
+            for(const vj of vars.elements) {
+                // partial f / partial vi partial vj
+                // first diff wrt vi, then vj
+                row.push(expr.diff(vi).diff(vj).simplify());
+            }
+            rows.push(new Vec(row));
+        }
+        return new Vec(rows);
     }
 
     _rem(a, b) {
