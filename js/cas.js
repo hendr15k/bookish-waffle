@@ -133,15 +133,27 @@ class CAS {
             }
 
             if (node.funcName === 'sum') {
+                if (args.length === 1) return this._sumList(args[0]);
                 // sum(expr, var, start, end)
-                if (args.length !== 4) throw new Error("sum requires 4 arguments: expression, variable, start, end");
+                if (args.length !== 4) throw new Error("sum requires 1 argument (list) or 4 arguments: expression, variable, start, end");
                 return this._sum(args[0], args[1], args[2], args[3]);
             }
 
             if (node.funcName === 'product') {
+                if (args.length === 1) return this._productList(args[0]);
                 // product(expr, var, start, end)
-                if (args.length !== 4) throw new Error("product requires 4 arguments: expression, variable, start, end");
+                if (args.length !== 4) throw new Error("product requires 1 argument (list) or 4 arguments: expression, variable, start, end");
                 return this._product(args[0], args[1], args[2], args[3]);
+            }
+
+            if (node.funcName === 'cumsum') {
+                if (args.length !== 1) throw new Error("cumsum requires 1 argument (list)");
+                return this._cumsum(args[0]);
+            }
+
+            if (node.funcName === 'flatten') {
+                if (args.length !== 1) throw new Error("flatten requires 1 argument (list)");
+                return this._flatten(args[0]);
             }
 
             if (node.funcName === 'expand') {
@@ -335,14 +347,34 @@ class CAS {
                 return this._mean(args[0]);
             }
 
-            if (node.funcName === 'variance') {
+            if (node.funcName === 'variance' || node.funcName === 'var') {
                 if (args.length !== 1) throw new Error("variance requires 1 argument (list)");
                 return this._variance(args[0]);
+            }
+
+            if (node.funcName === 'std' || node.funcName === 'stddev') {
+                if (args.length !== 1) throw new Error("std requires 1 argument (list)");
+                return this._std(args[0]);
+            }
+
+            if (node.funcName === 'cov') {
+                if (args.length !== 2) throw new Error("cov requires 2 arguments (list1, list2)");
+                return this._cov(args[0], args[1]);
+            }
+
+            if (node.funcName === 'corr') {
+                if (args.length !== 2) throw new Error("corr requires 2 arguments (list1, list2)");
+                return this._corr(args[0], args[1]);
             }
 
             if (node.funcName === 'median') {
                 if (args.length !== 1) throw new Error("median requires 1 argument (list)");
                 return this._median(args[0]);
+            }
+
+            if (node.funcName === 'charpoly') {
+                if (args.length !== 2) throw new Error("charpoly requires 2 arguments: matrix, variable");
+                return this._charpoly(args[0], args[1]);
             }
 
             if (node.funcName === 'linearRegression') {
@@ -598,6 +630,120 @@ size, concat, clear, N`;
             prod = new Mul(prod, term).simplify();
         }
         return prod;
+    }
+
+    _sumList(list) {
+        if (list instanceof Vec) {
+            let sum = new Num(0);
+            for(const e of list.elements) sum = new Add(sum, e);
+            return sum.simplify();
+        }
+        return new Call('sum', [list]);
+    }
+
+    _productList(list) {
+        if (list instanceof Vec) {
+            let prod = new Num(1);
+            for(const e of list.elements) prod = new Mul(prod, e);
+            return prod.simplify();
+        }
+        return new Call('product', [list]);
+    }
+
+    _cumsum(list) {
+        if (list instanceof Vec) {
+            let sum = new Num(0);
+            const res = [];
+            for(const e of list.elements) {
+                sum = new Add(sum, e).simplify();
+                res.push(sum);
+            }
+            return new Vec(res);
+        }
+        return new Call('cumsum', [list]);
+    }
+
+    _flatten(list) {
+        if (list instanceof Vec) {
+            const res = [];
+            const recurse = (v) => {
+                if (v instanceof Vec) {
+                    for(const e of v.elements) recurse(e);
+                } else {
+                    res.push(v);
+                }
+            };
+            recurse(list);
+            return new Vec(res);
+        }
+        return new Call('flatten', [list]);
+    }
+
+    _std(list) {
+        // sqrt(variance)
+        const v = this._variance(list);
+        return new Call('sqrt', [v]).simplify();
+    }
+
+    _cov(list1, list2) {
+        if (list1 instanceof Vec && list2 instanceof Vec) {
+             const n = list1.elements.length;
+             if (n !== list2.elements.length) throw new Error("cov requires lists of equal length");
+             if (n < 2) return new Num(0);
+
+             const m1 = this._mean(list1);
+             const m2 = this._mean(list2);
+
+             let sum = new Num(0);
+             for(let i=0; i<n; i++) {
+                 const diff1 = new Sub(list1.elements[i], m1);
+                 const diff2 = new Sub(list2.elements[i], m2);
+                 sum = new Add(sum, new Mul(diff1, diff2));
+             }
+             // Sample covariance (n-1)
+             return new Div(sum, new Num(n - 1)).simplify();
+        }
+        return new Call('cov', [list1, list2]);
+    }
+
+    _corr(list1, list2) {
+         if (list1 instanceof Vec && list2 instanceof Vec) {
+             const cov = this._cov(list1, list2);
+             const std1 = this._std(list1);
+             const std2 = this._std(list2);
+             if ((std1 instanceof Num && std1.value === 0) || (std2 instanceof Num && std2.value === 0)) {
+                 return new Num(0); // Undefined if std is 0
+             }
+             return new Div(cov, new Mul(std1, std2)).simplify();
+         }
+         return new Call('corr', [list1, list2]);
+    }
+
+    _charpoly(matrix, varNode) {
+        if (!(matrix instanceof Vec)) throw new Error("charpoly requires a matrix");
+        if (!(varNode instanceof Sym)) throw new Error("charpoly requires a symbol variable");
+
+        // det(M - lambda * I)
+        const rows = matrix.elements.length;
+        if (rows === 0) return new Num(0);
+        const cols = matrix.elements[0].elements.length;
+        if (rows !== cols) throw new Error("charpoly requires a square matrix");
+
+        const M_minus_lambdaI = [];
+        for(let i=0; i<rows; i++) {
+            const row = [];
+            for(let j=0; j<cols; j++) {
+                let val = matrix.elements[i].elements[j];
+                if (i === j) {
+                    // val - lambda
+                    val = new Sub(val, varNode).simplify();
+                }
+                row.push(val);
+            }
+            M_minus_lambdaI.push(new Vec(row));
+        }
+        const mat = new Vec(M_minus_lambdaI);
+        return this._det(mat);
     }
 
     // ... (rest of the methods: _solve, _taylor, _factorial, _limit, _det, _trans)
