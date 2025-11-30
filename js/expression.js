@@ -1255,31 +1255,47 @@ class Call extends Expr {
         if (this.funcName === 'limit') {
             // limit(expr, var, val)
             if (argsTex.length === 3) {
-                return `\\lim_{${argsTex[1]} \\to ${argsTex[2]}} ${argsTex[0]}`;
+                let exprTex = argsTex[0];
+                if (this.args[0] instanceof Add || this.args[0] instanceof Sub) {
+                    exprTex = `\\left(${exprTex}\\right)`;
+                }
+                return `\\lim_{${argsTex[1]} \\to ${argsTex[2]}} ${exprTex}`;
             }
         }
 
         if (this.funcName === 'integrate') {
+            let exprTex = argsTex[0];
+            if (this.args[0] instanceof Add || this.args[0] instanceof Sub) {
+                exprTex = `\\left(${exprTex}\\right)`;
+            }
             // integrate(expr, var) or integrate(expr, var, a, b)
             if (argsTex.length === 2) {
-                return `\\int ${argsTex[0]} \\, d${argsTex[1]}`;
+                return `\\int ${exprTex} \\, d${argsTex[1]}`;
             }
             if (argsTex.length === 4) {
-                return `\\int_{${argsTex[2]}}^{${argsTex[3]}} ${argsTex[0]} \\, d${argsTex[1]}`;
+                return `\\int_{${argsTex[2]}}^{${argsTex[3]}} ${exprTex} \\, d${argsTex[1]}`;
             }
         }
 
         if (this.funcName === 'sum') {
             // sum(expr, var, start, end)
             if (argsTex.length === 4) {
-                return `\\sum_{${argsTex[1]}=${argsTex[2]}}^{${argsTex[3]}} ${argsTex[0]}`;
+                let exprTex = argsTex[0];
+                if (this.args[0] instanceof Add || this.args[0] instanceof Sub) {
+                    exprTex = `\\left(${exprTex}\\right)`;
+                }
+                return `\\sum_{${argsTex[1]}=${argsTex[2]}}^{${argsTex[3]}} ${exprTex}`;
             }
         }
 
         if (this.funcName === 'product') {
             // product(expr, var, start, end)
             if (argsTex.length === 4) {
-                return `\\prod_{${argsTex[1]}=${argsTex[2]}}^{${argsTex[3]}} ${argsTex[0]}`;
+                let exprTex = argsTex[0];
+                if (this.args[0] instanceof Add || this.args[0] instanceof Sub) {
+                    exprTex = `\\left(${exprTex}\\right)`;
+                }
+                return `\\prod_{${argsTex[1]}=${argsTex[2]}}^{${argsTex[3]}} ${exprTex}`;
             }
         }
 
