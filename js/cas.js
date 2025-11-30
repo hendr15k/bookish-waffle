@@ -392,36 +392,70 @@ class CAS {
                 return this._arg(args[0]);
             }
 
+            if (node.funcName === 'degree') {
+                if (args.length !== 2) throw new Error("degree requires 2 arguments: expr, var");
+                return this._degree(args[0], args[1]);
+            }
+            if (node.funcName === 'coeff') {
+                if (args.length !== 3) throw new Error("coeff requires 3 arguments: expr, var, degree");
+                return this._coeff(args[0], args[1], args[2]);
+            }
+            if (node.funcName === 'symb2poly') {
+                if (args.length !== 2) throw new Error("symb2poly requires 2 arguments: expr, var");
+                return this._symb2poly(args[0], args[1]);
+            }
+            if (node.funcName === 'poly2symb') {
+                if (args.length !== 2) throw new Error("poly2symb requires 2 arguments: list, var");
+                return this._poly2symb(args[0], args[1]);
+            }
+            if (node.funcName === 'seq') {
+                if (args.length !== 5) throw new Error("seq requires 5 arguments: expr, var, start, end, step");
+                return this._seq(args[0], args[1], args[2], args[3], args[4]);
+            }
+            if (node.funcName === 'range') {
+                if (args.length !== 3) throw new Error("range requires 3 arguments: start, end, step");
+                return this._range(args[0], args[1], args[2]);
+            }
+            if (node.funcName === 'sort') {
+                if (args.length !== 1) throw new Error("sort requires 1 argument: list");
+                return this._sort(args[0]);
+            }
+            if (node.funcName === 'reverse') {
+                if (args.length !== 1) throw new Error("reverse requires 1 argument: list");
+                return this._reverse(args[0]);
+            }
+            if (node.funcName === 'diag') {
+                if (args.length !== 1) throw new Error("diag requires 1 argument: list");
+                return this._diag(args[0]);
+            }
+            if (node.funcName === 'identity') {
+                if (args.length !== 1) throw new Error("identity requires 1 argument: n");
+                return this._identity(args[0]);
+            }
+            if (node.funcName === 'laplace') {
+                if (args.length !== 3) throw new Error("laplace requires 3 arguments: expr, t, s");
+                return this._laplace(args[0], args[1], args[2]);
+            }
+            if (node.funcName === 'ilaplace') {
+                if (args.length !== 3) throw new Error("ilaplace requires 3 arguments: expr, s, t");
+                return this._ilaplace(args[0], args[1], args[2]);
+            }
+
             if (node.funcName === 'help') {
                 const helpText = `Available commands:
-diff(expr, var), integrate(expr, var, [lower, upper]),
-limit(expr, var, val), taylor(expr, var, pt, order),
-sum(expr, var, start, end), product(expr, var, start, end),
-expand(expr), simplify(expr), solve(eq, var),
-det(M), trans(M), plot(expr, var, [min, max]),
-gcd(a, b), lcm(a, b), factor(n), factorial(n),
-mean(list), variance(list),
-dot(u, v), norm(v), grad(expr, vars), curl(v, vars), divergence(v, vars),
-rem(a, b), quo(a, b), mod(a, b),
-size(L), concat(L1, L2),
-N(expr) [numeric eval], clear(), help()`;
+diff, integrate, limit, taylor, sum, product,
+expand, simplify, solve,
+det, inv, trans, cross, dot, norm, grad, curl, divergence,
+gcd, lcm, factor, nCr, nPr, isPrime, factorial,
+mean, median, variance, linearRegression, normalPDF, binomialPDF,
+degree, coeff, symb2poly, poly2symb,
+seq, range, sort, reverse,
+diag, identity,
+laplace, ilaplace,
+rem, quo, mod, arg, approx,
+size, concat, clear, N`;
 
-                const latexHelp = `\\begin{array}{l}
-\\text{Available commands:} \\\\
-\\text{diff}(expr, var), \\; \\int(expr, var, [a, b]), \\\\
-\\lim(expr, var, val), \\; \\text{taylor}(expr, var, pt, n), \\\\
-\\sum(expr, var, a, b), \\; \\prod(expr, var, a, b), \\\\
-\\text{expand}(expr), \\; \\text{simplify}(expr), \\; \\text{solve}(eq, var), \\\\
-\\text{det}(M), \\; \\text{trans}(M), \\; \\text{plot}(expr, var, [min, max]), \\\\
-\\text{gcd}(a, b), \\; \\text{lcm}(a, b), \\; \\text{factor}(n), \\; n!, \\\\
-\\text{mean}(L), \\; \\text{variance}(L), \\; \\text{linearRegression}(L), \\\\
-\\text{normalPDF}(x, \\mu, \\sigma), \\; \\text{binomialPDF}(k, n, p), \\\\
-\\text{dot}(u, v), \\; \\text{norm}(v), \\; \\text{grad}(f, V), \\; \\text{curl}(F, V), \\; \\text{div}(F, V), \\\\
-\\text{rem}(a, b), \\; \\text{quo}(a, b), \\; \\text{mod}(a, b), \\\\
-\\text{size}(L), \\; \\text{concat}(L_1, L_2), \\\\
-N(expr), \\; \\text{clear}(), \\; \\text{help}()
-\\end{array}`;
-
+                const latexHelp = `\\text{Available commands: see documentation}`;
                 return { type: 'info', text: helpText, toString: () => helpText, toLatex: () => latexHelp };
             }
 
@@ -1215,18 +1249,336 @@ N(expr), \\; \\text{clear}(), \\; \\text{help}()
              if (z.value >= 0) return new Num(0);
              return new Num(Math.PI);
         }
-        // complex z = x + iy?
-        // We don't have a standard Complex class, just Exprs.
-        // arg(x + i*y) = atan2(y, x)
-
-        // Check if z is of form a + b*i
-        // or a*i, or just a.
-
-        // Simplistic check
-        // If z is Mul(b, i) -> arg is pi/2 or -pi/2 depending on sign of b.
-        // If z is Add(a, Mul(b, i)) -> atan(b/a) ...
-
         return new Call('arg', [z]);
+    }
+
+    // --- Polynomial Tools ---
+
+    _dependsOn(expr, varNode) {
+        if (expr instanceof Sym) return expr.name === varNode.name;
+        if (expr instanceof Num) return false;
+        if (expr instanceof BinaryOp) return this._dependsOn(expr.left, varNode) || this._dependsOn(expr.right, varNode);
+        if (expr instanceof Call) return expr.args.some(a => this._dependsOn(a, varNode));
+        if (expr instanceof Vec) return expr.elements.some(e => this._dependsOn(e, varNode));
+        return false;
+    }
+
+    _getPolyCoeffs(expr, varNode) {
+        expr = expr.expand().simplify();
+        const terms = [];
+        const collectTerms = (e, sign = 1) => {
+             if (e instanceof Add) {
+                 collectTerms(e.left, sign);
+                 collectTerms(e.right, sign);
+             } else if (e instanceof Sub) {
+                 collectTerms(e.left, sign);
+                 collectTerms(e.right, -sign);
+             } else {
+                 terms.push({e, sign});
+             }
+        };
+        collectTerms(expr);
+
+        const coeffs = {};
+        let maxDeg = 0;
+
+        // Analyze term
+        const analyze = (t) => {
+             if (t instanceof Sym && t.name === varNode.name) return { d: 1, c: new Num(1) };
+             if (t instanceof Num) return { d: 0, c: t };
+             if (t instanceof Sym) return { d: 0, c: t };
+             if (t instanceof Pow) {
+                  if (t.left instanceof Sym && t.left.name === varNode.name && t.right instanceof Num) {
+                       return { d: t.right.value, c: new Num(1) };
+                  }
+                  if (this._dependsOn(t, varNode)) throw new Error("Not a polynomial");
+                  return { d: 0, c: t };
+             }
+             if (t instanceof Mul) {
+                  const l = analyze(t.left);
+                  const r = analyze(t.right);
+                  return { d: l.d + r.d, c: new Mul(l.c, r.c) };
+             }
+             if (t instanceof Div) {
+                  const l = analyze(t.left);
+                  const r = analyze(t.right);
+                  if (r.d > 0) throw new Error("Rational function, not polynomial");
+                  return { d: l.d, c: new Div(l.c, r.c) };
+             }
+             if (t instanceof Call) {
+                  if (this._dependsOn(t, varNode)) throw new Error("Not a polynomial");
+                  return { d: 0, c: t };
+             }
+             // Default const
+             if (this._dependsOn(t, varNode)) throw new Error("Not a polynomial");
+             return { d: 0, c: t };
+        };
+
+        for(const item of terms) {
+             try {
+                 const res = analyze(item.e);
+                 const finalCoeff = (item.sign === 1) ? res.c : new Mul(new Num(-1), res.c);
+                 coeffs[res.d] = new Add(coeffs[res.d] || new Num(0), finalCoeff);
+                 if (res.d > maxDeg) maxDeg = res.d;
+             } catch (e) {
+                 // Not polynomial term
+                 return null;
+             }
+        }
+
+        // simplify coeffs
+        for(const d in coeffs) coeffs[d] = coeffs[d].simplify();
+        return { coeffs, maxDeg };
+    }
+
+    _degree(expr, varNode) {
+        const poly = this._getPolyCoeffs(expr, varNode);
+        if (poly) return new Num(poly.maxDeg);
+        return new Call('degree', [expr, varNode]);
+    }
+
+    _coeff(expr, varNode, n) {
+        if (!(n instanceof Num)) return new Call('coeff', [expr, varNode, n]);
+        const poly = this._getPolyCoeffs(expr, varNode);
+        if (poly) {
+            return poly.coeffs[n.value] || new Num(0);
+        }
+        return new Call('coeff', [expr, varNode, n]);
+    }
+
+    _symb2poly(expr, varNode) {
+        const poly = this._getPolyCoeffs(expr, varNode);
+        if (poly) {
+            const list = [];
+            for(let i=poly.maxDeg; i>=0; i--) {
+                list.push(poly.coeffs[i] || new Num(0));
+            }
+            return new Vec(list);
+        }
+        return new Call('symb2poly', [expr, varNode]);
+    }
+
+    _poly2symb(list, varNode) {
+        if (list instanceof Vec) {
+            let res = new Num(0);
+            const deg = list.elements.length - 1;
+            for(let i=0; i<list.elements.length; i++) {
+                const coeff = list.elements[i];
+                const power = deg - i;
+                let term;
+                if (power === 0) term = coeff;
+                else if (power === 1) term = new Mul(coeff, varNode);
+                else term = new Mul(coeff, new Pow(varNode, new Num(power)));
+                res = new Add(res, term);
+            }
+            return res.simplify();
+        }
+        return new Call('poly2symb', [list, varNode]);
+    }
+
+    // --- List/Vector Tools ---
+
+    _seq(expr, varNode, start, end, step) {
+        // Generates list [expr(start), expr(start+step), ...]
+        if (!(start instanceof Num) || !(end instanceof Num) || !(step instanceof Num)) {
+            return new Call('seq', [expr, varNode, start, end, step]);
+        }
+        const res = [];
+        const s = step.value;
+        if (s === 0) throw new Error("Step cannot be 0");
+        const a = start.value;
+        const b = end.value;
+
+        for (let i = a; (s > 0 ? i <= b : i >= b); i += s) {
+            res.push(expr.substitute(varNode, new Num(i)).simplify());
+        }
+        return new Vec(res);
+    }
+
+    _range(start, end, step) {
+        if (!(start instanceof Num) || !(end instanceof Num) || !(step instanceof Num)) {
+            return new Call('range', [start, end, step]);
+        }
+        const res = [];
+        const s = step.value;
+        if (s === 0) throw new Error("Step cannot be 0");
+        const a = start.value;
+        const b = end.value;
+
+        // Python range behavior: inclusive start, exclusive end?
+        // Xcas range: range(start, end, step) usually inclusive?
+        // Python: range(0, 3) -> [0, 1, 2]
+        // Xcas: range(n) -> 0..n-1
+        // Xcas: range(a, b) -> a..b-1
+        // Xcas: range(a, b, s)
+        // I will follow Xcas/Python convention: exclusive end.
+
+        for (let i = a; (s > 0 ? i < b : i > b); i += s) {
+            res.push(new Num(i));
+        }
+        return new Vec(res);
+    }
+
+    _sort(list) {
+        if (list instanceof Vec) {
+            const sorted = [...list.elements].sort((a, b) => {
+                const va = a.evaluateNumeric();
+                const vb = b.evaluateNumeric();
+                return va - vb;
+            });
+            return new Vec(sorted);
+        }
+        return new Call('sort', [list]);
+    }
+
+    _reverse(list) {
+        if (list instanceof Vec) {
+            return new Vec([...list.elements].reverse());
+        }
+        return new Call('reverse', [list]);
+    }
+
+    _diag(list) {
+        if (list instanceof Vec) {
+            const n = list.elements.length;
+            const rows = [];
+            for(let i=0; i<n; i++) {
+                const row = [];
+                for(let j=0; j<n; j++) {
+                    if (i === j) row.push(list.elements[i]);
+                    else row.push(new Num(0));
+                }
+                rows.push(new Vec(row));
+            }
+            return new Vec(rows);
+        }
+        return new Call('diag', [list]);
+    }
+
+    _identity(n) {
+        if (n instanceof Num && Number.isInteger(n.value) && n.value > 0) {
+            const size = n.value;
+            const rows = [];
+            for(let i=0; i<size; i++) {
+                const row = [];
+                for(let j=0; j<size; j++) {
+                    row.push(new Num(i === j ? 1 : 0));
+                }
+                rows.push(new Vec(row));
+            }
+            return new Vec(rows);
+        }
+        return new Call('identity', [n]);
+    }
+
+    // --- Calculus Extras ---
+
+    _laplace(expr, t, s) {
+        // Simple table-based Laplace Transform
+        expr = expr.expand().simplify();
+
+        if (expr instanceof Add) {
+            return new Add(this._laplace(expr.left, t, s), this._laplace(expr.right, t, s)).simplify();
+        }
+        if (expr instanceof Sub) {
+            return new Sub(this._laplace(expr.left, t, s), this._laplace(expr.right, t, s)).simplify();
+        }
+        if (expr instanceof Mul) {
+            // Check for constant
+            if (!this._dependsOn(expr.left, t)) return new Mul(expr.left, this._laplace(expr.right, t, s)).simplify();
+            if (!this._dependsOn(expr.right, t)) return new Mul(expr.right, this._laplace(expr.left, t, s)).simplify();
+        }
+        if (!this._dependsOn(expr, t)) {
+            // L{c} = c/s
+            return new Div(expr, s).simplify();
+        }
+
+        // Table
+        // t^n -> n! / s^(n+1)
+        if (expr instanceof Sym && expr.name === t.name) { // t
+             return new Div(new Num(1), new Pow(s, new Num(2))).simplify();
+        }
+        if (expr instanceof Pow && expr.left instanceof Sym && expr.left.name === t.name && expr.right instanceof Num) { // t^n
+             const n = expr.right.value;
+             if (n >= 0) {
+                 return new Div(new Num(this._factorial(n)), new Pow(s, new Num(n + 1))).simplify();
+             }
+        }
+        // exp(at) -> 1/(s-a)
+        if (expr instanceof Call && expr.funcName === 'exp') {
+             const arg = expr.args[0]; // at
+             // We need to extract 'a' from 'at'
+             const poly = this._getPolyCoeffs(arg, t);
+             if (poly && poly.maxDeg === 1 && poly.coeffs[0] && poly.coeffs[0].value === 0) {
+                 const a = poly.coeffs[1];
+                 return new Div(new Num(1), new Sub(s, a)).simplify();
+             }
+             if (arg instanceof Sym && arg.name === t.name) { // e^t
+                  return new Div(new Num(1), new Sub(s, new Num(1))).simplify();
+             }
+        }
+        // sin(at) -> a/(s^2+a^2)
+        // cos(at) -> s/(s^2+a^2)
+        if (expr instanceof Call && (expr.funcName === 'sin' || expr.funcName === 'cos')) {
+             const arg = expr.args[0];
+             let a = new Num(1);
+             if (arg instanceof Mul && arg.right instanceof Sym && arg.right.name === t.name) a = arg.left;
+             else if (arg instanceof Mul && arg.left instanceof Sym && arg.left.name === t.name) a = arg.right;
+             else if (arg instanceof Sym && arg.name === t.name) a = new Num(1);
+             else return new Call('laplace', [expr, t, s]);
+
+             const denom = new Add(new Pow(s, new Num(2)), new Pow(a, new Num(2)));
+             if (expr.funcName === 'sin') return new Div(a, denom).simplify();
+             if (expr.funcName === 'cos') return new Div(s, denom).simplify();
+        }
+
+        return new Call('laplace', [expr, t, s]);
+    }
+
+    _ilaplace(expr, s, t) {
+        // Inverse Laplace (Basic)
+        expr = expr.expand().simplify();
+
+        if (expr instanceof Add) return new Add(this._ilaplace(expr.left, s, t), this._ilaplace(expr.right, s, t)).simplify();
+        if (expr instanceof Sub) return new Sub(this._ilaplace(expr.left, s, t), this._ilaplace(expr.right, s, t)).simplify();
+        if (expr instanceof Mul) {
+             if (!this._dependsOn(expr.left, s)) return new Mul(expr.left, this._ilaplace(expr.right, s, t)).simplify();
+             if (!this._dependsOn(expr.right, s)) return new Mul(expr.right, this._ilaplace(expr.left, s, t)).simplify();
+        }
+
+        // Table
+        // 1/s -> 1
+        // 1/s^n -> t^(n-1)/(n-1)!
+        // 1/(s-a) -> e^(at)
+        // a/(s^2+a^2) -> sin(at)
+        // s/(s^2+a^2) -> cos(at)
+
+        // Simplify to form Num / Denom
+        if (expr instanceof Div) {
+             const num = expr.left;
+             const den = expr.right;
+
+             // 1/s^n
+             if (den instanceof Pow && den.left instanceof Sym && den.left.name === s.name && den.right instanceof Num) {
+                 const n = den.right.value;
+                 return new Mul(num, new Div(new Pow(t, new Num(n-1)), new Num(this._factorial(n-1)))).simplify();
+             }
+             if (den instanceof Sym && den.name === s.name) { // 1/s
+                 return num;
+             }
+
+             // 1/(s-a)
+             if (den instanceof Sub && den.left instanceof Sym && den.left.name === s.name) {
+                 const a = den.right;
+                 return new Mul(num, new Call('exp', [new Mul(a, t)])).simplify();
+             }
+             if (den instanceof Add && den.left instanceof Sym && den.left.name === s.name) { // 1/(s+a) = 1/(s-(-a))
+                 const a = new Mul(new Num(-1), den.right);
+                 return new Mul(num, new Call('exp', [new Mul(a, t)])).simplify();
+             }
+        }
+
+        return new Call('ilaplace', [expr, s, t]);
     }
 }
 
