@@ -1468,34 +1468,92 @@
 
             for(const p of plots) {
                 const points = [];
-                // Respect plot definition range if stricter than view?
-                // Usually we want to view outside definition? No, function might be undefined.
-                // We plot in the intersection of view X and defined X.
-                // But simplified: just iterate view X.
 
-                for (let i = 0; i <= steps; i++) {
-                    const x = minX + (maxX - minX) * (i / steps);
+                if (p.subtype === 'parametric') {
+                    // Iterate t from min to max
+                    const tMin = parseFloat(p.min);
+                    const tMax = parseFloat(p.max);
+                    const tSteps = 500;
+                    for (let i = 0; i <= tSteps; i++) {
+                        const t = tMin + (tMax - tMin) * (i / tSteps);
+                        try {
+                            // Calc x(t)
+                            const xExpr = p.xExpr.substitute(p.var, new Num(t)).simplify();
+                            let valX = (xExpr instanceof Num) ? xExpr.value : xExpr.evaluateNumeric();
 
-                    try {
-                        // Optimization: if simple num, skip parsing?
-                        // Using substitute is slow for high frequency.
-                        // Ideally we compile to JS function.
-                        const valExpr = p.expr.substitute(p.var, new Num(x));
-                        const simplified = valExpr.simplify();
-                        let y = NaN;
-                        if (simplified instanceof Num) {
-                             y = simplified.value;
-                        } else {
-                             y = simplified.evaluateNumeric();
+                            // Calc y(t)
+                            const yExpr = p.yExpr.substitute(p.var, new Num(t)).simplify();
+                            let valY = (yExpr instanceof Num) ? yExpr.value : yExpr.evaluateNumeric();
+
+                            if (!isNaN(valX) && isFinite(valX) && !isNaN(valY) && isFinite(valY)) {
+                                points.push({x: valX, y: valY});
+                                if (valY < calcMinY) calcMinY = valY;
+                                if (valY > calcMaxY) calcMaxY = valY;
+                            }
+                        } catch(e) {}
+                    }
+                } else if (p.subtype === 'polar') {
+                    // Iterate theta
+                    const tMin = parseFloat(p.min);
+                    const tMax = parseFloat(p.max);
+                    const tSteps = 500;
+                    for (let i = 0; i <= tSteps; i++) {
+                        const t = tMin + (tMax - tMin) * (i / tSteps);
+                        try {
+                            const rExpr = p.rExpr.substitute(p.var, new Num(t)).simplify();
+                            let r = (rExpr instanceof Num) ? rExpr.value : rExpr.evaluateNumeric();
+
+                            if (!isNaN(r) && isFinite(r)) {
+                                // Convert polar to cartesian
+                                const valX = r * Math.cos(t);
+                                const valY = r * Math.sin(t);
+                                points.push({x: valX, y: valY});
+                                if (valY < calcMinY) calcMinY = valY;
+                                if (valY > calcMaxY) calcMaxY = valY;
+                            }
+                        } catch(e) {}
+                    }
+                } else if (p.subtype === 'list') {
+                    // Scatter plot logic handled separately, but if we want lines connecting them:
+                    if (p.scatter) {
+                        for(const pt of p.scatter) {
+                             if (pt.y < calcMinY) calcMinY = pt.y;
+                             if (pt.y > calcMaxY) calcMaxY = pt.y;
                         }
-
-                        if (!isNaN(y) && isFinite(y)) {
-                            points.push({x, y});
-                            if (y < calcMinY) calcMinY = y;
-                            if (y > calcMaxY) calcMaxY = y;
+                        // If we want lines, push to points
+                        // points.push(...p.scatter);
+                        // Usually scatter is just dots. List plot might want lines?
+                        // Let's assume just dots for scatter property, lines if we push to allPoints.
+                        // For 'plotlist', let's behave like scatter + line.
+                        // But standard plotlist usually connects dots.
+                        // Xcas plotlist connects.
+                        for(const pt of p.scatter) {
+                            points.push(pt);
                         }
-                    } catch(e) {
-                        // Ignore
+                    }
+                } else {
+                    // Standard Function Plot
+                    for (let i = 0; i <= steps; i++) {
+                        const x = minX + (maxX - minX) * (i / steps);
+
+                        try {
+                            const valExpr = p.expr.substitute(p.var, new Num(x));
+                            const simplified = valExpr.simplify();
+                            let y = NaN;
+                            if (simplified instanceof Num) {
+                                y = simplified.value;
+                            } else {
+                                y = simplified.evaluateNumeric();
+                            }
+
+                            if (!isNaN(y) && isFinite(y)) {
+                                points.push({x, y});
+                                if (y < calcMinY) calcMinY = y;
+                                if (y > calcMaxY) calcMaxY = y;
+                            }
+                        } catch(e) {
+                            // Ignore
+                        }
                     }
                 }
                 allPoints.push(points);
