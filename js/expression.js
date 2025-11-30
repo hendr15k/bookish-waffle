@@ -940,18 +940,24 @@ class Call extends Expr {
         if (this.funcName === 'asin') {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 0) return new Num(0);
-            if (arg instanceof Num && arg.value === 1) return new Num(Math.PI / 2); // Approximate? Num stores float.
-            if (arg instanceof Num && arg.value === -1) return new Num(-Math.PI / 2);
+            if (arg instanceof Num && arg.value === 1) return new Div(new Sym('pi'), new Num(2)).simplify();
+            if (arg instanceof Num && arg.value === -1) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(2)).simplify();
+            if (arg instanceof Num && arg.value === 0.5) return new Div(new Sym('pi'), new Num(6)).simplify();
+            if (arg instanceof Num && arg.value === -0.5) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(6)).simplify();
         }
         if (this.funcName === 'acos') {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 1) return new Num(0);
-            if (arg instanceof Num && arg.value === 0) return new Num(Math.PI / 2);
-            if (arg instanceof Num && arg.value === -1) return new Num(Math.PI);
+            if (arg instanceof Num && arg.value === 0) return new Div(new Sym('pi'), new Num(2)).simplify();
+            if (arg instanceof Num && arg.value === -1) return new Sym('pi');
+            if (arg instanceof Num && arg.value === 0.5) return new Div(new Sym('pi'), new Num(3)).simplify();
+            if (arg instanceof Num && arg.value === -0.5) return new Div(new Mul(new Num(2), new Sym('pi')), new Num(3)).simplify();
         }
         if (this.funcName === 'atan') {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 0) return new Num(0);
+            if (arg instanceof Num && arg.value === 1) return new Div(new Sym('pi'), new Num(4)).simplify();
+            if (arg instanceof Num && arg.value === -1) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(4)).simplify();
         }
         if (this.funcName === 'sinh') {
             const arg = simpleArgs[0];
