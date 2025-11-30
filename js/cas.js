@@ -441,39 +441,6 @@ class CAS {
                 return this._ilaplace(args[0], args[1], args[2]);
             }
 
-            // Plotting Extensions
-            if (node.funcName === 'plotparam') {
-                // plotparam([x(t), y(t)], t, min, max) or plotparam(x(t), y(t), t, min, max)
-                // Xcas usually uses [x,y], t=a..b.
-                // We'll support plotparam(x, y, t, min, max) for simplicity with our parser structure
-                if (args.length === 5) {
-                    return this._plotparam(args[0], args[1], args[2], args[3], args[4]);
-                }
-                // If first arg is vector [x, y]
-                if (args.length === 4 && args[0] instanceof Vec) {
-                     return this._plotparam(args[0].elements[0], args[0].elements[1], args[1], args[2], args[3]);
-                }
-                throw new Error("plotparam requires arguments: x, y, t, min, max");
-            }
-            if (node.funcName === 'plotpolar') {
-                // plotpolar(r, theta, min, max)
-                if (args.length !== 4) throw new Error("plotpolar requires 4 arguments: r, theta, min, max");
-                return this._plotpolar(args[0], args[1], args[2], args[3]);
-            }
-            if (node.funcName === 'plotlist') {
-                // plotlist(list) - scatter plot
-                if (args.length !== 1) throw new Error("plotlist requires 1 argument: list of points");
-                return this._plotlist(args[0]);
-            }
-            // Alias map
-            if (node.funcName === 'param') {
-                 if (args.length === 5) return this._plotparam(args[0], args[1], args[2], args[3], args[4]);
-                 if (args.length === 4 && args[0] instanceof Vec) return this._plotparam(args[0].elements[0], args[0].elements[1], args[1], args[2], args[3]);
-            }
-            if (node.funcName === 'polar') {
-                 if (args.length === 4) return this._plotpolar(args[0], args[1], args[2], args[3]);
-            }
-
             if (node.funcName === 'help') {
                 const helpText = `Available commands:
 diff, integrate, limit, taylor, sum, product,
@@ -1612,73 +1579,6 @@ size, concat, clear, N`;
         }
 
         return new Call('ilaplace', [expr, s, t]);
-    }
-
-    // --- Plotting Impl ---
-
-    _plotparam(xExpr, yExpr, tVar, min, max) {
-        const minVal = min.evaluateNumeric();
-        const maxVal = max.evaluateNumeric();
-        return {
-            type: 'plot',
-            subtype: 'parametric',
-            xExpr: xExpr,
-            yExpr: yExpr,
-            var: tVar,
-            min: isNaN(minVal) ? 0 : minVal,
-            max: isNaN(maxVal) ? 6.28 : maxVal,
-            toString: () => `Parametric Plot [${xExpr}, ${yExpr}]`,
-            toLatex: () => `\\text{PlotParam }\\left[${xExpr.toLatex()}, ${yExpr.toLatex()}\\right]`
-        };
-    }
-
-    _plotpolar(rExpr, thetaVar, min, max) {
-        const minVal = min.evaluateNumeric();
-        const maxVal = max.evaluateNumeric();
-        return {
-            type: 'plot',
-            subtype: 'polar',
-            rExpr: rExpr,
-            var: thetaVar,
-            min: isNaN(minVal) ? 0 : minVal,
-            max: isNaN(maxVal) ? 6.28 : maxVal,
-            toString: () => `Polar Plot r=${rExpr}`,
-            toLatex: () => `\\text{PlotPolar } r=${rExpr.toLatex()}`
-        };
-    }
-
-    _plotlist(list) {
-        const points = [];
-        if (list instanceof Vec) {
-            for(const el of list.elements) {
-                if (el instanceof Vec && el.elements.length >= 2) {
-                    points.push({
-                        x: el.elements[0].evaluateNumeric(),
-                        y: el.elements[1].evaluateNumeric()
-                    });
-                }
-            }
-        }
-
-        // Auto-bounds
-        let minX = -10, maxX = 10;
-        if (points.length > 0) {
-            const xs = points.map(p => p.x);
-            minX = Math.min(...xs) - 1;
-            maxX = Math.max(...xs) + 1;
-        }
-
-        return {
-            type: 'plot',
-            subtype: 'list',
-            scatter: points,
-            min: minX,
-            max: maxX,
-            expr: new Num(0), // Dummy
-            var: new Sym('x'), // Dummy
-            toString: () => `PlotList [${points.length} points]`,
-            toLatex: () => `\\text{PlotList } [${points.length} \\text{ pts}]`
-        };
     }
 }
 
