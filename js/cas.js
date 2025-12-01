@@ -508,6 +508,76 @@ class CAS {
                 return this._ilaplace(args[0], args[1], args[2]);
             }
 
+            if (node.funcName === 'kernel' || node.funcName === 'nullspace' || node.funcName === 'ker') {
+                if (args.length !== 1) throw new Error("kernel requires 1 argument");
+                return this._kernel(args[0].simplify());
+            }
+            if (node.funcName === 'basis') {
+                if (args.length !== 1) throw new Error("basis requires 1 argument");
+                return this._basis(args[0].simplify());
+            }
+            if (node.funcName === 'eigenvals') {
+                if (args.length !== 1) throw new Error("eigenvals requires 1 argument");
+                return this._eigenvals(args[0].simplify());
+            }
+            if (node.funcName === 'eigenvects') {
+                if (args.length !== 1) throw new Error("eigenvects requires 1 argument");
+                return this._eigenvects(args[0].simplify());
+            }
+            if (node.funcName === 'gramschmidt') {
+                if (args.length !== 1) throw new Error("gramschmidt requires 1 argument (list of vectors)");
+                return this._gramschmidt(args[0].simplify());
+            }
+            if (node.funcName === 'lu') {
+                if (args.length !== 1) throw new Error("lu requires 1 argument");
+                return this._lu(args[0].simplify());
+            }
+            if (node.funcName === 'qr') {
+                if (args.length !== 1) throw new Error("qr requires 1 argument");
+                return this._qr(args[0].simplify());
+            }
+            if (node.funcName === 'cholesky') {
+                if (args.length !== 1) throw new Error("cholesky requires 1 argument");
+                return this._cholesky(args[0].simplify());
+            }
+            if (node.funcName === 'desolve') {
+                if (args.length < 2) throw new Error("desolve requires at least 2 arguments");
+                return this._desolve(args[0], args[1]);
+            }
+            if (node.funcName === 'jacobian') {
+                if (args.length !== 2) throw new Error("jacobian requires 2 arguments: expressions, variables");
+                return this._jacobian(args[0].simplify(), args[1].simplify());
+            }
+            if (node.funcName === 'hessian') {
+                if (args.length !== 2) throw new Error("hessian requires 2 arguments: expression, variables");
+                return this._hessian(args[0].simplify(), args[1].simplify());
+            }
+            if (node.funcName === 'discriminant') {
+                if (args.length !== 2) throw new Error("discriminant requires 2 arguments: poly, var");
+                return this._discriminant(args[0], args[1]);
+            }
+            if (node.funcName === 'resultant') {
+                if (args.length !== 3) throw new Error("resultant requires 3 arguments: p1, p2, var");
+                return this._resultant(args[0], args[1], args[2]);
+            }
+            if (node.funcName === 'partfrac') {
+                if (args.length !== 2) throw new Error("partfrac requires 2 arguments: expr, var");
+                return this._partfrac(args[0], args[1]);
+            }
+            if (node.funcName === 'nextprime') {
+                if (args.length !== 1) throw new Error("nextprime requires 1 argument");
+                return this._nextprime(args[0]);
+            }
+            if (node.funcName === 'euler' || node.funcName === 'phi') {
+                if (args.length !== 1) throw new Error("euler requires 1 argument");
+                return this._euler(args[0]);
+            }
+            if (node.funcName === 'lagrange') {
+                // lagrange(x_list, y_list, var)
+                if (args.length < 3) throw new Error("lagrange requires 3 arguments: x_list, y_list, var");
+                return this._lagrange(args[0], args[1], args[2]);
+            }
+
             if (node.funcName === 'help') {
                 const helpText = `Available commands:
 diff, integrate, limit, taylor, sum, product,
@@ -755,6 +825,9 @@ size, concat, clear, N`;
         } else {
             expr = eq.simplify();
         }
+
+        // Expand to ensure polynomial form for identification
+        expr = expr.expand().simplify();
 
         try {
             const b = expr.substitute(varNode, new Num(0)).simplify();
@@ -1553,6 +1626,415 @@ size, concat, clear, N`;
              return new Num(Math.PI);
         }
         return new Call('arg', [z]);
+    }
+
+    _kernel(matrix) {
+        if (!(matrix instanceof Vec)) throw new Error("kernel requires a matrix");
+        const R = this._rref(matrix);
+        const rows = R.elements.length;
+        if (rows === 0) return new Vec([]);
+        const cols = R.elements[0].elements.length;
+
+        const pivots = [];
+        const pivotRows = [];
+
+        for(let r=0; r<rows; r++) {
+            let foundPivot = false;
+            for(let c=0; c<cols; c++) {
+                const val = R.elements[r].elements[c].evaluateNumeric();
+                if (!foundPivot && Math.abs(val) > 1e-10) {
+                    pivots.push(c);
+                    pivotRows.push(r);
+                    foundPivot = true;
+                }
+            }
+        }
+
+        const free = [];
+        for(let c=0; c<cols; c++) {
+            if (!pivots.includes(c)) free.push(c);
+        }
+
+        if (free.length === 0) {
+            const zeroVec = [];
+            for(let i=0; i<cols; i++) zeroVec.push(new Num(0));
+            return new Vec([new Vec(zeroVec)]);
+        }
+
+        const basis = [];
+        for(const freeIdx of free) {
+            const vec = new Array(cols).fill(null).map(() => new Num(0));
+            vec[freeIdx] = new Num(1);
+
+            for(let i=0; i<pivots.length; i++) {
+                const p = pivots[i];
+                const r = pivotRows[i];
+                const coeff = R.elements[r].elements[freeIdx];
+                vec[p] = new Mul(new Num(-1), coeff).simplify();
+            }
+            basis.push(new Vec(vec));
+        }
+
+        return new Vec(basis);
+    }
+
+    _basis(matrix) {
+         if (!(matrix instanceof Vec)) throw new Error("basis requires a matrix");
+         const R = this._rref(matrix);
+         const rows = R.elements.length;
+         if (rows === 0) return new Vec([]);
+         const cols = R.elements[0].elements.length;
+
+         const pivots = [];
+         for(let r=0; r<rows; r++) {
+            for(let c=0; c<cols; c++) {
+                const val = R.elements[r].elements[c].evaluateNumeric();
+                if (Math.abs(val) > 1e-10) {
+                    pivots.push(c);
+                    break;
+                }
+            }
+         }
+
+         // Return columns of original matrix
+         const basisCols = [];
+         // Transpose first to get rows (which are columns of original)
+         const T = this._trans(matrix);
+         for(const p of pivots) {
+             basisCols.push(T.elements[p]);
+         }
+         return new Vec(basisCols);
+    }
+
+    _eigenvals(matrix) {
+        // solve(charpoly(M, x), x)
+        const lambda = new Sym('lambda_');
+        const cp = this._charpoly(matrix, lambda);
+        const sols = this._solve(cp, lambda);
+
+        if (sols instanceof Call && sols.funcName === 'set') {
+            return new Vec(sols.args);
+        }
+        return new Vec([sols]);
+    }
+
+    _eigenvects(matrix) {
+        const evals = this._eigenvals(matrix);
+        // evals is a Vec of values
+        let vectors = [];
+
+        // Use a Set to avoid duplicates if eigenvalues are repeated?
+        // _solve might return multiple roots.
+
+        for(const val of evals.elements) {
+            // kernel(A - val*I)
+            const rows = matrix.elements.length;
+            const cols = matrix.elements[0].elements.length;
+
+            // Construct A - val*I
+            const M_minus_lambdaI = [];
+            for(let i=0; i<rows; i++) {
+                const row = [];
+                for(let j=0; j<cols; j++) {
+                    let el = matrix.elements[i].elements[j];
+                    if (i === j) {
+                        el = new Sub(el, val).simplify();
+                    }
+                    row.push(el);
+                }
+                M_minus_lambdaI.push(new Vec(row));
+            }
+            const mat = new Vec(M_minus_lambdaI);
+
+            const kern = this._kernel(mat);
+            // kern is Vec of basis vectors
+            for(const v of kern.elements) {
+                vectors.push(v);
+            }
+        }
+        return new Vec(vectors);
+    }
+
+    _gramschmidt(vectors) {
+        // vectors: Vec of Vecs (list of vectors)
+        if (!(vectors instanceof Vec)) throw new Error("gramschmidt requires a list of vectors");
+
+        const basis = [];
+        for(const v of vectors.elements) {
+            let u = v;
+            for(const b of basis) {
+                const dotVB = new Call('dot', [v, b]).simplify(); // v . b
+                const dotBB = new Call('dot', [b, b]).simplify();
+                const proj = new Mul(new Div(dotVB, dotBB), b).simplify();
+                u = new Sub(u, proj).simplify();
+            }
+
+            const isZero = u.elements.every(e => e instanceof Num && e.value === 0);
+            if (!isZero) {
+                 const n = new Call('norm', [u]).simplify();
+                 const e = new Div(u, n).simplify();
+                 basis.push(e);
+            }
+        }
+        return new Vec(basis);
+    }
+
+    _lu(matrix) {
+        return new Call('lu', [matrix]); // Placeholder
+    }
+
+    _qr(matrix) {
+        if (!(matrix instanceof Vec)) throw new Error("qr requires a matrix");
+        const cols = [];
+        const rows = matrix.elements.length;
+        const numCols = matrix.elements[0].elements.length;
+
+        for(let j=0; j<numCols; j++) {
+            const col = [];
+            for(let i=0; i<rows; i++) {
+                col.push(matrix.elements[i].elements[j]);
+            }
+            cols.push(new Vec(col));
+        }
+
+        const Q_cols = this._gramschmidt(new Vec(cols));
+
+        const Q_rows = [];
+        for(let i=0; i<rows; i++) {
+             const row = [];
+             for(let j=0; j<Q_cols.elements.length; j++) {
+                 row.push(Q_cols.elements[j].elements[i]);
+             }
+             Q_rows.push(new Vec(row));
+        }
+        const Q = new Vec(Q_rows);
+
+        const R = new Mul(this._trans(Q), matrix).simplify();
+
+        return new Vec([Q, R]);
+    }
+
+    _cholesky(matrix) {
+        return new Call('cholesky', [matrix]);
+    }
+
+    _desolve(eq, varNode) {
+         return new Call('desolve', [eq, varNode]);
+    }
+
+    _jacobian(exprs, vars) {
+        if (!(exprs instanceof Vec) || !(vars instanceof Vec)) throw new Error("jacobian requires two vectors");
+        const rows = exprs.elements.length;
+        const cols = vars.elements.length;
+
+        const mat = [];
+        for(let i=0; i<rows; i++) {
+            const row = [];
+            for(let j=0; j<cols; j++) {
+                row.push(exprs.elements[i].diff(vars.elements[j]).simplify());
+            }
+            mat.push(new Vec(row));
+        }
+        return new Vec(mat);
+    }
+
+    _hessian(expr, vars) {
+        if (!(vars instanceof Vec)) throw new Error("hessian requires an expression and a vector of variables");
+        const n = vars.elements.length;
+
+        const mat = [];
+        for(let i=0; i<n; i++) {
+            const row = [];
+            for(let j=0; j<n; j++) {
+                // d^2 f / dx_i dx_j
+                const first = expr.diff(vars.elements[i]).simplify();
+                const second = first.diff(vars.elements[j]).simplify();
+                row.push(second);
+            }
+            mat.push(new Vec(row));
+        }
+        return new Vec(mat);
+    }
+
+    _discriminant(poly, varNode) {
+        // Discriminant = (-1)^(n(n-1)/2) * Res(P, P') / a_n
+        // where n is degree, a_n is leading coefficient
+        const degree = this._degree(poly, varNode);
+        if (!(degree instanceof Num)) return new Call('discriminant', [poly, varNode]);
+        const n = degree.value;
+        if (n < 2) return new Num(1); // Usually defined as 1 or 0? 1 for degree 0/1 constant. Or 0?
+        // Actually discriminant of constant or linear is typically 1 or undefined.
+        // Let's rely on resultant formula.
+
+        const deriv = poly.diff(varNode).simplify();
+        const res = this._resultant(poly, deriv, varNode);
+        const an = this._coeff(poly, varNode, new Num(n));
+
+        const sign = (n * (n - 1) / 2) % 2 === 0 ? 1 : -1;
+
+        const num = new Mul(new Num(sign), res).simplify();
+        return new Div(num, an).simplify();
+    }
+
+    _resultant(p1, p2, varNode) {
+        // Compute resultant using Sylvester Matrix determinant
+        const deg1 = this._degree(p1, varNode).value;
+        const deg2 = this._degree(p2, varNode).value;
+
+        if (typeof deg1 !== 'number' || typeof deg2 !== 'number') return new Call('resultant', [p1, p2, varNode]);
+
+        const size = deg1 + deg2;
+        const matrix = [];
+
+        for(let i=0; i<deg2; i++) {
+            const row = new Array(size).fill(new Num(0));
+            // Shift p1 coeffs
+            for(let k=0; k<=deg1; k++) {
+                row[i+k] = this._coeff(p1, varNode, new Num(deg1-k)); // Highest power first in Sylvester?
+                // Sylvester matrix usually organized from highest power to lowest
+                // Row 0: a_n, a_{n-1}, ..., a_0, 0, ...
+            }
+            matrix.push(new Vec(row));
+        }
+        for(let i=0; i<deg1; i++) {
+            const row = new Array(size).fill(new Num(0));
+            // Shift p2 coeffs
+            for(let k=0; k<=deg2; k++) {
+                row[i+k] = this._coeff(p2, varNode, new Num(deg2-k));
+            }
+            matrix.push(new Vec(row));
+        }
+
+        return this._det(new Vec(matrix));
+    }
+
+    _partfrac(expr, varNode) {
+        // Basic partial fraction for P(x)/(x-a)(x-b)...
+        // Implementation:
+        // 1. Check if expr is Div(P, Q)
+        // 2. Factor Q (symbolic factor)
+        // 3. If Q is product of linear terms (x-a), use Heaviside cover-up method or linear system
+
+        // Simplified approach for cleanroom:
+        // Assume Q factors into distinct linear terms (x-c_i)
+        // We need `roots` command really.
+        // `solve(Q, x)` might return set of roots.
+
+        if (expr instanceof Div) {
+            const num = expr.left;
+            const den = expr.right;
+
+            // Try to find roots of denominator
+            const rootsResult = this._solve(den, varNode);
+            let roots = [];
+            if (rootsResult instanceof Call && rootsResult.funcName === 'set') {
+                roots = rootsResult.args;
+            } else if (rootsResult instanceof Vec) {
+                // If solve returns vector?
+            } else {
+                roots = [rootsResult];
+            }
+
+            // Filter roots that are actually valid numbers/symbols
+            roots = roots.filter(r => !(r instanceof Call && r.funcName === 'solve'));
+
+            if (roots.length > 0) {
+                // P(x) / Q(x) = Sum ( A_i / (x - r_i) ) + Polynomial part
+                // We assume deg(P) < deg(Q) for pure partial fraction.
+                // If not, we should div first?
+
+                // For each root r_i:
+                // A_i = limit(expr * (x-r_i), x, r_i)
+                // Or simplified: P(r_i) / Q'(r_i) for simple roots.
+
+                const terms = [];
+                const derivDen = den.diff(varNode).simplify();
+
+                for(const r of roots) {
+                    const valNum = num.substitute(varNode, r).simplify();
+                    const valDeriv = derivDen.substitute(varNode, r).simplify();
+
+                    // Term: (valNum/valDeriv) / (x - r)
+                    const coeff = new Div(valNum, valDeriv).simplify();
+                    const denom = new Sub(varNode, r).simplify();
+                    terms.push(new Div(coeff, denom).simplify());
+                }
+
+                // Sum terms
+                if (terms.length > 0) {
+                    let res = terms[0];
+                    for(let i=1; i<terms.length; i++) res = new Add(res, terms[i]);
+                    return res.simplify();
+                }
+            }
+        }
+
+        return new Call('partfrac', [expr, varNode]);
+    }
+
+    _nextprime(n) {
+        if (!(n instanceof Num) || !Number.isInteger(n.value)) return new Call('nextprime', [n]);
+        let val = n.value;
+        if (val < 2) return new Num(2);
+
+        const isPrime = (num) => {
+            for(let i = 2, s = Math.sqrt(num); i <= s; i++)
+                if(num % i === 0) return false;
+            return num > 1;
+        };
+
+        val++;
+        while (!isPrime(val)) val++;
+        return new Num(val);
+    }
+
+    _euler(n) {
+        if (!(n instanceof Num) || !Number.isInteger(n.value)) return new Call('euler', [n]);
+        const val = n.value;
+        if (val <= 0) return new Num(0);
+        if (val === 1) return new Num(1);
+
+        let result = val;
+        let temp = val;
+        for (let i = 2; i * i <= temp; i++) {
+            if (temp % i === 0) {
+                while (temp % i === 0) temp /= i;
+                result -= result / i;
+            }
+        }
+        if (temp > 1) result -= result / temp;
+        return new Num(result);
+    }
+
+    _lagrange(x_list, y_list, varNode) {
+        // Lagrange Interpolation
+        if (!(x_list instanceof Vec) || !(y_list instanceof Vec)) throw new Error("lagrange requires two lists of points");
+        if (x_list.elements.length !== y_list.elements.length) throw new Error("List lengths must match");
+
+        const n = x_list.elements.length;
+        let result = new Num(0);
+
+        // P(x) = sum( y_j * L_j(x) )
+        // L_j(x) = prod( (x - x_k) / (x_j - x_k) ) for k != j
+
+        for(let j=0; j<n; j++) {
+            const y_j = y_list.elements[j];
+            const x_j = x_list.elements[j];
+
+            let L_j = new Num(1);
+            for(let k=0; k<n; k++) {
+                if (k === j) continue;
+                const x_k = x_list.elements[k];
+
+                const num = new Sub(varNode, x_k).simplify();
+                const den = new Sub(x_j, x_k).simplify();
+
+                L_j = new Mul(L_j, new Div(num, den)).simplify();
+            }
+
+            result = new Add(result, new Mul(y_j, L_j)).simplify();
+        }
+        return result.simplify();
     }
 
     // --- Polynomial Tools ---
