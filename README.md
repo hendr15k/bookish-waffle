@@ -1,6 +1,6 @@
 # Web CAS (Client-Side)
 
-A lightweight, client-side Computer Algebra System (CAS) built with vanilla JavaScript. It runs entirely in your browser without any backend dependencies.
+A lightweight, client-side Computer Algebra System (CAS) with an Xcas-like syntax built with vanilla JavaScript. It runs entirely in your browser without any backend dependencies.
 
 [Live Demo](https://hendr15k.github.io/bookish-waffle/)
 
