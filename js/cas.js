@@ -174,6 +174,16 @@ class CAS {
                  return this._solve(eq, varNode);
             }
 
+            if (node.funcName === 'resultant') {
+                 if (args.length !== 3) throw new Error("resultant requires 3 arguments: poly1, poly2, variable");
+                 return this._resultant(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'discriminant') {
+                 if (args.length !== 2) throw new Error("discriminant requires 2 arguments: poly, variable");
+                 return this._discriminant(args[0], args[1]);
+            }
+
             if (node.funcName === 'plot') {
                  if (args.length < 2) throw new Error("plot requires at least 2 arguments: expression and variable");
                  const expr = args[0];
@@ -187,6 +197,7 @@ class CAS {
                  // Return a special object that the frontend can recognize
                  return {
                      type: 'plot',
+                     subtype: 'function',
                      expr: expr,
                      var: varNode,
                      min: min,
@@ -194,6 +205,103 @@ class CAS {
                      toString: () => `Plotting ${expr} from ${min} to ${max}`,
                      toLatex: () => `\\text{Plotting } ${expr.toLatex()}`
                  };
+            }
+
+            if (node.funcName === 'plotparam') {
+                // plotparam([x(t), y(t)], t, min, max)
+                // or plotparam(x(t), y(t), t, min, max)
+
+                let xExpr, yExpr, tVar, min, max;
+
+                if (args.length >= 2 && args[0] instanceof Vec) {
+                    // plotparam([x, y], t, [min], [max])
+                    if (args[0].elements.length !== 2) throw new Error("plotparam list must contain 2 expressions");
+                    xExpr = args[0].elements[0];
+                    yExpr = args[0].elements[1];
+                    tVar = args[1];
+                    min = args.length > 2 ? args[2].evaluateNumeric() : -10;
+                    max = args.length > 3 ? args[3].evaluateNumeric() : 10;
+                } else if (args.length >= 3) {
+                    // plotparam(x, y, t, [min], [max])
+                    xExpr = args[0];
+                    yExpr = args[1];
+                    tVar = args[2];
+                    min = args.length > 3 ? args[3].evaluateNumeric() : -10;
+                    max = args.length > 4 ? args[4].evaluateNumeric() : 10;
+                } else {
+                    throw new Error("plotparam requires arguments: x, y, t, [min, max]");
+                }
+
+                if (!(tVar instanceof Sym)) throw new Error("plotparam variable must be a symbol");
+                if (isNaN(min)) min = -10;
+                if (isNaN(max)) max = 10;
+
+                return {
+                    type: 'plot',
+                    subtype: 'parametric',
+                    xExpr: xExpr,
+                    yExpr: yExpr,
+                    var: tVar,
+                    min: min,
+                    max: max,
+                    toString: () => `Parametric Plot (${xExpr}, ${yExpr}) t=${min}..${max}`,
+                    toLatex: () => `\\text{Parametric Plot } (${xExpr.toLatex()}, ${yExpr.toLatex()})`
+                };
+            }
+
+            if (node.funcName === 'plotpolar') {
+                // plotpolar(r, theta, min, max)
+                if (args.length < 3) throw new Error("plotpolar requires at least 3 arguments: r, theta, min, max");
+                const rExpr = args[0];
+                const thetaVar = args[1];
+                let min = args.length > 2 ? args[2].evaluateNumeric() : 0;
+                let max = args.length > 3 ? args[3].evaluateNumeric() : 2 * Math.PI;
+
+                if (!(thetaVar instanceof Sym)) throw new Error("plotpolar variable must be a symbol");
+                if (isNaN(min)) min = 0;
+                if (isNaN(max)) max = 2 * Math.PI;
+
+                return {
+                    type: 'plot',
+                    subtype: 'polar',
+                    rExpr: rExpr,
+                    var: thetaVar,
+                    min: min,
+                    max: max,
+                    toString: () => `Polar Plot r=${rExpr} theta=${min}..${max}`,
+                    toLatex: () => `\\text{Polar Plot } r=${rExpr.toLatex()}`
+                };
+            }
+
+            if (node.funcName === 'plotlist') {
+                if (args.length !== 1) throw new Error("plotlist requires 1 argument (list)");
+                const list = args[0];
+                if (!(list instanceof Vec)) throw new Error("plotlist argument must be a list");
+
+                const points = [];
+                for(let i=0; i<list.elements.length; i++) {
+                    const el = list.elements[i];
+                    if (el instanceof Vec && el.elements.length >= 2) {
+                        // [x, y]
+                        const x = el.elements[0].evaluateNumeric();
+                        const y = el.elements[1].evaluateNumeric();
+                        if (!isNaN(x) && !isNaN(y)) points.push({x, y});
+                    } else {
+                        // y value, index as x
+                        const y = el.evaluateNumeric();
+                        if (!isNaN(y)) points.push({x: i, y});
+                    }
+                }
+
+                return {
+                    type: 'plot',
+                    subtype: 'list',
+                    scatter: points, // Frontend uses 'scatter' property for points
+                    min: 0, // Dummies
+                    max: 0,
+                    toString: () => `List Plot ${points.length} points`,
+                    toLatex: () => `\\text{List Plot}`
+                };
             }
 
             if (node.funcName === 'taylor') {
@@ -337,6 +445,16 @@ class CAS {
                 return this._isPrime(args[0]);
             }
 
+            if (node.funcName === 'nextprime') {
+                if (args.length !== 1) throw new Error("nextprime requires 1 argument");
+                return this._nextprime(args[0]);
+            }
+
+            if (node.funcName === 'prevprime') {
+                if (args.length !== 1) throw new Error("prevprime requires 1 argument");
+                return this._prevprime(args[0]);
+            }
+
             if (node.funcName === 'trace') {
                 if (args.length !== 1) throw new Error("trace requires 1 argument");
                 return this._trace(args[0]);
@@ -447,6 +565,16 @@ class CAS {
             if (node.funcName === 'concat') {
                 if (args.length < 2) throw new Error("concat requires at least 2 arguments");
                 return this._concat(args);
+            }
+
+            if (node.funcName === 'append') {
+                if (args.length !== 2) throw new Error("append requires 2 arguments: list, element");
+                return this._append(args[0], args[1]);
+            }
+
+            if (node.funcName === 'prepend') {
+                if (args.length !== 2) throw new Error("prepend requires 2 arguments: list, element");
+                return this._prepend(args[0], args[1]);
             }
 
             if (node.funcName === 'approx') {
@@ -784,6 +912,100 @@ size, concat, clear, N`;
     }
 
     // ... (rest of the methods: _solve, _taylor, _factorial, _limit, _det, _trans)
+    _resultant(poly1, poly2, varNode) {
+        if (!(varNode instanceof Sym)) throw new Error("resultant requires a symbol variable");
+
+        const p1 = this._getPolyCoeffs(poly1, varNode);
+        const p2 = this._getPolyCoeffs(poly2, varNode);
+
+        if (!p1 || !p2) throw new Error("Resultant arguments must be polynomials in " + varNode.name);
+
+        const n = p1.maxDeg;
+        const m = p2.maxDeg;
+
+        // Resultant of two constants is 1 (no common roots) unless one is 0?
+        // If degree is 0, they are constants. Common root impossible unless both are 0 (undefined?).
+        // If n=0, Res(a, B) = a^m.
+        if (n === 0 && m === 0) return new Num(1);
+
+        const size = n + m;
+        if (size === 0) return new Num(1);
+
+        // Construct Sylvester Matrix
+        const rows = [];
+        for(let i=0; i<m; i++) {
+            const row = [];
+            // Shifted p1 coeffs
+            for(let j=0; j<size; j++) {
+                // We want coeff of x^(n - (j-i))? No.
+                // Standard: Row i has coeffs a_n, a_{n-1}, ..., a_0 padded.
+                // Position of a_n starts at column i.
+                // Col j corresponds to power x^(size - 1 - j).
+                // Wait, simpler:
+                // Row i (0..m-1) has p1 coeffs shifted right by i.
+                // Coeffs are usually ordered high to low degree in Sylvester.
+
+                const power = size - 1 - j;
+                const p1_power = power - (m - 1 - i); // This is confusing.
+
+                // Let's use standard layout:
+                // Row i (for p1, i from 0 to m-1): [0...0, a_n, ..., a_0, 0...0]
+                // a_n is at column i.
+                const offset = i;
+                const deg = n - (j - offset);
+                if (deg >= 0 && deg <= n) {
+                    row.push(p1.coeffs[deg] || new Num(0));
+                } else {
+                    row.push(new Num(0));
+                }
+            }
+            rows.push(new Vec(row));
+        }
+
+        for(let i=0; i<n; i++) {
+            const row = [];
+            // Row i (for p2, i from 0 to n-1): [0...0, b_m, ..., b_0, 0...0]
+            // b_m is at column i.
+            const offset = i;
+
+            for(let j=0; j<size; j++) {
+                const deg = m - (j - offset);
+                if (deg >= 0 && deg <= m) {
+                    row.push(p2.coeffs[deg] || new Num(0));
+                } else {
+                    row.push(new Num(0));
+                }
+            }
+            rows.push(new Vec(row));
+        }
+
+        const matrix = new Vec(rows);
+        return this._det(matrix);
+    }
+
+    _discriminant(poly, varNode) {
+        if (!(varNode instanceof Sym)) throw new Error("discriminant requires a symbol variable");
+
+        const p = this._getPolyCoeffs(poly, varNode);
+        if (!p) throw new Error("Discriminant argument must be a polynomial");
+
+        const n = p.maxDeg;
+        if (n < 2) return new Num(0); // Linear or constant has disc = 1? Or undefined. Usually 1 or 0? 0 implies multiple root? Linear has no multiple root. 1?
+        // Standard definition usually requires deg >= 2.
+
+        const an = p.coeffs[n];
+
+        const deriv = poly.diff(varNode).simplify();
+        const res = this._resultant(poly, deriv, varNode);
+
+        // Disc(P) = (-1)^(n(n-1)/2) * 1/an * Res(P, P')
+
+        const signExp = (n * (n - 1)) / 2;
+        const sign = (signExp % 2 === 0) ? new Num(1) : new Num(-1);
+
+        return new Div(new Mul(sign, res), an).simplify();
+    }
+
     _solve(eq, varNode) {
         // ... (same as before)
         let expr;
@@ -1469,6 +1691,31 @@ size, concat, clear, N`;
         return new Call('isPrime', [n]);
     }
 
+    _nextprime(n) {
+        n = n.simplify();
+        if (n instanceof Num && Number.isInteger(n.value)) {
+            let val = n.value + 1;
+            while (true) {
+                if (this._isPrime(new Num(val)).value === 1) return new Num(val);
+                val++;
+            }
+        }
+        return new Call('nextprime', [n]);
+    }
+
+    _prevprime(n) {
+        n = n.simplify();
+        if (n instanceof Num && Number.isInteger(n.value)) {
+            let val = n.value - 1;
+            while (val >= 2) {
+                if (this._isPrime(new Num(val)).value === 1) return new Num(val);
+                val--;
+            }
+            return new Call('prevprime', [n]); // No prime found? Or undefined?
+        }
+        return new Call('prevprime', [n]);
+    }
+
     _trace(matrix) {
         if (matrix instanceof Vec) {
             // Check if it's a matrix (vec of vecs)
@@ -1583,6 +1830,22 @@ size, concat, clear, N`;
             }
         }
         return new Vec(elements);
+    }
+
+    _append(list, elem) {
+        if (list instanceof Vec) {
+             const newElements = [...list.elements, elem];
+             return new Vec(newElements);
+        }
+        return new Call('append', [list, elem]);
+    }
+
+    _prepend(list, elem) {
+        if (list instanceof Vec) {
+             const newElements = [elem, ...list.elements];
+             return new Vec(newElements);
+        }
+        return new Call('prepend', [list, elem]);
     }
 
     _arg(z) {
