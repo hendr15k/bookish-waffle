@@ -60,6 +60,12 @@ class Lexer {
         }
     }
 
+    skipComment() {
+        while (this.currentChar !== null && this.currentChar !== '\n') {
+            this.advance();
+        }
+    }
+
     number() {
         let result = '';
         let dotCount = 0;
@@ -187,9 +193,31 @@ class Lexer {
             if (this.currentChar === '+') { this.advance(); return new Token(TOKEN_PLUS, '+'); }
             if (this.currentChar === '-') { this.advance(); return new Token(TOKEN_MINUS, '-'); }
             if (this.currentChar === '*') { this.advance(); return new Token(TOKEN_STAR, '*'); }
-            if (this.currentChar === '/') { this.advance(); return new Token(TOKEN_SLASH, '/'); }
+            if (this.currentChar === '/') {
+                if (this.peek() === '/') {
+                    this.skipComment();
+                    this.skipWhitespace();
+                    continue;
+                }
+                this.advance();
+                return new Token(TOKEN_SLASH, '/');
+            }
             if (this.currentChar === '%') { this.advance(); return new Token(TOKEN_MOD, '%'); }
             if (this.currentChar === '^') { this.advance(); return new Token(TOKEN_CARET, '^'); }
+            if (this.currentChar === '&') {
+                if (this.peek() === '&') {
+                    this.advance(); this.advance();
+                    return new Token(TOKEN_AND, '&&');
+                }
+                throw new Error("Invalid character: &");
+            }
+            if (this.currentChar === '|') {
+                if (this.peek() === '|') {
+                    this.advance(); this.advance();
+                    return new Token(TOKEN_OR, '||');
+                }
+                throw new Error("Invalid character: |");
+            }
             if (this.currentChar === '(') { this.advance(); return new Token(TOKEN_LPAREN, '('); }
             if (this.currentChar === ')') { this.advance(); return new Token(TOKEN_RPAREN, ')'); }
             if (this.currentChar === '[') { this.advance(); return new Token(TOKEN_LBRACKET, '['); }
@@ -222,6 +250,97 @@ class Parser {
     }
 
     factor() {
+        let node = this.atom();
+        // Check for postfix indexing: A[0]
+        while (this.currentToken.type === TOKEN_LBRACKET) {
+             // We need to differentiate A[0] (index) from A [0] (implicit mul).
+             // However, implicit mul usually requires spaces or specific context.
+             // Standard Xcas syntax A[0] means index.
+             // If I have `x [1]`, is it x * [1] or x[1]?
+             // In Xcas, `x[1]` is index. `x*[1]` is mul.
+             // If we parse `[` as index here, `x [1]` will be index.
+             // If we want `x [1]` to be mul, user must use `*`.
+             // But my implicitMul logic allows `x [1]`.
+             // If I consume `[` here, implicitMul won't see it.
+             // Is there any case where `Expr [...]` should be multiplication?
+             // Only if Expr is a number? `2[1]` -> `2 * [1]`.
+             // If Expr is a vector? `[1][0]` -> `1`.
+             // If Expr is identifier? `A[0]` -> Index.
+             // If Expr is `(a+b)[0]` -> Index.
+
+             // So, basically `[` immediately following an atom (without space?)
+             // Lexer doesn't tell us about space.
+             // But typical parser logic: Postfix binds tighter than implicit mul.
+             // So `A[0]` is index. `2[0]` is index (undefined for number, but syntax wise).
+             // If user wants `2 * [0]`, they should type `2 * [0]` or `2 [0]`?
+             // If `2[0]` parses as `At(2, 0)`, then evaluation fails or returns something.
+             // If we want `2 [0]` to be mul, we have a problem without whitespace info.
+
+             // However, `At` node can decide. If `obj` is Num, maybe `At` acts as mul?
+             // No, `At` is index.
+             // Let's assume `[` is ALWAYS index if it follows a factor directly.
+             // Users usually write `2*[1]` or `2 [1]`.
+             // If I consume it here, `implicitMul` loop won't see it.
+
+             // Wait, `implicitMul` logic:
+             // `node = this.unary()`
+             // `while (isImplicitMulStart)`...
+
+             // `unary` calls `power`, `power` calls `factor`.
+             // If `factor` consumes `[`, `unary` returns `At(...)`.
+             // Then `implicitMul` sees next token.
+             // If input is `A[0]`, `factor` eats `A` then `[0]`. Returns `At`. Next is EOF.
+             // If input is `A [0]`. `factor` eats `A`. `[0]` is eaten. Returns `At`.
+
+             // This breaks `x [1]` as implicit mul.
+             // But `x(1)` is Call, not mul.
+             // So `x[1]` being Index is consistent.
+
+             // What about `2 [1]`? `2(1)` is implicit mul in some systems, but my parser handles `2(1)`?
+             // `factor` handles `LPAREN` after `NUMBER`?
+             // `factor` code:
+             // if NUMBER -> return Num.
+             // It does NOT check for `(` after number.
+             // So `2(1)` -> `Num(2)`. `implicitMul` sees `(`. `isImplicitMulStart` is true.
+             // So `2(1)` becomes `Mul(2, 1)`.
+
+             // But `factor` handles `IDENTIFIER` then `(`.
+             // So `x(1)` is `Call`.
+
+             // If I put `[` handling in `atom` (or `factor` bottom), I need to be careful.
+             // If `token` is `NUMBER`, `factor` returns `Num`. It does NOT look ahead.
+             // So `2[1]` -> `Num(2)`. `unary` returns `Num(2)`.
+             // `implicitMul` sees `[`. `isImplicitMulStart` is true.
+             // So `2[1]` becomes `Mul(2, Vec([1]))`. Correct for `2 [1]`.
+
+             // But `IDENTIFIER` block consumes `(` for Call.
+             // It explicitly checks `LPAREN`.
+             // I should add `LBRACKET` check there too.
+
+             // BUT, `(a+b)[0]`?
+             // `factor` handles `(` ... `)`. Returns `Add`.
+             // If I simply add logic to `IDENTIFIER` block, `(a+b)[0]` won't work.
+
+             // I should restructure `factor` to:
+             // `node = primary()`.
+             // `while (LBRACKET)` -> `node = At(node, ...)`
+             // Then return node.
+
+             // Let's rename `factor` logic (the long if/else) to `atom` or `primary`.
+             // And make `factor` wrap it.
+
+             // Wait, `factor` currently handles `sin^2(x)` logic which is weirdly tied to Identifier.
+             // Let's refactor carefully.
+
+             this.eat(TOKEN_LBRACKET);
+             const index = this.statement(); // Allow expression index
+             this.eat(TOKEN_RBRACKET);
+             node = new At(node, index);
+        }
+        return node;
+    }
+
+    atom() {
         const token = this.currentToken;
         if (token.type === TOKEN_NUMBER) {
             this.eat(TOKEN_NUMBER);
