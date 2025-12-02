@@ -1383,7 +1383,12 @@ class Eq extends Expr {
     }
     toString() { return `${this.left} = ${this.right}`; }
     simplify() { return new Eq(this.left.simplify(), this.right.simplify()); }
-    evaluateNumeric() { return NaN; }
+    evaluateNumeric() {
+        const l = this.left.evaluateNumeric();
+        const r = this.right.evaluateNumeric();
+        if (!isNaN(l) && !isNaN(r)) return (Math.abs(l - r) < 1e-10) ? 1 : 0;
+        return NaN;
+    }
     diff(varName) { return new Eq(this.left.diff(varName), this.right.diff(varName)); }
     integrate(varName) { return new Eq(this.left.integrate(varName), this.right.integrate(varName)); }
     expand() { return new Eq(this.left.expand(), this.right.expand()); }
@@ -1442,10 +1447,93 @@ class Block extends Expr {
     }
 }
 
+class And extends BinaryOp {
+    toString() { return `(${this.left} and ${this.right})`; }
+    simplify() { return new And(this.left.simplify(), this.right.simplify()); }
+    evaluateNumeric() { return (this.left.evaluateNumeric() && this.right.evaluateNumeric()) ? 1 : 0; }
+    toLatex() { return `${this.left.toLatex()} \\land ${this.right.toLatex()}`; }
+}
+
+class Or extends BinaryOp {
+    toString() { return `(${this.left} or ${this.right})`; }
+    simplify() { return new Or(this.left.simplify(), this.right.simplify()); }
+    evaluateNumeric() { return (this.left.evaluateNumeric() || this.right.evaluateNumeric()) ? 1 : 0; }
+    toLatex() { return `${this.left.toLatex()} \\lor ${this.right.toLatex()}`; }
+}
+
+class Xor extends BinaryOp {
+    toString() { return `(${this.left} xor ${this.right})`; }
+    simplify() { return new Xor(this.left.simplify(), this.right.simplify()); }
+    evaluateNumeric() { return (!!this.left.evaluateNumeric() !== !!this.right.evaluateNumeric()) ? 1 : 0; }
+    toLatex() { return `${this.left.toLatex()} \\oplus ${this.right.toLatex()}`; }
+}
+
+class Not extends Expr {
+    constructor(arg) {
+        super();
+        this.arg = arg;
+    }
+    toString() { return `not(${this.arg})`; }
+    simplify() { return new Not(this.arg.simplify()); }
+    evaluateNumeric() { return (!this.arg.evaluateNumeric()) ? 1 : 0; }
+    toLatex() { return `\\neg ${this.arg.toLatex()}`; }
+    substitute(varName, value) { return new Not(this.arg.substitute(varName, value)); }
+}
+
+class Mod extends BinaryOp {
+    toString() { return `(${this.left} mod ${this.right})`; }
+    simplify() {
+        const l = this.left.simplify();
+        const r = this.right.simplify();
+        if (l instanceof Num && r instanceof Num && r.value !== 0) {
+            return new Num(l.value % r.value);
+        }
+        return new Mod(l, r);
+    }
+    evaluateNumeric() { return this.left.evaluateNumeric() % this.right.evaluateNumeric(); }
+    toLatex() { return `${this.left.toLatex()} \\pmod{${this.right.toLatex()}}`; }
+}
+
+class Neq extends BinaryOp {
+    toString() { return `${this.left} != ${this.right}`; }
+    simplify() { return new Neq(this.left.simplify(), this.right.simplify()); }
+    evaluateNumeric() { return (this.left.evaluateNumeric() !== this.right.evaluateNumeric()) ? 1 : 0; }
+    toLatex() { return `${this.left.toLatex()} \\neq ${this.right.toLatex()}`; }
+}
+
+class Lt extends BinaryOp {
+    toString() { return `${this.left} < ${this.right}`; }
+    simplify() { return new Lt(this.left.simplify(), this.right.simplify()); }
+    evaluateNumeric() { return (this.left.evaluateNumeric() < this.right.evaluateNumeric()) ? 1 : 0; }
+    toLatex() { return `${this.left.toLatex()} < ${this.right.toLatex()}`; }
+}
+
+class Gt extends BinaryOp {
+    toString() { return `${this.left} > ${this.right}`; }
+    simplify() { return new Gt(this.left.simplify(), this.right.simplify()); }
+    evaluateNumeric() { return (this.left.evaluateNumeric() > this.right.evaluateNumeric()) ? 1 : 0; }
+    toLatex() { return `${this.left.toLatex()} > ${this.right.toLatex()}`; }
+}
+
+class Le extends BinaryOp {
+    toString() { return `${this.left} <= ${this.right}`; }
+    simplify() { return new Le(this.left.simplify(), this.right.simplify()); }
+    evaluateNumeric() { return (this.left.evaluateNumeric() <= this.right.evaluateNumeric()) ? 1 : 0; }
+    toLatex() { return `${this.left.toLatex()} \\leq ${this.right.toLatex()}`; }
+}
+
+class Ge extends BinaryOp {
+    toString() { return `${this.left} >= ${this.right}`; }
+    simplify() { return new Ge(this.left.simplify(), this.right.simplify()); }
+    evaluateNumeric() { return (this.left.evaluateNumeric() >= this.right.evaluateNumeric()) ? 1 : 0; }
+    toLatex() { return `${this.left.toLatex()} \\geq ${this.right.toLatex()}`; }
+}
+
 // Export classes for Global/CommonJS environments
 (function() {
     const exports = {
-        Expr, Num, Sym, BinaryOp, Add, Sub, Mul, Div, Pow, Call, Assignment, Eq, Vec, FunctionDef, Block, toExpr
+        Expr, Num, Sym, BinaryOp, Add, Sub, Mul, Div, Pow, Call, Assignment, Eq, Vec, FunctionDef, Block, toExpr,
+        And, Or, Xor, Not, Mod, Neq, Lt, Gt, Le, Ge
     };
     if (typeof globalThis !== 'undefined') {
         Object.assign(globalThis, exports);
