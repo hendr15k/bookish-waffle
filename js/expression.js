@@ -1529,11 +1529,56 @@ class Ge extends BinaryOp {
     toLatex() { return `${this.left.toLatex()} \\geq ${this.right.toLatex()}`; }
 }
 
+class At extends Expr {
+    constructor(obj, index) {
+        super();
+        this.obj = obj;
+        this.index = index;
+    }
+    toString() { return `${this.obj}[${this.index}]`; }
+    simplify() {
+        const o = this.obj.simplify();
+        const i = this.index.simplify();
+        if (o instanceof Vec && i instanceof Num && Number.isInteger(i.value)) {
+            if (i.value >= 0 && i.value < o.elements.length) {
+                return o.elements[i.value];
+            }
+            // Index out of bounds? Return symbolic or throw?
+            // Xcas might return undef. Let's return At(o, i).
+        }
+        return new At(o, i);
+    }
+    evaluateNumeric() {
+        const o = this.obj.simplify();
+        const i = this.index.evaluateNumeric();
+        if (o instanceof Vec && !isNaN(i) && Number.isInteger(i)) {
+            if (i >= 0 && i < o.elements.length) {
+                return o.elements[i].evaluateNumeric();
+            }
+        }
+        return NaN;
+    }
+    diff(varName) {
+        // Derivative of indexed element?
+        // If index is constant, it's diff(obj[i]).
+        return new At(this.obj.diff(varName), this.index);
+    }
+    integrate(varName) {
+        return new At(this.obj.integrate(varName), this.index);
+    }
+    substitute(varName, value) {
+        return new At(this.obj.substitute(varName, value), this.index.substitute(varName, value));
+    }
+    toLatex() {
+        return `${this.obj.toLatex()}_{${this.index.toLatex()}}`;
+    }
+}
+
 // Export classes for Global/CommonJS environments
 (function() {
     const exports = {
         Expr, Num, Sym, BinaryOp, Add, Sub, Mul, Div, Pow, Call, Assignment, Eq, Vec, FunctionDef, Block, toExpr,
-        And, Or, Xor, Not, Mod, Neq, Lt, Gt, Le, Ge
+        And, Or, Xor, Not, Mod, Neq, Lt, Gt, Le, Ge, At
     };
     if (typeof globalThis !== 'undefined') {
         Object.assign(globalThis, exports);
