@@ -111,7 +111,7 @@ class CAS {
                 return func.diff(varNode);
             }
 
-            if (node.funcName === 'integrate') {
+            if (node.funcName === 'integrate' || node.funcName === 'int') {
                 if (args.length < 2) throw new Error("integrate requires at least 2 arguments");
                 const func = args[0];
                 const varNode = args[1];
@@ -168,7 +168,7 @@ class CAS {
                 return args[0].simplify();
             }
 
-            if (node.funcName === 'solve') {
+            if (node.funcName === 'solve' || node.funcName === 'fsolve') {
                  if (args.length < 2) throw new Error("solve requires at least 2 arguments: equation and variable");
                  const eq = args[0];
                  const varNode = args[1];
@@ -376,7 +376,7 @@ class CAS {
                 return this._ones(args[0], args[1]);
             }
 
-            if (node.funcName === 'binomial') {
+            if (node.funcName === 'binomial' || node.funcName === 'comb') {
                 if (args.length !== 2) throw new Error("binomial requires 2 arguments");
                 return this._nCr(args[0], args[1]);
             }
@@ -579,7 +579,7 @@ class CAS {
                 return this._prepend(args[0], args[1]);
             }
 
-            if (node.funcName === 'approx') {
+            if (node.funcName === 'approx' || node.funcName === 'evalf') {
                 if (args.length !== 1) throw new Error("approx requires 1 argument");
                 return new Num(args[0].evaluateNumeric());
             }
@@ -687,7 +687,8 @@ seq, range, sort, reverse,
 diag, identity,
 laplace, ilaplace,
 rem, quo, mod, arg, approx,
-size, concat, clear, N`;
+size, concat, clear, N,
+and, or, not, xor, int, evalf`;
 
                 const latexHelp = `\\text{Available commands: see documentation}`;
                 return { type: 'info', text: helpText, toString: () => helpText, toLatex: () => latexHelp };

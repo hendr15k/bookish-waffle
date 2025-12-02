@@ -13,6 +13,16 @@ const TOKEN_RBRACKET = 'RBRACKET';
 const TOKEN_COMMA = 'COMMA';
 const TOKEN_ASSIGN = 'ASSIGN';
 const TOKEN_EQ = 'EQ';
+const TOKEN_NEQ = 'NEQ';
+const TOKEN_LT = 'LT';
+const TOKEN_GT = 'GT';
+const TOKEN_LE = 'LE';
+const TOKEN_GE = 'GE';
+const TOKEN_AND = 'AND';
+const TOKEN_OR = 'OR';
+const TOKEN_NOT = 'NOT';
+const TOKEN_XOR = 'XOR';
+const TOKEN_MOD = 'MOD';
 const TOKEN_SEMI = 'SEMI';
 const TOKEN_EOF = 'EOF';
 
@@ -110,7 +120,14 @@ class Lexer {
                 return new Token(TOKEN_NUMBER, this.number());
             }
             if (/[a-zA-Z]/.test(this.currentChar)) {
-                return new Token(TOKEN_IDENTIFIER, this.identifier());
+                const id = this.identifier();
+                const lowerId = id.toLowerCase();
+                if (lowerId === 'and') return new Token(TOKEN_AND, id);
+                if (lowerId === 'or') return new Token(TOKEN_OR, id);
+                if (lowerId === 'not') return new Token(TOKEN_NOT, id);
+                if (lowerId === 'xor') return new Token(TOKEN_XOR, id);
+                if (lowerId === 'mod') return new Token(TOKEN_MOD, id);
+                return new Token(TOKEN_IDENTIFIER, id);
             }
             if (this.currentChar === ':') {
                 if (this.peek() === '=') {
@@ -120,7 +137,50 @@ class Lexer {
                 }
                 throw new Error("Invalid character: :");
             }
+            if (this.currentChar === '!') {
+                if (this.peek() === '=') {
+                    this.advance();
+                    this.advance();
+                    return new Token(TOKEN_NEQ, '!=');
+                }
+                // Factorial is handled in Parser, but here we might want to return a token for it?
+                // The current Parser doesn't seem to explicitly handle '!' factorial token in lexer except maybe as char?
+                // Let's check Parser.factor/atom.
+                // Ah, the lexer threw Error for '!'.
+                // If it's just '!', return something or error?
+                // Xcas uses '!' for factorial.
+                // Let's assume for now '!' is factorial if not followed by '='.
+                // But wait, "Invalid character: !" was thrown before.
+                // So we should return a token for '!'. Let's call it TOKEN_BANG.
+                // But I didn't define TOKEN_BANG above. Let's stick to Xcas syntax: `!=` is NEQ. `!` is factorial.
+                this.advance();
+                return new Token('BANG', '!');
+            }
+            if (this.currentChar === '<') {
+                if (this.peek() === '=') {
+                    this.advance();
+                    this.advance();
+                    return new Token(TOKEN_LE, '<=');
+                }
+                this.advance();
+                return new Token(TOKEN_LT, '<');
+            }
+            if (this.currentChar === '>') {
+                if (this.peek() === '=') {
+                    this.advance();
+                    this.advance();
+                    return new Token(TOKEN_GE, '>=');
+                }
+                this.advance();
+                return new Token(TOKEN_GT, '>');
+            }
             if (this.currentChar === '=') {
+                if (this.peek() === '=') {
+                    // Support == as equality too (Xcas style boolean eq, or standard)
+                    this.advance();
+                    this.advance();
+                    return new Token(TOKEN_EQ, '==');
+                }
                 this.advance();
                 return new Token(TOKEN_EQ, '=');
             }
@@ -128,6 +188,7 @@ class Lexer {
             if (this.currentChar === '-') { this.advance(); return new Token(TOKEN_MINUS, '-'); }
             if (this.currentChar === '*') { this.advance(); return new Token(TOKEN_STAR, '*'); }
             if (this.currentChar === '/') { this.advance(); return new Token(TOKEN_SLASH, '/'); }
+            if (this.currentChar === '%') { this.advance(); return new Token(TOKEN_MOD, '%'); }
             if (this.currentChar === '^') { this.advance(); return new Token(TOKEN_CARET, '^'); }
             if (this.currentChar === '(') { this.advance(); return new Token(TOKEN_LPAREN, '('); }
             if (this.currentChar === ')') { this.advance(); return new Token(TOKEN_RPAREN, ')'); }
@@ -271,12 +332,22 @@ class Parser {
         } else if (this.currentToken.type === TOKEN_MINUS) {
             this.eat(TOKEN_MINUS);
             return new Mul(new Num(-1), this.unary());
+        } else if (this.currentToken.type === TOKEN_NOT) {
+            this.eat(TOKEN_NOT);
+            return new Not(this.unary());
         }
         return this.power();
     }
 
     power() {
         let node = this.factor();
+        // Handle factorial '!' here if we had it as postfix
+        // But wait, the lexer returns 'BANG' for '!'.
+        if (this.currentToken.type === 'BANG') {
+            this.eat('BANG');
+            node = new Call('fact', [node]);
+        }
+
         if (this.currentToken.type === TOKEN_CARET) {
             this.eat(TOKEN_CARET);
             node = new Pow(node, this.unary());
@@ -287,7 +358,8 @@ class Parser {
     term() {
         let node = this.implicitMul();
         while (this.currentToken.type === TOKEN_STAR ||
-               this.currentToken.type === TOKEN_SLASH) {
+               this.currentToken.type === TOKEN_SLASH ||
+               this.currentToken.type === TOKEN_MOD) {
 
             if (this.currentToken.type === TOKEN_STAR) {
                 this.eat(TOKEN_STAR);
@@ -295,6 +367,9 @@ class Parser {
             } else if (this.currentToken.type === TOKEN_SLASH) {
                 this.eat(TOKEN_SLASH);
                 node = new Div(node, this.implicitMul());
+            } else if (this.currentToken.type === TOKEN_MOD) {
+                this.eat(TOKEN_MOD);
+                node = new Mod(node, this.implicitMul());
             }
         }
         return node;
@@ -321,10 +396,15 @@ class Parser {
         return token.type === TOKEN_NUMBER ||
                token.type === TOKEN_IDENTIFIER ||
                token.type === TOKEN_LPAREN ||
-               token.type === TOKEN_LBRACKET;
+               token.type === TOKEN_LBRACKET ||
+               token.type === TOKEN_NOT; // not x -> mul? No.
+               // If we have `x not y`, that's invalid syntax.
+               // So NOT is NOT a start of implicit mul if it's an operator.
+               // But `x not(y)`?
+               // Let's exclude NOT from implicit mul start for now.
     }
 
-    expr() {
+    arithExpr() {
         let node = this.term();
         while (this.currentToken.type === TOKEN_PLUS || this.currentToken.type === TOKEN_MINUS) {
             const token = this.currentToken;
@@ -339,13 +419,60 @@ class Parser {
         return node;
     }
 
-    equation() {
-        let node = this.expr();
+    compExpr() {
+        let node = this.arithExpr();
         if (this.currentToken.type === TOKEN_EQ) {
             this.eat(TOKEN_EQ);
-            node = new Eq(node, this.expr());
+            node = new Eq(node, this.arithExpr());
+        } else if (this.currentToken.type === TOKEN_NEQ) {
+            this.eat(TOKEN_NEQ);
+            node = new Neq(node, this.arithExpr());
+        } else if (this.currentToken.type === TOKEN_LT) {
+            this.eat(TOKEN_LT);
+            node = new Lt(node, this.arithExpr());
+        } else if (this.currentToken.type === TOKEN_GT) {
+            this.eat(TOKEN_GT);
+            node = new Gt(node, this.arithExpr());
+        } else if (this.currentToken.type === TOKEN_LE) {
+            this.eat(TOKEN_LE);
+            node = new Le(node, this.arithExpr());
+        } else if (this.currentToken.type === TOKEN_GE) {
+            this.eat(TOKEN_GE);
+            node = new Ge(node, this.arithExpr());
         }
         return node;
+    }
+
+    andExpr() {
+        let node = this.compExpr();
+        while (this.currentToken.type === TOKEN_AND) {
+            this.eat(TOKEN_AND);
+            node = new And(node, this.compExpr());
+        }
+        return node;
+    }
+
+    logicExpr() {
+        let node = this.andExpr();
+        while (this.currentToken.type === TOKEN_OR || this.currentToken.type === TOKEN_XOR) {
+            const token = this.currentToken;
+            if (token.type === TOKEN_OR) {
+                this.eat(TOKEN_OR);
+                node = new Or(node, this.andExpr());
+            } else if (token.type === TOKEN_XOR) {
+                this.eat(TOKEN_XOR);
+                node = new Xor(node, this.andExpr());
+            }
+        }
+        return node;
+    }
+
+    equation() {
+        // In Xcas, assignment is :=, equation is =.
+        // We already have compExpr handling = (EQ).
+        // However, assignment logic is in statement().
+        // So equation() here really means the top-level expression.
+        return this.logicExpr();
     }
 
     statement() {
