@@ -1691,11 +1691,32 @@ class At extends Expr {
     }
 }
 
+class BooleanEq extends BinaryOp {
+    toString() { return `${this.left} == ${this.right}`; }
+    simplify() {
+        const l = this.left.simplify();
+        const r = this.right.simplify();
+        if (l instanceof Num && r instanceof Num) {
+            return new Num((Math.abs(l.value - r.value) < 1e-10) ? 1 : 0);
+        }
+        if (l.toString() === r.toString()) return new Num(1);
+        return new BooleanEq(l, r);
+    }
+    evaluateNumeric() {
+        const l = this.left.evaluateNumeric();
+        const r = this.right.evaluateNumeric();
+        if (!isNaN(l) && !isNaN(r)) return (Math.abs(l - r) < 1e-10) ? 1 : 0;
+        return NaN;
+    }
+    toLatex() { return `${this.left.toLatex()} == ${this.right.toLatex()}`; }
+    substitute(varName, value) { return new BooleanEq(this.left.substitute(varName, value), this.right.substitute(varName, value)); }
+}
+
 // Export classes for Global/CommonJS environments
 (function() {
     const exports = {
         Expr, Num, Sym, BinaryOp, Add, Sub, Mul, Div, Pow, Call, Assignment, Eq, Vec, FunctionDef, Block, toExpr,
-        And, Or, Xor, Not, Mod, Neq, Lt, Gt, Le, Ge, At
+        And, Or, Xor, Not, Mod, Neq, Lt, Gt, Le, Ge, At, BooleanEq
     };
     if (typeof globalThis !== 'undefined') {
         Object.assign(globalThis, exports);
