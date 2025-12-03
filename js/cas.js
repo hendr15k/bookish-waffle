@@ -2,16 +2,10 @@
 class CAS {
     constructor() {
         this.variables = {
-            'pi': new Num(Math.PI), // Store numeric value? Or should we use Symbol?
-            // If we store Num, implicit N() works, but symbolic calc loses precision.
-            // Let's store Symbol by default in a separate map or just rely on 'pi' symbol.
-            // Wait, if I do `a := pi`, I want `a` to be the symbol pi.
-            // If I do `N(pi)`, I want numeric.
-            // So `variables` should store what the user assigned.
-            // `pi` and `e` are constants.
+            'pi': new Num(Math.PI),
+            'true': new Num(1),
+            'false': new Num(0)
         };
-        // Pre-defined constants as Symbols in variables?
-        // No, let them be resolved by Symbol.evaluateNumeric() or if user assigns them.
 
         this.functions = {};
     }
@@ -727,7 +721,12 @@ and, or, not, xor, int, evalf`;
         if (node instanceof BinaryOp) {
             const left = this._recursiveEval(node.left);
             const right = this._recursiveEval(node.right);
-            return new node.constructor(left, right);
+            return new node.constructor(left, right).simplify();
+        }
+
+        if (node instanceof Not) {
+            const arg = this._recursiveEval(node.arg);
+            return new Not(arg).simplify();
         }
 
         if (node instanceof Eq) {

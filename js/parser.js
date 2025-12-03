@@ -23,6 +23,7 @@ const TOKEN_OR = 'OR';
 const TOKEN_NOT = 'NOT';
 const TOKEN_XOR = 'XOR';
 const TOKEN_MOD = 'MOD';
+const TOKEN_RANGE = 'RANGE';
 const TOKEN_SEMI = 'SEMI';
 const TOKEN_EOF = 'EOF';
 
@@ -71,6 +72,10 @@ class Lexer {
         let dotCount = 0;
         while (this.currentChar !== null && (/\d/.test(this.currentChar) || this.currentChar === '.')) {
             if (this.currentChar === '.') {
+                // Check if this is a range operator '..'
+                if (this.peek() === '.') {
+                    break;
+                }
                 dotCount++;
                 if (dotCount > 1) {
                     throw new Error("Invalid number format: multiple decimal points");
@@ -122,7 +127,16 @@ class Lexer {
                 this.skipWhitespace();
                 continue;
             }
-            if (/\d/.test(this.currentChar) || this.currentChar === '.') {
+            if (/\d/.test(this.currentChar)) {
+                return new Token(TOKEN_NUMBER, this.number());
+            }
+            if (this.currentChar === '.') {
+                // Check for range ..
+                if (this.peek() === '.') {
+                    this.advance(); this.advance();
+                    return new Token(TOKEN_RANGE, '..');
+                }
+                // Otherwise it's a number starting with .
                 return new Token(TOKEN_NUMBER, this.number());
             }
             if (/[a-zA-Z]/.test(this.currentChar)) {
@@ -538,26 +552,39 @@ class Parser {
         return node;
     }
 
-    compExpr() {
+    rangeExpr() {
         let node = this.arithExpr();
+        if (this.currentToken.type === TOKEN_RANGE) {
+            this.eat(TOKEN_RANGE);
+            const right = this.arithExpr();
+            // range(a..b) -> range(a, b+1, 1) to make it inclusive (Xcas style)
+            // But right is Expr. We need new Add(right, 1).
+            // We assume standard step 1.
+            return new Call('range', [node, new Add(right, new Num(1)), new Num(1)]);
+        }
+        return node;
+    }
+
+    compExpr() {
+        let node = this.rangeExpr();
         if (this.currentToken.type === TOKEN_EQ) {
             this.eat(TOKEN_EQ);
-            node = new Eq(node, this.arithExpr());
+            node = new Eq(node, this.rangeExpr());
         } else if (this.currentToken.type === TOKEN_NEQ) {
             this.eat(TOKEN_NEQ);
-            node = new Neq(node, this.arithExpr());
+            node = new Neq(node, this.rangeExpr());
         } else if (this.currentToken.type === TOKEN_LT) {
             this.eat(TOKEN_LT);
-            node = new Lt(node, this.arithExpr());
+            node = new Lt(node, this.rangeExpr());
         } else if (this.currentToken.type === TOKEN_GT) {
             this.eat(TOKEN_GT);
-            node = new Gt(node, this.arithExpr());
+            node = new Gt(node, this.rangeExpr());
         } else if (this.currentToken.type === TOKEN_LE) {
             this.eat(TOKEN_LE);
-            node = new Le(node, this.arithExpr());
+            node = new Le(node, this.rangeExpr());
         } else if (this.currentToken.type === TOKEN_GE) {
             this.eat(TOKEN_GE);
-            node = new Ge(node, this.arithExpr());
+            node = new Ge(node, this.rangeExpr());
         }
         return node;
     }
@@ -679,6 +706,13 @@ class Parser {
         Object.assign(globalThis, exports);
     }
     if (typeof module !== 'undefined' && module.exports) {
+        // Ensure dependencies are available in Node environment if not global
+        if (typeof globalThis.Call === 'undefined') {
+             try {
+                 const expr = require('./expression.js');
+                 Object.assign(globalThis, expr);
+             } catch (e) {}
+        }
         module.exports = exports;
     }
 })();

@@ -281,6 +281,16 @@ class Add extends BinaryOp {
             return new Vec(newElements);
         }
 
+        // Vector + Scalar
+        if (l instanceof Vec && r instanceof Num) {
+            const newElements = l.elements.map(e => new Add(e, r).simplify());
+            return new Vec(newElements);
+        }
+        if (l instanceof Num && r instanceof Vec) {
+            const newElements = r.elements.map(e => new Add(l, e).simplify());
+            return new Vec(newElements);
+        }
+
         if (l instanceof Num && r instanceof Num) return new Num(l.value + r.value);
 
         // Fraction addition: Num + Div (e.g., 1 + 1/2) or Div + Div (e.g., 1/2 + 1/3)
@@ -1493,21 +1503,42 @@ class Block extends Expr {
 
 class And extends BinaryOp {
     toString() { return `(${this.left} and ${this.right})`; }
-    simplify() { return new And(this.left.simplify(), this.right.simplify()); }
+    simplify() {
+        const l = this.left.simplify();
+        const r = this.right.simplify();
+        if (l instanceof Num && r instanceof Num) {
+            return new Num((l.value && r.value) ? 1 : 0);
+        }
+        return new And(l, r);
+    }
     evaluateNumeric() { return (this.left.evaluateNumeric() && this.right.evaluateNumeric()) ? 1 : 0; }
     toLatex() { return `${this.left.toLatex()} \\land ${this.right.toLatex()}`; }
 }
 
 class Or extends BinaryOp {
     toString() { return `(${this.left} or ${this.right})`; }
-    simplify() { return new Or(this.left.simplify(), this.right.simplify()); }
+    simplify() {
+        const l = this.left.simplify();
+        const r = this.right.simplify();
+        if (l instanceof Num && r instanceof Num) {
+            return new Num((l.value || r.value) ? 1 : 0);
+        }
+        return new Or(l, r);
+    }
     evaluateNumeric() { return (this.left.evaluateNumeric() || this.right.evaluateNumeric()) ? 1 : 0; }
     toLatex() { return `${this.left.toLatex()} \\lor ${this.right.toLatex()}`; }
 }
 
 class Xor extends BinaryOp {
     toString() { return `(${this.left} xor ${this.right})`; }
-    simplify() { return new Xor(this.left.simplify(), this.right.simplify()); }
+    simplify() {
+        const l = this.left.simplify();
+        const r = this.right.simplify();
+        if (l instanceof Num && r instanceof Num) {
+            return new Num((!!l.value !== !!r.value) ? 1 : 0);
+        }
+        return new Xor(l, r);
+    }
     evaluateNumeric() { return (!!this.left.evaluateNumeric() !== !!this.right.evaluateNumeric()) ? 1 : 0; }
     toLatex() { return `${this.left.toLatex()} \\oplus ${this.right.toLatex()}`; }
 }
@@ -1518,7 +1549,14 @@ class Not extends Expr {
         this.arg = arg;
     }
     toString() { return `not(${this.arg})`; }
-    simplify() { return new Not(this.arg.simplify()); }
+    simplify() {
+        const a = this.arg.simplify();
+        if (a instanceof Num) {
+            // Check for explicit 0 or non-zero
+            return new Num(a.value === 0 ? 1 : 0);
+        }
+        return new Not(a);
+    }
     evaluateNumeric() { return (!this.arg.evaluateNumeric()) ? 1 : 0; }
     toLatex() { return `\\neg ${this.arg.toLatex()}`; }
     substitute(varName, value) { return new Not(this.arg.substitute(varName, value)); }
@@ -1540,35 +1578,70 @@ class Mod extends BinaryOp {
 
 class Neq extends BinaryOp {
     toString() { return `${this.left} != ${this.right}`; }
-    simplify() { return new Neq(this.left.simplify(), this.right.simplify()); }
+    simplify() {
+        const l = this.left.simplify();
+        const r = this.right.simplify();
+        if (l instanceof Num && r instanceof Num) {
+            return new Num((l.value !== r.value) ? 1 : 0);
+        }
+        return new Neq(l, r);
+    }
     evaluateNumeric() { return (this.left.evaluateNumeric() !== this.right.evaluateNumeric()) ? 1 : 0; }
     toLatex() { return `${this.left.toLatex()} \\neq ${this.right.toLatex()}`; }
 }
 
 class Lt extends BinaryOp {
     toString() { return `${this.left} < ${this.right}`; }
-    simplify() { return new Lt(this.left.simplify(), this.right.simplify()); }
+    simplify() {
+        const l = this.left.simplify();
+        const r = this.right.simplify();
+        if (l instanceof Num && r instanceof Num) {
+            return new Num((l.value < r.value) ? 1 : 0);
+        }
+        return new Lt(l, r);
+    }
     evaluateNumeric() { return (this.left.evaluateNumeric() < this.right.evaluateNumeric()) ? 1 : 0; }
     toLatex() { return `${this.left.toLatex()} < ${this.right.toLatex()}`; }
 }
 
 class Gt extends BinaryOp {
     toString() { return `${this.left} > ${this.right}`; }
-    simplify() { return new Gt(this.left.simplify(), this.right.simplify()); }
+    simplify() {
+        const l = this.left.simplify();
+        const r = this.right.simplify();
+        if (l instanceof Num && r instanceof Num) {
+            return new Num((l.value > r.value) ? 1 : 0);
+        }
+        return new Gt(l, r);
+    }
     evaluateNumeric() { return (this.left.evaluateNumeric() > this.right.evaluateNumeric()) ? 1 : 0; }
     toLatex() { return `${this.left.toLatex()} > ${this.right.toLatex()}`; }
 }
 
 class Le extends BinaryOp {
     toString() { return `${this.left} <= ${this.right}`; }
-    simplify() { return new Le(this.left.simplify(), this.right.simplify()); }
+    simplify() {
+        const l = this.left.simplify();
+        const r = this.right.simplify();
+        if (l instanceof Num && r instanceof Num) {
+            return new Num((l.value <= r.value) ? 1 : 0);
+        }
+        return new Le(l, r);
+    }
     evaluateNumeric() { return (this.left.evaluateNumeric() <= this.right.evaluateNumeric()) ? 1 : 0; }
     toLatex() { return `${this.left.toLatex()} \\leq ${this.right.toLatex()}`; }
 }
 
 class Ge extends BinaryOp {
     toString() { return `${this.left} >= ${this.right}`; }
-    simplify() { return new Ge(this.left.simplify(), this.right.simplify()); }
+    simplify() {
+        const l = this.left.simplify();
+        const r = this.right.simplify();
+        if (l instanceof Num && r instanceof Num) {
+            return new Num((l.value >= r.value) ? 1 : 0);
+        }
+        return new Ge(l, r);
+    }
     evaluateNumeric() { return (this.left.evaluateNumeric() >= this.right.evaluateNumeric()) ? 1 : 0; }
     toLatex() { return `${this.left.toLatex()} \\geq ${this.right.toLatex()}`; }
 }
