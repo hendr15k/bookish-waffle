@@ -120,7 +120,15 @@ class CAS {
                 if (args.length === 4) {
                     const lower = args[2];
                     const upper = args[3];
-                    const indefinite = func.integrate(varNode);
+                    let indefinite = func.integrate(varNode);
+
+                    // Attempt partfrac if direct integration failed
+                    if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
+                        const pf = this._partfrac(func, varNode);
+                        if (!(pf instanceof Call && pf.funcName === 'partfrac')) {
+                             indefinite = pf.integrate(varNode);
+                        }
+                    }
 
                     // If integration failed (returned a Call to integrate), return symbolic definite integral
                     if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
@@ -131,7 +139,21 @@ class CAS {
                     const valLower = indefinite.substitute(varNode, lower);
                     return new Sub(valUpper, valLower);
                 }
-                return func.integrate(varNode);
+
+                let res = func.integrate(varNode);
+                if (res instanceof Call && res.funcName === 'integrate') {
+                     // Try partial fraction decomposition
+                     const pf = this._partfrac(func, varNode);
+                     if (!(pf instanceof Call && pf.funcName === 'partfrac') && pf.toString() !== func.toString()) {
+                         // Integrate the decomposed form
+                         const res2 = pf.integrate(varNode);
+                         // If improved, return it
+                         if (!(res2 instanceof Call && res2.funcName === 'integrate')) {
+                             return res2;
+                         }
+                     }
+                }
+                return res;
             }
 
             if (node.funcName === 'sum') {
@@ -554,6 +576,11 @@ class CAS {
             if (node.funcName === 'mod') {
                 if (args.length !== 2) throw new Error("mod requires 2 arguments");
                 return this._mod(args[0], args[1]);
+            }
+
+            if (node.funcName === 'partfrac') {
+                if (args.length !== 2) throw new Error("partfrac requires 2 arguments: expr, var");
+                return this._partfrac(args[0], args[1]);
             }
 
             if (node.funcName === 'size' || node.funcName === 'dim') {
@@ -2053,6 +2080,86 @@ and, or, not, xor, int, evalf`;
 
     _desolve(eq, varNode) {
          return new Call('desolve', [eq, varNode]);
+    }
+
+    _partfrac(expr, varNode) {
+        if (!(varNode instanceof Sym)) throw new Error("Second argument to partfrac must be a variable");
+
+        expr = expr.simplify();
+
+        // 1. Check if Div
+        if (!(expr instanceof Div)) return expr;
+
+        const num = expr.left;
+        const den = expr.right;
+
+        // 2. Find roots of denominator
+        const rootsResult = this._solve(den, varNode);
+        let roots = [];
+
+        if (rootsResult instanceof Call && rootsResult.funcName === 'set') {
+            roots = rootsResult.args;
+        } else if (rootsResult instanceof Expr && !(rootsResult instanceof Call && rootsResult.funcName === 'solve')) {
+            roots = [rootsResult];
+        } else {
+            // Could not solve or no roots
+            return new Call('partfrac', [expr, varNode]);
+        }
+
+        // 3. Construct Partial Fractions (assuming simple roots for now)
+        // form: sum( Residue_i / (x - r_i) )
+        // Residue at simple pole r is P(r) / Q'(r)
+
+        let result = new Num(0);
+        let validDecomp = true;
+
+        // Pre-calculate Q'(x)
+        const denDiff = den.diff(varNode).simplify();
+
+        for (const r of roots) {
+            // Factor: (var - r)
+            const factor = new Sub(varNode, r);
+
+            // Calculate Residue: P(r) / Q'(r)
+
+            let residue;
+
+            try {
+                const numVal = num.substitute(varNode, r).simplify();
+                const denDiffVal = denDiff.substitute(varNode, r).simplify();
+
+                // If denDiffVal is 0, it's a repeated root (order > 1)
+                if ((denDiffVal instanceof Num && denDiffVal.value === 0) || (denDiffVal instanceof Sym && denDiffVal.name === 'NaN')) {
+                    // limit((x-r)*expr, x, r)
+                    const term = new Mul(expr, factor).simplify();
+                    residue = this._limit(term, varNode, r);
+                } else {
+                    residue = new Div(numVal, denDiffVal).simplify();
+                }
+
+                if (residue instanceof Sym && (residue.name === 'Infinity' || residue.name === 'NaN')) {
+                    validDecomp = false; break;
+                }
+                // Check if residue still depends on var (should be constant)
+                if (this._dependsOn(residue, varNode)) {
+                     validDecomp = false; break;
+                }
+            } catch (e) {
+                validDecomp = false; break;
+            }
+
+            const frac = new Div(residue, factor);
+            result = new Add(result, frac);
+        }
+
+        // Check for NaN result (global invalidation)
+        if (result.toString() === "NaN" || result.toString() === "(NaN / NaN)") validDecomp = false;
+
+        if (validDecomp) {
+            return result.simplify();
+        }
+
+        return new Call('partfrac', [expr, varNode]);
     }
 
     // --- Polynomial Tools ---

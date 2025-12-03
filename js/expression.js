@@ -285,10 +285,15 @@ class Add extends BinaryOp {
 
         // Fraction addition: Num + Div (e.g., 1 + 1/2) or Div + Div (e.g., 1/2 + 1/3)
         // Convert Num to Div(Num, 1) and combine
-        if ((l instanceof Div && l.left instanceof Num && l.right instanceof Num) ||
-            (r instanceof Div && r.left instanceof Num && r.right instanceof Num) ||
-            (l instanceof Num && r instanceof Div) ||
-            (l instanceof Div && r instanceof Num)) {
+        // ONLY if all components are numeric numbers. If any denominator is symbolic, do not merge.
+        // This preserves partial fraction decompositions.
+
+        const isNumericDiv = (expr) => (expr instanceof Div && expr.left instanceof Num && expr.right instanceof Num);
+        const isNumericNum = (expr) => (expr instanceof Num);
+
+        if ((isNumericDiv(l) && isNumericDiv(r)) ||
+            (isNumericNum(l) && isNumericDiv(r)) ||
+            (isNumericDiv(l) && isNumericNum(r))) {
 
             const n1 = (l instanceof Div) ? l.left.value : l.value;
             const d1 = (l instanceof Div) ? l.right.value : 1;
@@ -362,10 +367,12 @@ class Sub extends BinaryOp {
         if (l instanceof Num && r instanceof Num) return new Num(l.value - r.value);
 
         // Fraction subtraction
-        if ((l instanceof Div && l.left instanceof Num && l.right instanceof Num) ||
-            (r instanceof Div && r.left instanceof Num && r.right instanceof Num) ||
-            (l instanceof Num && r instanceof Div) ||
-            (l instanceof Div && r instanceof Num)) {
+        const isNumericDiv = (expr) => (expr instanceof Div && expr.left instanceof Num && expr.right instanceof Num);
+        const isNumericNum = (expr) => (expr instanceof Num);
+
+        if ((isNumericDiv(l) && isNumericDiv(r)) ||
+            (isNumericNum(l) && isNumericDiv(r)) ||
+            (isNumericDiv(l) && isNumericNum(r))) {
 
             const n1 = (l instanceof Div) ? l.left.value : l.value;
             const d1 = (l instanceof Div) ? l.right.value : 1;
@@ -513,6 +520,19 @@ class Mul extends BinaryOp {
         // Commutativity with Number: x * 2 -> 2 * x
         if (r instanceof Num && !(l instanceof Num)) {
             return new Mul(r, l).simplify();
+        }
+
+        // x * x -> x^2
+        if (l.toString() === r.toString()) {
+            return new Pow(l, new Num(2));
+        }
+
+        // x * x^n -> x^(n+1)
+        if (r instanceof Pow && r.left.toString() === l.toString() && r.right instanceof Num) {
+            return new Pow(l, new Num(r.right.value + 1)).simplify();
+        }
+        if (l instanceof Pow && l.left.toString() === r.toString() && l.right instanceof Num) {
+            return new Pow(r, new Num(l.right.value + 1)).simplify();
         }
 
         return new Mul(l, r);
@@ -680,6 +700,30 @@ class Div extends BinaryOp {
         }
         if (this.right instanceof Num) {
             return new Mul(new Div(new Num(1), this.right), this.left.integrate(varName));
+        }
+
+        // integrate(c / (a*x+b)) -> c/a * ln(a*x+b)
+        // Check for c / (x +/- b)
+        // Allow c to be Num or constant Div (e.g. 1/2)
+        const isConstant = (e) => (e instanceof Num) || (e instanceof Div && e.left instanceof Num && e.right instanceof Num);
+
+        if (isConstant(this.left)) {
+             const c = this.left;
+             // Denom x +/- b
+             if ((this.right instanceof Add || this.right instanceof Sub) &&
+                 (this.right.left instanceof Sym && this.right.left.name === varName.name && this.right.right instanceof Num)) {
+                 // 1/(x +/- b) -> ln(x +/- b)
+                 // Result: c * ln(denom)
+                 return new Mul(c, new Call("ln", [this.right]));
+             }
+             // Denom b +/- x ?
+             if ((this.right instanceof Add || this.right instanceof Sub) &&
+                 (this.right.right instanceof Sym && this.right.right.name === varName.name && this.right.left instanceof Num)) {
+                 // 1/(b + x) -> ln(b+x)
+                 // 1/(b - x) -> -ln(b-x)
+                 if (this.right instanceof Add) return new Mul(c, new Call("ln", [this.right]));
+                 if (this.right instanceof Sub) return new Mul(new Mul(new Num(-1), c), new Call("ln", [this.right]));
+             }
         }
 
         // integrate(1/x^n, x)
