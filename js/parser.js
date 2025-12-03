@@ -13,6 +13,7 @@ const TOKEN_RBRACKET = 'RBRACKET';
 const TOKEN_COMMA = 'COMMA';
 const TOKEN_ASSIGN = 'ASSIGN';
 const TOKEN_EQ = 'EQ';
+const TOKEN_BOOL_EQ = 'BOOL_EQ';
 const TOKEN_NEQ = 'NEQ';
 const TOKEN_LT = 'LT';
 const TOKEN_GT = 'GT';
@@ -199,7 +200,7 @@ class Lexer {
                     // Support == as equality too (Xcas style boolean eq, or standard)
                     this.advance();
                     this.advance();
-                    return new Token(TOKEN_EQ, '==');
+                    return new Token(TOKEN_BOOL_EQ, '==');
                 }
                 this.advance();
                 return new Token(TOKEN_EQ, '=');
@@ -570,6 +571,9 @@ class Parser {
         if (this.currentToken.type === TOKEN_EQ) {
             this.eat(TOKEN_EQ);
             node = new Eq(node, this.rangeExpr());
+        } else if (this.currentToken.type === TOKEN_BOOL_EQ) {
+            this.eat(TOKEN_BOOL_EQ);
+            node = new BooleanEq(node, this.rangeExpr());
         } else if (this.currentToken.type === TOKEN_NEQ) {
             this.eat(TOKEN_NEQ);
             node = new Neq(node, this.rangeExpr());
