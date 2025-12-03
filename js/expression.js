@@ -271,6 +271,12 @@ class Add extends BinaryOp {
         const l = this.left.simplify();
         const r = this.right.simplify();
 
+        // Associativity: (A + B) + C -> A + (B + C)
+        // This helps combining terms like (1 - 2x) + 2x -> 1 + (-2x + 2x) -> 1
+        if (l instanceof Add) {
+            return new Add(l.left, new Add(l.right, r).simplify()).simplify();
+        }
+
         // Vector addition
         if (l instanceof Vec && r instanceof Vec) {
             if (l.elements.length !== r.elements.length) throw new Error("Vector length mismatch in addition");
@@ -375,6 +381,7 @@ class Sub extends BinaryOp {
         }
 
         if (l instanceof Num && r instanceof Num) return new Num(l.value - r.value);
+        if (l instanceof Num && l.value === 0) return new Mul(new Num(-1), r).simplify();
 
         // Fraction subtraction
         const isNumericDiv = (expr) => (expr instanceof Div && expr.left instanceof Num && expr.right instanceof Num);
@@ -400,8 +407,9 @@ class Sub extends BinaryOp {
         if (r instanceof Num && r.value < 0) return new Add(l, new Num(-r.value)).simplify();
 
         // x - (-y) -> x + y
-        if (r instanceof Mul && r.left instanceof Num && r.left.value === -1) {
-            return new Add(l, r.right).simplify();
+        if (r instanceof Mul && r.left instanceof Num && r.left.value < 0) {
+            const newR = new Mul(new Num(-r.left.value), r.right).simplify();
+            return new Add(l, newR).simplify();
         }
 
         if (l.toString() === r.toString()) return new Num(0);
