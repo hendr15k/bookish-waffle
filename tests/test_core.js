@@ -95,7 +95,7 @@ test("Power", "2 ^ 3", "8");
 // Algebra
 test("Variable", "x", "x");
 test("Symbolic Addition", "x + x", "(2 * x)");
-test("Symbolic Mul", "x * x", "(x * x)");
+test("Symbolic Mul", "x * x", "(x^2)");
 
 // Vectors
 test("Vector Addition", "[1, 2] + [3, 4]", "[4, 6]");
