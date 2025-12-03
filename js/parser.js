@@ -6,6 +6,7 @@ const TOKEN_MINUS = 'MINUS';
 const TOKEN_STAR = 'STAR';
 const TOKEN_SLASH = 'SLASH';
 const TOKEN_CARET = 'CARET';
+const TOKEN_UNDERSCORE = 'UNDERSCORE';
 const TOKEN_LPAREN = 'LPAREN';
 const TOKEN_RPAREN = 'RPAREN';
 const TOKEN_LBRACKET = 'LBRACKET';
@@ -32,6 +33,10 @@ const TOKEN_RBRACE = 'RBRACE';
 const TOKEN_PIPE = 'PIPE';
 const TOKEN_LATEX_FRAC = 'LATEX_FRAC';
 const TOKEN_LATEX_SQRT = 'LATEX_SQRT';
+const TOKEN_LATEX_SUM = 'LATEX_SUM';
+const TOKEN_LATEX_PROD = 'LATEX_PROD';
+const TOKEN_LATEX_INT = 'LATEX_INT';
+const TOKEN_LATEX_LIMIT = 'LATEX_LIMIT';
 
 class Token {
     constructor(type, value) {
@@ -78,7 +83,6 @@ class Lexer {
         let dotCount = 0;
         while (this.currentChar !== null && (/\d/.test(this.currentChar) || this.currentChar === '.')) {
             if (this.currentChar === '.') {
-                // Check if this is a range operator '..'
                 if (this.peek() === '.') {
                     break;
                 }
@@ -91,13 +95,9 @@ class Lexer {
             this.advance();
         }
 
-        // Scientific notation: 1e5, 1.2e-3
-        // Lookahead to ensure it is actually scientific notation and not an identifier starting with e
         if (this.currentChar === 'e' || this.currentChar === 'E') {
             const peek1 = this.peek();
             const peek2 = (peek1 === '+' || peek1 === '-') ? this.text[this.pos + 2] : null;
-
-            // Condition: 'e' followed by digit OR 'e' followed by +/- and then digit
             const isSci = (peek1 !== null && /\d/.test(peek1)) ||
                           ((peek1 === '+' || peek1 === '-') && peek2 !== undefined && /\d/.test(peek2));
 
@@ -120,7 +120,8 @@ class Lexer {
 
     identifier() {
         let result = '';
-        while (this.currentChar !== null && (/[a-zA-Z0-9_]/.test(this.currentChar))) {
+        // REMOVED '_' from identifier to support x_1 as x subscript 1
+        while (this.currentChar !== null && (/[a-zA-Z0-9]/.test(this.currentChar))) {
             result += this.currentChar;
             this.advance();
         }
@@ -134,19 +135,16 @@ class Lexer {
                 continue;
             }
 
-            // LaTeX command support
             if (this.currentChar === '\\') {
                 this.advance();
-                // Check for single char commands or special delimiters
-                if (this.currentChar === '{') { this.advance(); return new Token(TOKEN_LBRACKET, '{'); } // \{ -> [
-                if (this.currentChar === '}') { this.advance(); return new Token(TOKEN_RBRACKET, '}'); } // \} -> ]
-                if (this.currentChar === ',') { this.advance(); continue; } // \, space
-                if (this.currentChar === ';') { this.advance(); continue; } // \; space
-                if (this.currentChar === ':') { this.advance(); continue; } // \: space
-                if (this.currentChar === ' ') { this.advance(); continue; } // \  space
-                if (this.currentChar === '|') { this.advance(); return new Token(TOKEN_PIPE, '|'); } // \| -> | ? standard latex uses | for pipe, \| for double vertical lines (norm). Let's map to PIPE.
+                if (this.currentChar === '{') { this.advance(); return new Token(TOKEN_LBRACKET, '{'); }
+                if (this.currentChar === '}') { this.advance(); return new Token(TOKEN_RBRACKET, '}'); }
+                if (this.currentChar === ',') { this.advance(); continue; }
+                if (this.currentChar === ';') { this.advance(); continue; }
+                if (this.currentChar === ':') { this.advance(); continue; }
+                if (this.currentChar === ' ') { this.advance(); continue; }
+                if (this.currentChar === '|') { this.advance(); return new Token(TOKEN_PIPE, '|'); }
 
-                // Read command
                 let cmd = '';
                 while (this.currentChar !== null && /[a-zA-Z]/.test(this.currentChar)) {
                     cmd += this.currentChar;
@@ -155,22 +153,30 @@ class Lexer {
 
                 if (cmd === 'frac') return new Token(TOKEN_LATEX_FRAC, cmd);
                 if (cmd === 'sqrt') return new Token(TOKEN_LATEX_SQRT, cmd);
+                if (cmd === 'sum') return new Token(TOKEN_LATEX_SUM, cmd);
+                if (cmd === 'prod') return new Token(TOKEN_LATEX_PROD, cmd);
+                if (cmd === 'int') return new Token(TOKEN_LATEX_INT, cmd);
+                if (cmd === 'lim') return new Token(TOKEN_LATEX_LIMIT, cmd);
+
                 if (cmd === 'left' || cmd === 'right') {
-                    // Ignore \left and \right, but skip potential following '.'
                     this.skipWhitespace();
                     if (this.currentChar === '.') {
-                        this.advance(); // consume the dot (empty delimiter)
+                        this.advance();
                     }
-                    // Continue to next token (recursion)
                     continue;
                 }
+
                 if (cmd === 'cdot') return new Token(TOKEN_STAR, '*');
                 if (cmd === 'times') return new Token(TOKEN_STAR, '*');
                 if (cmd === 'div') return new Token(TOKEN_SLASH, '/');
+                if (cmd === 'le') return new Token(TOKEN_LE, '<=');
+                if (cmd === 'ge') return new Token(TOKEN_GE, '>=');
+                if (cmd === 'ne' || cmd === 'neq') return new Token(TOKEN_NEQ, '!=');
+                if (cmd === 'to' || cmd === 'rightarrow') return new Token(TOKEN_IDENTIFIER, 'to');
+
                 if (cmd === 'pi') return new Token(TOKEN_IDENTIFIER, 'pi');
                 if (cmd === 'infty') return new Token(TOKEN_IDENTIFIER, 'infinity');
 
-                // Fallback for other commands (e.g. \sin, \alpha)
                 return new Token(TOKEN_IDENTIFIER, cmd);
             }
 
@@ -178,12 +184,10 @@ class Lexer {
                 return new Token(TOKEN_NUMBER, this.number());
             }
             if (this.currentChar === '.') {
-                // Check for range ..
                 if (this.peek() === '.') {
                     this.advance(); this.advance();
                     return new Token(TOKEN_RANGE, '..');
                 }
-                // Otherwise it's a number starting with .
                 return new Token(TOKEN_NUMBER, this.number());
             }
             if (/[a-zA-Z]/.test(this.currentChar)) {
@@ -233,7 +237,6 @@ class Lexer {
             }
             if (this.currentChar === '=') {
                 if (this.peek() === '=') {
-                    // Support == as equality too (Xcas style boolean eq, or standard)
                     this.advance();
                     this.advance();
                     return new Token(TOKEN_BOOL_EQ, '==');
@@ -255,6 +258,7 @@ class Lexer {
             }
             if (this.currentChar === '%') { this.advance(); return new Token(TOKEN_MOD, '%'); }
             if (this.currentChar === '^') { this.advance(); return new Token(TOKEN_CARET, '^'); }
+            if (this.currentChar === '_') { this.advance(); return new Token(TOKEN_UNDERSCORE, '_'); }
             if (this.currentChar === '&') {
                 if (this.peek() === '&') {
                     this.advance(); this.advance();
@@ -306,7 +310,6 @@ class Parser {
 
     factor() {
         let node = this.atom();
-        // Check for postfix indexing: A[0]
         while (this.currentToken.type === TOKEN_LBRACKET) {
              this.eat(TOKEN_LBRACKET);
              const index = this.statement();
@@ -322,9 +325,41 @@ class Parser {
             this.eat(TOKEN_NUMBER);
             return new Num(token.value);
         } else if (token.type === TOKEN_IDENTIFIER) {
-            const name = token.value;
+            let name = token.value;
             this.eat(TOKEN_IDENTIFIER);
 
+            // Handle identifier subscript (name merging)
+            while (this.currentToken.type === TOKEN_UNDERSCORE) {
+                this.eat(TOKEN_UNDERSCORE);
+                let suffix = '';
+                if (this.currentToken.type === TOKEN_NUMBER) {
+                    suffix = this.currentToken.value.toString();
+                    this.eat(TOKEN_NUMBER);
+                } else if (this.currentToken.type === TOKEN_IDENTIFIER) {
+                    suffix = this.currentToken.value;
+                    this.eat(TOKEN_IDENTIFIER);
+                } else if (this.currentToken.type === TOKEN_LBRACE) {
+                    this.eat(TOKEN_LBRACE);
+                    // Consume everything inside braces as part of the name
+                    // This is a simplification to allow x_{foo} -> x_foo
+                    while (this.currentToken.type !== TOKEN_RBRACE && this.currentToken.type !== TOKEN_EOF) {
+                        if (this.currentToken.type === TOKEN_IDENTIFIER ||
+                            this.currentToken.type === TOKEN_NUMBER) {
+                            suffix += this.currentToken.value.toString();
+                        } else {
+                             // Skip other chars? or error?
+                             // For now append raw value if possible or just ignore?
+                             // If it's a + or -, we probably shouldn't merge it into a name.
+                             // But standard variable names don't have +.
+                        }
+                        this.eat(this.currentToken.type);
+                    }
+                    this.eat(TOKEN_RBRACE);
+                }
+                name += '_' + suffix;
+            }
+
+            // After merging subscripts, check for function calls
             // Handle sin^2(x)
             if (this.currentToken.type === TOKEN_CARET) {
                 const trigFunctions = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'sinh', 'cosh', 'tanh'];
@@ -357,7 +392,6 @@ class Parser {
                 this.eat(TOKEN_RPAREN);
                 return new Call(name, args);
             } else {
-                // Check for implicit function call: sin x, log 10
                 const knownFunctions = [
                     'sin', 'cos', 'tan', 'asin', 'acos', 'atan',
                     'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
@@ -366,7 +400,6 @@ class Parser {
                     'floor', 'ceil', 'round', 'fact', 'factorial', 'gamma'
                 ];
                 if (knownFunctions.includes(name)) {
-                     // If next is a factor start (implicit arg)
                      if (this.isImplicitMulStart(this.currentToken)) {
                          const arg = this.term();
                          return new Call(name, [arg]);
@@ -406,13 +439,11 @@ class Parser {
             return new Call('abs', [node]);
         } else if (token.type === TOKEN_LATEX_FRAC) {
             this.eat(TOKEN_LATEX_FRAC);
-            // Use atom to support grouped {args} or single token args
             const num = this.atom();
             const den = this.atom();
             return new Div(num, den);
         } else if (token.type === TOKEN_LATEX_SQRT) {
             this.eat(TOKEN_LATEX_SQRT);
-            // Check for optional index [n]
             if (this.currentToken.type === TOKEN_LBRACKET) {
                 this.eat(TOKEN_LBRACKET);
                 const index = this.statement();
@@ -423,6 +454,165 @@ class Parser {
                 const arg = this.atom();
                 return new Call('sqrt', [arg]);
             }
+        } else if (token.type === TOKEN_LATEX_SUM || token.type === TOKEN_LATEX_PROD) {
+            const isSum = token.type === TOKEN_LATEX_SUM;
+            const funcName = isSum ? 'sum' : 'product';
+            this.eat(token.type);
+
+            let variable = new Sym('i');
+            let start = new Num(0);
+            let end = new Sym('n');
+            let hasLimits = false;
+
+            if (this.currentToken.type === TOKEN_UNDERSCORE) {
+                this.eat(TOKEN_UNDERSCORE);
+                hasLimits = true;
+                if (this.currentToken.type === TOKEN_LBRACE) {
+                    this.eat(TOKEN_LBRACE);
+                    const parsed = this.statement();
+                    this.eat(TOKEN_RBRACE);
+
+                    if (parsed.constructor.name === 'Eq' || parsed.constructor.name === 'Assignment') {
+                        variable = parsed.left;
+                        start = parsed.right;
+                    }
+                } else {
+                     variable = this.atom();
+                }
+            }
+
+            if (this.currentToken.type === TOKEN_CARET) {
+                this.eat(TOKEN_CARET);
+                if (this.currentToken.type === TOKEN_LBRACE) {
+                    this.eat(TOKEN_LBRACE);
+                    end = this.statement();
+                    this.eat(TOKEN_RBRACE);
+                } else {
+                    end = this.atom();
+                }
+            }
+
+            const term = this.term();
+            if (hasLimits) {
+                return new Call(funcName, [term, variable, start, end]);
+            } else {
+                return new Call(funcName, [term]);
+            }
+
+        } else if (token.type === TOKEN_LATEX_INT) {
+            this.eat(TOKEN_LATEX_INT);
+            let lower = null;
+            let upper = null;
+
+            if (this.currentToken.type === TOKEN_UNDERSCORE) {
+                this.eat(TOKEN_UNDERSCORE);
+                if (this.currentToken.type === TOKEN_LBRACE) {
+                     this.eat(TOKEN_LBRACE);
+                     lower = this.statement();
+                     this.eat(TOKEN_RBRACE);
+                } else {
+                     lower = this.atom();
+                }
+            }
+
+            if (this.currentToken.type === TOKEN_CARET) {
+                this.eat(TOKEN_CARET);
+                if (this.currentToken.type === TOKEN_LBRACE) {
+                     this.eat(TOKEN_LBRACE);
+                     upper = this.statement();
+                     this.eat(TOKEN_RBRACE);
+                } else {
+                     upper = this.atom();
+                }
+            }
+
+            let term = this.term();
+
+            // Heuristic to strip 'dx'
+            let variable = new Sym('x');
+            let integrand = term;
+
+            // Check if term is Mul(..., d<var>)
+            // Since we don't have easy access to inspect Mul structure here (it's built),
+            // we'd need to assume `term` returns an Expr tree.
+            // If term is Mul, we check the last operand.
+            if (term.constructor.name === 'Mul') {
+                const operands = [];
+                // Flatten mul slightly to find last
+                function collect(node) {
+                    if (node.constructor.name === 'Mul') {
+                        collect(node.left);
+                        collect(node.right);
+                    } else {
+                        operands.push(node);
+                    }
+                }
+                collect(term);
+
+                if (operands.length > 0) {
+                    const last = operands[operands.length - 1];
+                    if (last.constructor.name === 'Sym' && last.name.startsWith('d') && last.name.length > 1) {
+                        const varName = last.name.substring(1);
+                        variable = new Sym(varName);
+                        // Rebuild term without last operand
+                        operands.pop();
+                        // Reduce operands back to Mul
+                        if (operands.length === 0) {
+                            integrand = new Num(1);
+                        } else {
+                            integrand = operands[0];
+                            for (let i = 1; i < operands.length; i++) {
+                                integrand = new Mul(integrand, operands[i]);
+                            }
+                        }
+                    }
+                }
+            } else if (term.constructor.name === 'Sym' && term.name.startsWith('d') && term.name.length > 1) {
+                 // \int dx case -> 1 dx
+                 const varName = term.name.substring(1);
+                 variable = new Sym(varName);
+                 integrand = new Num(1);
+            }
+
+            if (lower && upper) {
+                return new Call('integrate', [integrand, variable, lower, upper]);
+            }
+            return new Call('integrate', [integrand, variable]);
+
+        } else if (token.type === TOKEN_LATEX_LIMIT) {
+             this.eat(TOKEN_LATEX_LIMIT);
+             let variable = new Sym('x');
+             let target = new Num(0);
+
+             if (this.currentToken.type === TOKEN_UNDERSCORE) {
+                 this.eat(TOKEN_UNDERSCORE);
+                 if (this.currentToken.type === TOKEN_LBRACE) {
+                     this.eat(TOKEN_LBRACE);
+                     // Heuristic parsing for "x \to 0" or "x -> 0"
+                     // We consume tokens until RBRACE.
+                     // Expect IDENTIFIER (var) then TO then value.
+
+                     if (this.currentToken.type === TOKEN_IDENTIFIER) {
+                         variable = new Sym(this.currentToken.value);
+                         this.eat(TOKEN_IDENTIFIER);
+                     }
+
+                     // Consume 'to'
+                     if (this.currentToken.type === TOKEN_IDENTIFIER && this.currentToken.value === 'to') {
+                         this.eat(TOKEN_IDENTIFIER);
+                     } else if (this.currentToken.type === TOKEN_MINUS) { // ->
+                         this.eat(TOKEN_MINUS);
+                         if (this.currentToken.type === TOKEN_GT) {
+                             this.eat(TOKEN_GT);
+                         }
+                     }
+
+                     target = this.statement();
+                     this.eat(TOKEN_RBRACE);
+                 }
+             }
+             const term = this.atom();
+             return new Call('limit', [term, variable, target]);
         }
 
         this.error();
@@ -479,11 +669,9 @@ class Parser {
     implicitMul() {
         let node = this.unary();
         while (this.isImplicitMulStart(this.currentToken)) {
-             // If we are inside an abs block, a PIPE is likely a closing pipe.
              if (this.currentToken.type === TOKEN_PIPE && this.absDepth > 0) {
                  break;
              }
-
              const right = this.unary();
              node = new Mul(node, right);
         }
@@ -495,10 +683,14 @@ class Parser {
                token.type === TOKEN_IDENTIFIER ||
                token.type === TOKEN_LPAREN ||
                token.type === TOKEN_LBRACKET ||
-               token.type === TOKEN_LBRACE || // Added LBRACE for {a} {b}
-               token.type === TOKEN_PIPE ||   // Added PIPE for |a| |b|
-               token.type === TOKEN_LATEX_FRAC || // \frac...
-               token.type === TOKEN_LATEX_SQRT; // \sqrt...
+               token.type === TOKEN_LBRACE ||
+               token.type === TOKEN_PIPE ||
+               token.type === TOKEN_LATEX_FRAC ||
+               token.type === TOKEN_LATEX_SQRT ||
+               token.type === TOKEN_LATEX_SUM ||
+               token.type === TOKEN_LATEX_PROD ||
+               token.type === TOKEN_LATEX_INT ||
+               token.type === TOKEN_LATEX_LIMIT;
     }
 
     arithExpr() {
@@ -586,6 +778,13 @@ class Parser {
             const savedPos = this.lexer.pos;
             const savedChar = this.lexer.currentChar;
             const savedToken = this.currentToken;
+
+            // Note: We need to handle subscripts here as well if we want assignment to work with x_1 := ...
+            // But since 'atom' handles subscripts, we might consume them if we call atom?
+            // The issue is 'statement' peeks ahead.
+            // With subscripts as separate tokens, the lookahead logic in statement needs to be aware.
+            // For now, let's assume basic assignment doesn't use subscripts on LHS in this simplified parser.
+            // Or rely on fallback to equation().
 
             const name = this.currentToken.value;
             this.eat(TOKEN_IDENTIFIER);
