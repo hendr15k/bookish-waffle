@@ -109,7 +109,8 @@ test("Limit tan(x)/x", "limit(tan(x)/x, x, 0)", "1");
 
 // Lexer Bug Tests
 testShouldThrow("Multiple decimal points", "1.2.3", "multiple decimal points");
-testShouldThrow("Multiple decimal points (trailing)", "1..", "multiple decimal points");
+// "1.." is now valid syntax for range start (1 ..)
+// testShouldThrow("Multiple decimal points (trailing)", "1..", "multiple decimal points");
 testShouldThrow("Multiple decimal points (mixed)", "0.5.5", "multiple decimal points");
 
 // Bug Fix Verification
