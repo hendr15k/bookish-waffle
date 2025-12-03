@@ -18,6 +18,7 @@ Willkommen beim **Web CAS**, einem clientseitigen Computeralgebrasystem, das dir
     *   [Einheitenumrechner](#einheitenumrechner)
     *   [Geometrie](#geometrie)
     *   [Finanzen](#finanzen)
+    *   [Physik](#physik)
 5.  [Befehlsreferenz](#befehlsreferenz)
 
 ---
@@ -125,6 +126,12 @@ Berechnen Sie Flächen, Umfänge und Volumen.
 ### Finanzen
 *   **Compound Interest:** Zinseszinsrechnung.
 *   **Loan Payment:** Berechnung von Kreditraten (Annuität).
+
+### Physik
+Berechnungen für Kinematik, Dynamik und Energie.
+*   **Kinematik:** Lösen von SUVAT-Gleichungen (z. B. $v = u + at$, $s = ut + \frac{1}{2}at^2$).
+*   **Dynamik:** Newtonsche Gesetze (Kraft $F=ma$, Masse, Beschleunigung).
+*   **Energie:** Berechnung von Kinetischer Energie ($E_k$) und Potenzieller Energie ($E_p$).
 
 ---
 

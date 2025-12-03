@@ -442,6 +442,10 @@
             <span class="app-icon" style="color: #28a745;">💲</span>
             <span class="app-name">Finance</span>
         </div>
+        <div class="app-card" onclick="openTool('physics')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('physics')">
+            <span class="app-icon" style="color: #dc3545;">⚛️</span>
+            <span class="app-name">Physics</span>
+        </div>
         <div class="app-card" onclick="openTool('settings')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('settings')">
             <span class="app-icon" style="color: #007bff;">⚙️</span>
             <span class="app-name">Settings</span>
@@ -967,6 +971,71 @@
         <div class="tool-result"></div>
     </div>
 
+    <!-- PHYSICS -->
+    <div id="tool-physics" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Physics</span>
+        </div>
+        <div class="tab-header">
+             <button class="tab-btn active" onclick="openTab(event, 'tab-phys-kin')">Kinematics</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-phys-dyn')">Dynamics</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-phys-nrg')">Energy</button>
+        </div>
+
+        <!-- Kinematics Tab -->
+        <div id="tab-phys-kin" class="tab-content active">
+             <div class="tool-form">
+                 <div class="form-group">
+                     <label class="form-label">Unknown Variable</label>
+                     <select id="phys-kin-type" class="form-input" onchange="updatePhysicsInputs('kin')">
+                         <option value="v">Final Velocity (v)</option>
+                         <option value="s">Displacement (s)</option>
+                         <option value="v2">Vel Squared (v²)</option>
+                         <option value="a">Acceleration (a)</option>
+                         <option value="t">Time (t)</option>
+                     </select>
+                 </div>
+                 <div id="phys-kin-inputs"></div>
+                 <button class="action-btn" onclick="runPhysics('kin')">Calculate</button>
+             </div>
+        </div>
+
+        <!-- Dynamics Tab -->
+        <div id="tab-phys-dyn" class="tab-content">
+             <div class="tool-form">
+                 <div class="form-group">
+                     <label class="form-label">Calculation</label>
+                     <select id="phys-dyn-type" class="form-input" onchange="updatePhysicsInputs('dyn')">
+                         <option value="F">Force (F=ma)</option>
+                         <option value="m">Mass (m=F/a)</option>
+                         <option value="a">Accel (a=F/m)</option>
+                         <option value="W">Weight (W=mg)</option>
+                     </select>
+                 </div>
+                 <div id="phys-dyn-inputs"></div>
+                 <button class="action-btn" onclick="runPhysics('dyn')">Calculate</button>
+             </div>
+        </div>
+
+        <!-- Energy Tab -->
+        <div id="tab-phys-nrg" class="tab-content">
+             <div class="tool-form">
+                 <div class="form-group">
+                     <label class="form-label">Calculation</label>
+                     <select id="phys-nrg-type" class="form-input" onchange="updatePhysicsInputs('nrg')">
+                         <option value="ke">Kinetic Energy</option>
+                         <option value="pe">Potential Energy</option>
+                     </select>
+                 </div>
+                 <div id="phys-nrg-inputs"></div>
+                 <button class="action-btn" onclick="runPhysics('nrg')">Calculate</button>
+             </div>
+        </div>
+
+        <div class="tool-result"></div>
+    </div>
+
     <!-- VARIABLES APP -->
     <div id="tool-variables" class="tool-view">
         <div class="tool-header">
@@ -1127,6 +1196,11 @@
             if (toolName === 'geometry') {
                 updateGeoInputs('2d');
                 updateGeoInputs('3d');
+            }
+            if (toolName === 'physics') {
+                updatePhysicsInputs('kin');
+                updatePhysicsInputs('dyn');
+                updatePhysicsInputs('nrg');
             }
         };
 
@@ -2841,6 +2915,182 @@
 
              const info = { type: 'info', text: result };
              addToHistory(`Finance ${type}`, info, false);
+
+             const visibleTool = document.querySelector('.tool-view[style*="block"]');
+             if(visibleTool) {
+                 const resBox = visibleTool.querySelector('.tool-result');
+                 resBox.innerText = result;
+                 resBox.style.display = 'block';
+             }
+        };
+
+        // Physics Logic
+        window.updatePhysicsInputs = function(tab) {
+             const type = document.getElementById(`phys-${tab}-type`).value;
+             const container = document.getElementById(`phys-${tab}-inputs`);
+             container.innerHTML = '';
+
+             const createInput = (id, label, placeholder) => {
+                 const div = document.createElement('div');
+                 div.className = 'form-group';
+                 div.innerHTML = `<label class="form-label" for="${id}">${label}</label><input type="number" class="form-input" id="${id}" placeholder="${placeholder || ''}">`;
+                 return div;
+             };
+
+             if (tab === 'kin') {
+                 // Kinematics: s, u, v, a, t
+                 if (type === 'v') {
+                     // v = u + at
+                     container.appendChild(createInput('phys-u', 'Initial Vel (u)'));
+                     container.appendChild(createInput('phys-a', 'Accel (a)'));
+                     container.appendChild(createInput('phys-t', 'Time (t)'));
+                 } else if (type === 's') {
+                     // s = ut + 0.5at^2
+                     container.appendChild(createInput('phys-u', 'Initial Vel (u)'));
+                     container.appendChild(createInput('phys-a', 'Accel (a)'));
+                     container.appendChild(createInput('phys-t', 'Time (t)'));
+                 } else if (type === 'v2') {
+                     // v^2 = u^2 + 2as
+                     container.appendChild(createInput('phys-u', 'Initial Vel (u)'));
+                     container.appendChild(createInput('phys-a', 'Accel (a)'));
+                     container.appendChild(createInput('phys-s', 'Displacement (s)'));
+                 } else if (type === 'a') {
+                     // a = (v-u)/t
+                     container.appendChild(createInput('phys-v', 'Final Vel (v)'));
+                     container.appendChild(createInput('phys-u', 'Initial Vel (u)'));
+                     container.appendChild(createInput('phys-t', 'Time (t)'));
+                 } else if (type === 't') {
+                      // t = (v-u)/a
+                     container.appendChild(createInput('phys-v', 'Final Vel (v)'));
+                     container.appendChild(createInput('phys-u', 'Initial Vel (u)'));
+                     container.appendChild(createInput('phys-a', 'Accel (a)'));
+                 }
+             } else if (tab === 'dyn') {
+                 if (type === 'F') {
+                     container.appendChild(createInput('phys-m', 'Mass (m)'));
+                     container.appendChild(createInput('phys-a', 'Accel (a)'));
+                 } else if (type === 'm') {
+                     container.appendChild(createInput('phys-F', 'Force (F)'));
+                     container.appendChild(createInput('phys-a', 'Accel (a)'));
+                 } else if (type === 'a') {
+                     container.appendChild(createInput('phys-F', 'Force (F)'));
+                     container.appendChild(createInput('phys-m', 'Mass (m)'));
+                 } else if (type === 'W') {
+                     container.appendChild(createInput('phys-m', 'Mass (m)'));
+                     container.appendChild(createInput('phys-g', 'Gravity (g)', '9.81'));
+                     // Default value handling?
+                     setTimeout(() => {
+                        const g = document.getElementById('phys-g');
+                        if(g) g.value = 9.81;
+                     },0);
+                 }
+             } else if (tab === 'nrg') {
+                 if (type === 'ke') {
+                     container.appendChild(createInput('phys-m', 'Mass (m)'));
+                     container.appendChild(createInput('phys-v', 'Velocity (v)'));
+                 } else if (type === 'pe') {
+                     container.appendChild(createInput('phys-m', 'Mass (m)'));
+                     container.appendChild(createInput('phys-h', 'Height (h)'));
+                     container.appendChild(createInput('phys-g', 'Gravity (g)', '9.81'));
+                     setTimeout(() => {
+                        const g = document.getElementById('phys-g');
+                        if(g) g.value = 9.81;
+                     },0);
+                 }
+             }
+        };
+
+        window.runPhysics = function(tab) {
+             const type = document.getElementById(`phys-${tab}-type`).value;
+             let result = "";
+             let formula = "";
+
+             const val = (id) => {
+                 const el = document.getElementById(id);
+                 return el ? parseFloat(el.value) : NaN;
+             };
+
+             if (tab === 'kin') {
+                 const u = val('phys-u');
+                 const v = val('phys-v');
+                 const a = val('phys-a');
+                 const t = val('phys-t');
+                 const s = val('phys-s');
+
+                 if (type === 'v') {
+                     // v = u + at
+                     if (isNaN(u) || isNaN(a) || isNaN(t)) return;
+                     const res = u + a * t;
+                     result = `Final Velocity (v) = ${res.toFixed(4)}`;
+                     formula = `v = u + at`;
+                 } else if (type === 's') {
+                     if (isNaN(u) || isNaN(a) || isNaN(t)) return;
+                     const res = u * t + 0.5 * a * t * t;
+                     result = `Displacement (s) = ${res.toFixed(4)}`;
+                     formula = `s = ut + 0.5at^2`;
+                 } else if (type === 'v2') {
+                     if (isNaN(u) || isNaN(a) || isNaN(s)) return;
+                     const resSq = u * u + 2 * a * s;
+                     if (resSq < 0) result = "Error: Complex result (v² < 0)";
+                     else result = `Velocity (v) = ±${Math.sqrt(resSq).toFixed(4)}`;
+                     formula = `v^2 = u^2 + 2as`;
+                 } else if (type === 'a') {
+                     if (isNaN(v) || isNaN(u) || isNaN(t)) return;
+                     if (t === 0) { result = "Error: Time is 0"; }
+                     else {
+                         const res = (v - u) / t;
+                         result = `Acceleration (a) = ${res.toFixed(4)}`;
+                         formula = `a = (v-u)/t`;
+                     }
+                 } else if (type === 't') {
+                     if (isNaN(v) || isNaN(u) || isNaN(a)) return;
+                     if (a === 0) { result = "Error: Accel is 0"; }
+                     else {
+                         const res = (v - u) / a;
+                         result = `Time (t) = ${res.toFixed(4)}`;
+                         formula = `t = (v-u)/a`;
+                     }
+                 }
+             } else if (tab === 'dyn') {
+                 if (type === 'F') {
+                     const m = val('phys-m');
+                     const a = val('phys-a');
+                     if(isNaN(m) || isNaN(a)) return;
+                     result = `Force (F) = ${(m*a).toFixed(4)} N`;
+                 } else if (type === 'm') {
+                     const F = val('phys-F');
+                     const a = val('phys-a');
+                     if(isNaN(F) || isNaN(a)) return;
+                     result = `Mass (m) = ${(F/a).toFixed(4)} kg`;
+                 } else if (type === 'a') {
+                     const F = val('phys-F');
+                     const m = val('phys-m');
+                     if(isNaN(F) || isNaN(m)) return;
+                     result = `Accel (a) = ${(F/m).toFixed(4)} m/s²`;
+                 } else if (type === 'W') {
+                     const m = val('phys-m');
+                     const g = val('phys-g');
+                     if(isNaN(m) || isNaN(g)) return;
+                     result = `Weight (W) = ${(m*g).toFixed(4)} N`;
+                 }
+             } else if (tab === 'nrg') {
+                 if (type === 'ke') {
+                     const m = val('phys-m');
+                     const v = val('phys-v');
+                     if(isNaN(m) || isNaN(v)) return;
+                     result = `KE = ${(0.5*m*v*v).toFixed(4)} J`;
+                 } else if (type === 'pe') {
+                     const m = val('phys-m');
+                     const h = val('phys-h');
+                     const g = val('phys-g');
+                     if(isNaN(m) || isNaN(h) || isNaN(g)) return;
+                     result = `PE = ${(m*g*h).toFixed(4)} J`;
+                 }
+             }
+
+             if (!result) result = "Invalid Input";
+             const info = { type: 'info', text: result };
+             addToHistory(`Physics Calc`, info, false);
 
              const visibleTool = document.querySelector('.tool-view[style*="block"]');
              if(visibleTool) {
