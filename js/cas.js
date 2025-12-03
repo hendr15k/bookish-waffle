@@ -102,7 +102,19 @@ class CAS {
                 const func = args[0];
                 const varNode = args[1];
                 if (!(varNode instanceof Sym)) throw new Error("Second argument to diff must be a variable");
-                return func.diff(varNode);
+
+                let order = 1;
+                if (args.length >= 3) {
+                    const o = args[2];
+                    if (o instanceof Num && Number.isInteger(o.value)) order = o.value;
+                    else return new Call('diff', args); // Symbolic order
+                }
+
+                let res = func;
+                for(let i=0; i<order; i++) {
+                    res = res.diff(varNode).simplify();
+                }
+                return res;
             }
 
             if (node.funcName === 'integrate' || node.funcName === 'int') {
@@ -1048,17 +1060,20 @@ and, or, not, xor, int, evalf`;
         expr = expr.expand().simplify();
 
         try {
+            // Attempt linear solve a*x + b = 0
+            // a = derivative w.r.t varNode
+            const a = expr.diff(varNode).simplify();
             const b = expr.substitute(varNode, new Num(0)).simplify();
-            const f1 = expr.substitute(varNode, new Num(1)).simplify();
-            const a = new Sub(f1, b).simplify();
 
-            const reconstruction = new Add(new Mul(a, varNode), b);
+            const reconstruction = new Add(new Mul(a, varNode), b).simplify();
             const diff = new Sub(expr, reconstruction).expand().simplify();
 
             if (diff instanceof Num && diff.value === 0 && !(a instanceof Num && a.value === 0)) {
                 return new Div(new Mul(new Num(-1), b), a).simplify();
             }
 
+            // Fallback to quadratic check using substitution for c (b is already c)
+            const f1 = expr.substitute(varNode, new Num(1)).simplify();
             const c = b;
             const fm1 = expr.substitute(varNode, new Num(-1)).simplify();
 
@@ -2077,8 +2092,200 @@ and, or, not, xor, int, evalf`;
         return new Call('cholesky', [matrix]);
     }
 
-    _desolve(eq, varNode) {
-         return new Call('desolve', [eq, varNode]);
+    _desolve(eq, depVar) {
+        // Handle depVar being y or y(x)
+        if (depVar instanceof Call) {
+            // Assume format y(x)
+            depVar = new Sym(depVar.funcName);
+        }
+        if (!(depVar instanceof Sym)) throw new Error("Second argument to desolve must be a dependent variable");
+
+        // Normalize equation: LHS - RHS
+        let expr;
+        if (eq instanceof Eq) {
+            expr = new Sub(eq.left, eq.right).simplify();
+        } else {
+            expr = eq.simplify();
+        }
+
+        // Find independent variable
+        // It's the variable in diff(y, x) or just implied if we find x in expr
+        // Scan for diff(depVar, x)
+        let indepVar = null;
+        let diffCall = null;
+
+        const findDiff = (node) => {
+            if (node instanceof Call && node.funcName === 'diff') {
+                // Ensure order is 1 (args.length == 2 or args[2] == 1)
+                const validOrder = (node.args.length === 2) || (node.args.length === 3 && node.args[2] instanceof Num && node.args[2].value === 1);
+                if (!validOrder) return;
+
+                // Case 1: diff(y, x) where y is depVar
+                if (node.args[0] instanceof Sym && node.args[0].name === depVar.name) {
+                    if (node.args.length > 1 && node.args[1] instanceof Sym) {
+                        indepVar = node.args[1];
+                        diffCall = node;
+                        return;
+                    }
+                }
+            }
+            if (node instanceof Call) node.args.forEach(findDiff);
+            if (node instanceof BinaryOp) { findDiff(node.left); findDiff(node.right); }
+        };
+
+        // Re-scan for diff(y(x), x)
+        const findDiffComplex = (node) => {
+             if (node instanceof Call && node.funcName === 'diff') {
+                 // Ensure order is 1
+                 const validOrder = (node.args.length === 2) || (node.args.length === 3 && node.args[2] instanceof Num && node.args[2].value === 1);
+                 if (!validOrder) return;
+
+                 const target = node.args[0];
+                 // target is y(x) -> Call with funcName = depVar.name
+                 if (target instanceof Call && target.funcName === depVar.name) {
+                      if (node.args.length > 1 && node.args[1] instanceof Sym) {
+                          indepVar = node.args[1];
+                          diffCall = node;
+                      }
+                 }
+             }
+             if (node instanceof Call) node.args.forEach(findDiffComplex);
+             if (node instanceof BinaryOp) { findDiffComplex(node.left); findDiffComplex(node.right); }
+        };
+
+        // Attempt to find diff in evaluated expression
+        findDiff(expr);
+        if(!indepVar) findDiffComplex(expr);
+
+        if (!indepVar) {
+            // Fallback if no derivative found (maybe algebraic eq involving y?)
+            return new Call('desolve', [eq, depVar]);
+        }
+
+        // Solve algebraically for diffCall (treat diffCall as variable DY)
+        const DY = new Sym('__DY__');
+
+        // Helper to replace diffCall with DY deeply
+        const replaceDiff = (node) => {
+            // Check reference equality
+            if (node === diffCall) return DY;
+
+            // Check structural equality for diff(y, x)
+            if (node instanceof Call && node.funcName === 'diff' && node.args.length === 2) {
+                 const a0 = node.args[0];
+                 const a1 = node.args[1];
+                 const d0 = diffCall.args[0];
+                 const d1 = diffCall.args[1];
+
+                 // Compare a0 and d0
+                 let match0 = false;
+                 if (a0 instanceof Sym && d0 instanceof Sym && a0.name === d0.name) match0 = true;
+                 if (a0 instanceof Call && d0 instanceof Call && a0.toString() === d0.toString()) match0 = true;
+
+                 // Compare a1 and d1
+                 let match1 = false;
+                 if (a1 instanceof Sym && d1 instanceof Sym && a1.name === d1.name) match1 = true;
+
+                 if (match0 && match1) return DY;
+            }
+
+            if (node instanceof BinaryOp) return new node.constructor(replaceDiff(node.left), replaceDiff(node.right));
+            if (node instanceof Call) return new Call(node.funcName, node.args.map(replaceDiff));
+            if (node instanceof Not) return new Not(replaceDiff(node.arg));
+            return node;
+        };
+
+        const algEq = replaceDiff(expr);
+        let sol = this._solve(algEq, DY); // Solve for y'
+
+        // Fallback: Use polynomial extraction if _solve failed (e.g. simplification issues)
+        if (sol instanceof Call && sol.funcName === 'solve') {
+             const polyDY = this._getPolyCoeffs(algEq, DY);
+             if (polyDY && polyDY.maxDeg === 1) {
+                 const a = polyDY.coeffs[1] || new Num(0);
+                 const b = polyDY.coeffs[0] || new Num(0);
+                 // a*DY + b = 0 => DY = -b/a
+                 sol = new Div(new Mul(new Num(-1), b), a).simplify();
+             } else {
+                 return new Call('desolve', [eq, depVar]);
+             }
+        }
+
+        const f_xy = sol;
+
+        // 1. Direct Integration: y' = f(x) (f_xy does not depend on depVar)
+        if (!this._dependsOn(f_xy, depVar)) {
+             // y = int(f(x)) + C
+             const integral = f_xy.integrate(indepVar).simplify();
+             const C = new Sym('C1');
+             return new Add(integral, C);
+        }
+
+        // 2. Linear First Order: y' = a(x) + b(x)y  => y' - b(x)y = a(x)
+        // Extract coeffs of y from f(x, y) assuming it is linear in y.
+        // We substitute y (or y(x)) with a pure symbol to use polynomial tools
+        const y_sym = new Sym(depVar.name);
+
+        const replaceY = (node) => {
+             if (node instanceof Call && node.funcName === depVar.name) return y_sym;
+             if (node instanceof Sym && node.name === depVar.name) return y_sym;
+             if (node instanceof BinaryOp) return new node.constructor(replaceY(node.left), replaceY(node.right));
+             if (node instanceof Call) return new Call(node.funcName, node.args.map(replaceY));
+             return node;
+        };
+        const f_y_poly = replaceY(f_xy);
+
+        // Ensure indepVar doesn't conflict
+        const polyInfo = this._getPolyCoeffs(f_y_poly, y_sym);
+
+        if (polyInfo && polyInfo.maxDeg === 1) {
+             // Form: y' = coeff[0] + coeff[1]*y
+             // y' - coeff[1]*y = coeff[0]
+             // Standard Linear: y' + P(x)y = Q(x)
+             // P(x) = -coeff[1], Q(x) = coeff[0]
+
+             const Q = polyInfo.coeffs[0] || new Num(0);
+             const negP = polyInfo.coeffs[1] || new Num(0);
+             const P = new Mul(new Num(-1), negP).simplify();
+
+             // Integrating Factor I = exp(int(P dx))
+             let intP = P.integrate(indepVar).simplify();
+             const I = new Call('exp', [intP]).simplify();
+
+             // y = (1/I) * (int(Q*I dx) + C)
+             const QI = new Mul(Q, I).simplify();
+             let intQI = QI.integrate(indepVar).simplify();
+
+             // If integration failed (returns Call('integrate')), we might return symbolic result
+             const C = new Sym('C1');
+             const right = new Mul(new Div(new Num(1), I), new Add(intQI, C)).simplify();
+             return right;
+        }
+
+        // 3. Separable: y' = g(x)h(y)
+        // Check if f(x,y) / y depends on y? (y'=y) -> covered by linear
+        // Check if f(x,y) can be factored?
+        // Basic check: y' = y^n * g(x) (Bernoulli n!=0,1 or just separable)
+        // Or y' = g(y) -> x = int(1/g(y))
+        if (!this._dependsOn(f_xy, indepVar)) {
+            // Autonomous: y' = g(y)
+            // int(1/g(y)) dy = x + C
+            const invG = new Div(new Num(1), replaceY(f_xy)).simplify();
+            const left = invG.integrate(y_sym).simplify(); // returns in terms of y_sym
+            const right = new Add(indepVar, new Sym('C1'));
+
+            // Implicit solution: F(y) = x + C
+            // Try to solve for y?
+            const solY = this._solve(new Sub(left, right), y_sym);
+            if (!(solY instanceof Call && solY.funcName === 'solve')) {
+                return solY;
+            }
+            // Return implicit equation F(y) = x + C
+            return new Eq(left.substitute(y_sym, depVar), right);
+        }
+
+        // Generic failure
+        return new Call('desolve', [eq, depVar]);
     }
 
     _partfrac(expr, varNode) {
@@ -2167,7 +2374,10 @@ and, or, not, xor, int, evalf`;
         if (expr instanceof Sym) return expr.name === varNode.name;
         if (expr instanceof Num) return false;
         if (expr instanceof BinaryOp) return this._dependsOn(expr.left, varNode) || this._dependsOn(expr.right, varNode);
-        if (expr instanceof Call) return expr.args.some(a => this._dependsOn(a, varNode));
+        if (expr instanceof Call) {
+            if (expr.funcName === varNode.name) return true; // Check if function name matches variable (e.g. y(x) depends on y)
+            return expr.args.some(a => this._dependsOn(a, varNode));
+        }
         if (expr instanceof Vec) return expr.elements.some(e => this._dependsOn(e, varNode));
         return false;
     }

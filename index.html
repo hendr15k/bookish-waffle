@@ -555,6 +555,7 @@
         <div class="tab-header">
             <button class="tab-btn active" onclick="openTab(event, 'tab-calc-diff')">Diff & Limit</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-int')">Integration</button>
+            <button class="tab-btn" onclick="openTab(event, 'tab-calc-desolve')">Diff Eq</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-series')">Taylor Series</button>
         </div>
 
@@ -608,6 +609,23 @@
                     <button class="action-btn" onclick="runTool('integrate', ['int-expr', 'int-var'])">Indefinite</button>
                     <button class="action-btn" onclick="runAndPlot('integrate', ['int-expr', 'int-var'])" style="background-color: #28a745;">Plot Result</button>
                     <button class="action-btn" onclick="runTool('integrate', ['int-expr', 'int-var', 'int-from', 'int-to'])" style="grid-column: span 2;">Definite</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Differential Equations Tab -->
+        <div id="tab-calc-desolve" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="desolve-eq">Equation (Use y' or diff(y,x))</label>
+                    <input type="text" class="form-input" id="desolve-eq" placeholder="e.g. diff(y,x) = y">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="desolve-var">Dependent Var</label>
+                    <input type="text" class="form-input" id="desolve-var" placeholder="y" value="y">
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('desolve', ['desolve-eq', 'desolve-var'])">Solve ODE</button>
                 </div>
             </div>
         </div>
