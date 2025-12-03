@@ -27,6 +27,11 @@ const TOKEN_MOD = 'MOD';
 const TOKEN_RANGE = 'RANGE';
 const TOKEN_SEMI = 'SEMI';
 const TOKEN_EOF = 'EOF';
+const TOKEN_LBRACE = 'LBRACE';
+const TOKEN_RBRACE = 'RBRACE';
+const TOKEN_PIPE = 'PIPE';
+const TOKEN_LATEX_FRAC = 'LATEX_FRAC';
+const TOKEN_LATEX_SQRT = 'LATEX_SQRT';
 
 class Token {
     constructor(type, value) {
@@ -128,6 +133,47 @@ class Lexer {
                 this.skipWhitespace();
                 continue;
             }
+
+            // LaTeX command support
+            if (this.currentChar === '\\') {
+                this.advance();
+                // Check for single char commands or special delimiters
+                if (this.currentChar === '{') { this.advance(); return new Token(TOKEN_LBRACKET, '{'); } // \{ -> [
+                if (this.currentChar === '}') { this.advance(); return new Token(TOKEN_RBRACKET, '}'); } // \} -> ]
+                if (this.currentChar === ',') { this.advance(); continue; } // \, space
+                if (this.currentChar === ';') { this.advance(); continue; } // \; space
+                if (this.currentChar === ':') { this.advance(); continue; } // \: space
+                if (this.currentChar === ' ') { this.advance(); continue; } // \  space
+                if (this.currentChar === '|') { this.advance(); return new Token(TOKEN_PIPE, '|'); } // \| -> | ? standard latex uses | for pipe, \| for double vertical lines (norm). Let's map to PIPE.
+
+                // Read command
+                let cmd = '';
+                while (this.currentChar !== null && /[a-zA-Z]/.test(this.currentChar)) {
+                    cmd += this.currentChar;
+                    this.advance();
+                }
+
+                if (cmd === 'frac') return new Token(TOKEN_LATEX_FRAC, cmd);
+                if (cmd === 'sqrt') return new Token(TOKEN_LATEX_SQRT, cmd);
+                if (cmd === 'left' || cmd === 'right') {
+                    // Ignore \left and \right, but skip potential following '.'
+                    this.skipWhitespace();
+                    if (this.currentChar === '.') {
+                        this.advance(); // consume the dot (empty delimiter)
+                    }
+                    // Continue to next token (recursion)
+                    continue;
+                }
+                if (cmd === 'cdot') return new Token(TOKEN_STAR, '*');
+                if (cmd === 'times') return new Token(TOKEN_STAR, '*');
+                if (cmd === 'div') return new Token(TOKEN_SLASH, '/');
+                if (cmd === 'pi') return new Token(TOKEN_IDENTIFIER, 'pi');
+                if (cmd === 'infty') return new Token(TOKEN_IDENTIFIER, 'infinity');
+
+                // Fallback for other commands (e.g. \sin, \alpha)
+                return new Token(TOKEN_IDENTIFIER, cmd);
+            }
+
             if (/\d/.test(this.currentChar)) {
                 return new Token(TOKEN_NUMBER, this.number());
             }
@@ -164,16 +210,6 @@ class Lexer {
                     this.advance();
                     return new Token(TOKEN_NEQ, '!=');
                 }
-                // Factorial is handled in Parser, but here we might want to return a token for it?
-                // The current Parser doesn't seem to explicitly handle '!' factorial token in lexer except maybe as char?
-                // Let's check Parser.factor/atom.
-                // Ah, the lexer threw Error for '!'.
-                // If it's just '!', return something or error?
-                // Xcas uses '!' for factorial.
-                // Let's assume for now '!' is factorial if not followed by '='.
-                // But wait, "Invalid character: !" was thrown before.
-                // So we should return a token for '!'. Let's call it TOKEN_BANG.
-                // But I didn't define TOKEN_BANG above. Let's stick to Xcas syntax: `!=` is NEQ. `!` is factorial.
                 this.advance();
                 return new Token('BANG', '!');
             }
@@ -231,12 +267,15 @@ class Lexer {
                     this.advance(); this.advance();
                     return new Token(TOKEN_OR, '||');
                 }
-                throw new Error("Invalid character: |");
+                this.advance();
+                return new Token(TOKEN_PIPE, '|');
             }
             if (this.currentChar === '(') { this.advance(); return new Token(TOKEN_LPAREN, '('); }
             if (this.currentChar === ')') { this.advance(); return new Token(TOKEN_RPAREN, ')'); }
             if (this.currentChar === '[') { this.advance(); return new Token(TOKEN_LBRACKET, '['); }
             if (this.currentChar === ']') { this.advance(); return new Token(TOKEN_RBRACKET, ']'); }
+            if (this.currentChar === '{') { this.advance(); return new Token(TOKEN_LBRACE, '{'); }
+            if (this.currentChar === '}') { this.advance(); return new Token(TOKEN_RBRACE, '}'); }
             if (this.currentChar === ',') { this.advance(); return new Token(TOKEN_COMMA, ','); }
             if (this.currentChar === ';') { this.advance(); return new Token(TOKEN_SEMI, ';'); }
 
@@ -250,6 +289,7 @@ class Parser {
     constructor(lexer) {
         this.lexer = lexer;
         this.currentToken = this.lexer.getNextToken();
+        this.absDepth = 0;
     }
 
     error() {
@@ -268,87 +308,8 @@ class Parser {
         let node = this.atom();
         // Check for postfix indexing: A[0]
         while (this.currentToken.type === TOKEN_LBRACKET) {
-             // We need to differentiate A[0] (index) from A [0] (implicit mul).
-             // However, implicit mul usually requires spaces or specific context.
-             // Standard Xcas syntax A[0] means index.
-             // If I have `x [1]`, is it x * [1] or x[1]?
-             // In Xcas, `x[1]` is index. `x*[1]` is mul.
-             // If we parse `[` as index here, `x [1]` will be index.
-             // If we want `x [1]` to be mul, user must use `*`.
-             // But my implicitMul logic allows `x [1]`.
-             // If I consume `[` here, implicitMul won't see it.
-             // Is there any case where `Expr [...]` should be multiplication?
-             // Only if Expr is a number? `2[1]` -> `2 * [1]`.
-             // If Expr is a vector? `[1][0]` -> `1`.
-             // If Expr is identifier? `A[0]` -> Index.
-             // If Expr is `(a+b)[0]` -> Index.
-
-             // So, basically `[` immediately following an atom (without space?)
-             // Lexer doesn't tell us about space.
-             // But typical parser logic: Postfix binds tighter than implicit mul.
-             // So `A[0]` is index. `2[0]` is index (undefined for number, but syntax wise).
-             // If user wants `2 * [0]`, they should type `2 * [0]` or `2 [0]`?
-             // If `2[0]` parses as `At(2, 0)`, then evaluation fails or returns something.
-             // If we want `2 [0]` to be mul, we have a problem without whitespace info.
-
-             // However, `At` node can decide. If `obj` is Num, maybe `At` acts as mul?
-             // No, `At` is index.
-             // Let's assume `[` is ALWAYS index if it follows a factor directly.
-             // Users usually write `2*[1]` or `2 [1]`.
-             // If I consume it here, `implicitMul` loop won't see it.
-
-             // Wait, `implicitMul` logic:
-             // `node = this.unary()`
-             // `while (isImplicitMulStart)`...
-
-             // `unary` calls `power`, `power` calls `factor`.
-             // If `factor` consumes `[`, `unary` returns `At(...)`.
-             // Then `implicitMul` sees next token.
-             // If input is `A[0]`, `factor` eats `A` then `[0]`. Returns `At`. Next is EOF.
-             // If input is `A [0]`. `factor` eats `A`. `[0]` is eaten. Returns `At`.
-
-             // This breaks `x [1]` as implicit mul.
-             // But `x(1)` is Call, not mul.
-             // So `x[1]` being Index is consistent.
-
-             // What about `2 [1]`? `2(1)` is implicit mul in some systems, but my parser handles `2(1)`?
-             // `factor` handles `LPAREN` after `NUMBER`?
-             // `factor` code:
-             // if NUMBER -> return Num.
-             // It does NOT check for `(` after number.
-             // So `2(1)` -> `Num(2)`. `implicitMul` sees `(`. `isImplicitMulStart` is true.
-             // So `2(1)` becomes `Mul(2, 1)`.
-
-             // But `factor` handles `IDENTIFIER` then `(`.
-             // So `x(1)` is `Call`.
-
-             // If I put `[` handling in `atom` (or `factor` bottom), I need to be careful.
-             // If `token` is `NUMBER`, `factor` returns `Num`. It does NOT look ahead.
-             // So `2[1]` -> `Num(2)`. `unary` returns `Num(2)`.
-             // `implicitMul` sees `[`. `isImplicitMulStart` is true.
-             // So `2[1]` becomes `Mul(2, Vec([1]))`. Correct for `2 [1]`.
-
-             // But `IDENTIFIER` block consumes `(` for Call.
-             // It explicitly checks `LPAREN`.
-             // I should add `LBRACKET` check there too.
-
-             // BUT, `(a+b)[0]`?
-             // `factor` handles `(` ... `)`. Returns `Add`.
-             // If I simply add logic to `IDENTIFIER` block, `(a+b)[0]` won't work.
-
-             // I should restructure `factor` to:
-             // `node = primary()`.
-             // `while (LBRACKET)` -> `node = At(node, ...)`
-             // Then return node.
-
-             // Let's rename `factor` logic (the long if/else) to `atom` or `primary`.
-             // And make `factor` wrap it.
-
-             // Wait, `factor` currently handles `sin^2(x)` logic which is weirdly tied to Identifier.
-             // Let's refactor carefully.
-
              this.eat(TOKEN_LBRACKET);
-             const index = this.statement(); // Allow expression index
+             const index = this.statement();
              this.eat(TOKEN_RBRACKET);
              node = new At(node, index);
         }
@@ -366,11 +327,10 @@ class Parser {
 
             // Handle sin^2(x)
             if (this.currentToken.type === TOKEN_CARET) {
-                // Check if it's a known function that permits exponent syntax
                 const trigFunctions = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'sinh', 'cosh', 'tanh'];
                 if (trigFunctions.includes(name)) {
                     this.eat(TOKEN_CARET);
-                    const exponent = this.unary(); // Use unary to handle sin^-1(x)
+                    const exponent = this.unary();
 
                     if (this.currentToken.type === TOKEN_LPAREN) {
                         this.eat(TOKEN_LPAREN);
@@ -381,29 +341,6 @@ class Parser {
                          const arg = this.term();
                          return new Pow(new Call(name, [arg]), exponent);
                     }
-                } else {
-                     // For non-trig functions, `f^2(x)` is ambiguous. `(f^2)(x)`? or `f(x)^2`?
-                     // Usually treated as symbol power if f is var.
-                     // But we already ate identifier. We need to return Pow(Sym(name), exp)
-                     // If followed by LPAREN, it becomes implicit mul? `x^2(y)` -> `x^2 * y`?
-                     // Let's fallback to standard power logic if not special trig syntax.
-                     // But we are inside factor(). We processed ID.
-                     // We need to return Sym(name) and let `power()` handle the caret.
-                     // BUT we already ate the caret inside this if block if we matched trig.
-                     // If we are here, we matched caret.
-                     // If not trig, we construct Pow(Sym, exp).
-
-                     // Wait, `power()` calls `factor()`. `factor()` consumes ID. `power()` consumes caret.
-                     // So we should NOT consume caret here unless we are sure it is `sin^2(x)`.
-                     // If we are here, we ate ID.
-                     // If we see caret, we return Sym(name) and let `power()` handle it?
-                     // NO, `power` calls `factor` then checks caret.
-                     // If `factor` consumes caret, `power` won't see it.
-                     // So `sin^2(x)` logic must be inside `factor` OR `power`.
-
-                     // Actually `sin^n(x)` is tricky because `power` binds tighter than `call`?
-                     // If `sin` is handled as `Call` in `factor`, we never return to `power` with just `Sym`.
-                     // The loop in `factor` for `(` handles explicit calls.
                 }
             }
 
@@ -443,6 +380,11 @@ class Parser {
             const node = this.statement();
             this.eat(TOKEN_RPAREN);
             return node;
+        } else if (token.type === TOKEN_LBRACE) {
+            this.eat(TOKEN_LBRACE);
+            const node = this.statement();
+            this.eat(TOKEN_RBRACE);
+            return node;
         } else if (token.type === TOKEN_LBRACKET) {
             this.eat(TOKEN_LBRACKET);
             const elements = [];
@@ -455,7 +397,34 @@ class Parser {
             }
             this.eat(TOKEN_RBRACKET);
             return new Vec(elements);
+        } else if (token.type === TOKEN_PIPE) {
+            this.eat(TOKEN_PIPE);
+            this.absDepth++;
+            const node = this.statement();
+            this.absDepth--;
+            this.eat(TOKEN_PIPE);
+            return new Call('abs', [node]);
+        } else if (token.type === TOKEN_LATEX_FRAC) {
+            this.eat(TOKEN_LATEX_FRAC);
+            // Use atom to support grouped {args} or single token args
+            const num = this.atom();
+            const den = this.atom();
+            return new Div(num, den);
+        } else if (token.type === TOKEN_LATEX_SQRT) {
+            this.eat(TOKEN_LATEX_SQRT);
+            // Check for optional index [n]
+            if (this.currentToken.type === TOKEN_LBRACKET) {
+                this.eat(TOKEN_LBRACKET);
+                const index = this.statement();
+                this.eat(TOKEN_RBRACKET);
+                const arg = this.atom();
+                return new Pow(arg, new Div(new Num(1), index));
+            } else {
+                const arg = this.atom();
+                return new Call('sqrt', [arg]);
+            }
         }
+
         this.error();
     }
 
@@ -475,8 +444,6 @@ class Parser {
 
     power() {
         let node = this.factor();
-        // Handle factorial '!' here if we had it as postfix
-        // But wait, the lexer returns 'BANG' for '!'.
         if (this.currentToken.type === 'BANG') {
             this.eat('BANG');
             node = new Call('fact', [node]);
@@ -511,10 +478,12 @@ class Parser {
 
     implicitMul() {
         let node = this.unary();
-        // Check for implicit multiplication start
         while (this.isImplicitMulStart(this.currentToken)) {
-             // Implicit multiplication has higher precedence than * /
-             // so it binds tight here.
+             // If we are inside an abs block, a PIPE is likely a closing pipe.
+             if (this.currentToken.type === TOKEN_PIPE && this.absDepth > 0) {
+                 break;
+             }
+
              const right = this.unary();
              node = new Mul(node, right);
         }
@@ -522,20 +491,14 @@ class Parser {
     }
 
     isImplicitMulStart(token) {
-        // Tokens that can start a power/factor:
-        // NUMBER, IDENTIFIER, LPAREN, LBRACKET
-        // (MINUS/PLUS are handled in expr, so implicit mul like `x -y` isn't standard, usually `x * -y` needs parens or explicit `*`)
-        // However, `2x` works. `x y` works. `x(y)` is parsed in factor, so if we are here, we saw a factor and next is something else.
-        // e.g. `x` (Sym) then `y` (Sym).
         return token.type === TOKEN_NUMBER ||
                token.type === TOKEN_IDENTIFIER ||
                token.type === TOKEN_LPAREN ||
                token.type === TOKEN_LBRACKET ||
-               token.type === TOKEN_NOT; // not x -> mul? No.
-               // If we have `x not y`, that's invalid syntax.
-               // So NOT is NOT a start of implicit mul if it's an operator.
-               // But `x not(y)`?
-               // Let's exclude NOT from implicit mul start for now.
+               token.type === TOKEN_LBRACE || // Added LBRACE for {a} {b}
+               token.type === TOKEN_PIPE ||   // Added PIPE for |a| |b|
+               token.type === TOKEN_LATEX_FRAC || // \frac...
+               token.type === TOKEN_LATEX_SQRT; // \sqrt...
     }
 
     arithExpr() {
@@ -558,9 +521,6 @@ class Parser {
         if (this.currentToken.type === TOKEN_RANGE) {
             this.eat(TOKEN_RANGE);
             const right = this.arithExpr();
-            // range(a..b) -> range(a, b+1, 1) to make it inclusive (Xcas style)
-            // But right is Expr. We need new Add(right, 1).
-            // We assume standard step 1.
             return new Call('range', [node, new Add(right, new Num(1)), new Num(1)]);
         }
         return node;
@@ -618,17 +578,11 @@ class Parser {
     }
 
     equation() {
-        // In Xcas, assignment is :=, equation is =.
-        // We already have compExpr handling = (EQ).
-        // However, assignment logic is in statement().
-        // So equation() here really means the top-level expression.
         return this.logicExpr();
     }
 
     statement() {
-        // Look ahead hack for Assignment: ID := ... or ID(args) := ...
         if (this.currentToken.type === TOKEN_IDENTIFIER) {
-            // Save state
             const savedPos = this.lexer.pos;
             const savedChar = this.lexer.currentChar;
             const savedToken = this.currentToken;
@@ -636,20 +590,17 @@ class Parser {
             const name = this.currentToken.value;
             this.eat(TOKEN_IDENTIFIER);
 
-            // Check for simple assignment: ID :=
             if (this.currentToken.type === TOKEN_ASSIGN) {
                 this.eat(TOKEN_ASSIGN);
                 const value = this.statement();
                 return new Assignment(new Sym(name), value);
             }
 
-            // Check for function definition: ID(args) :=
             if (this.currentToken.type === TOKEN_LPAREN) {
                 this.eat(TOKEN_LPAREN);
                 const args = [];
                 let isFuncDef = true;
 
-                // Parse args list, but must be identifiers for definition
                 if (this.currentToken.type === TOKEN_IDENTIFIER) {
                     args.push(this.currentToken.value);
                     this.eat(TOKEN_IDENTIFIER);
@@ -677,7 +628,6 @@ class Parser {
                 }
             }
 
-            // Restore state if not assignment or function def
             this.lexer.pos = savedPos;
             this.lexer.currentChar = savedChar;
             this.currentToken = savedToken;
@@ -701,7 +651,6 @@ class Parser {
     }
 }
 
-// Export classes for Global/CommonJS environments
 (function() {
     const exports = {
         Token, Lexer, Parser
@@ -710,7 +659,6 @@ class Parser {
         Object.assign(globalThis, exports);
     }
     if (typeof module !== 'undefined' && module.exports) {
-        // Ensure dependencies are available in Node environment if not global
         if (typeof globalThis.Call === 'undefined') {
              try {
                  const expr = require('./expression.js');
