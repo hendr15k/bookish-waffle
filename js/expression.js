@@ -328,7 +328,15 @@ class Sym extends Expr {
         }
     }
     substitute(varName, value) {
-        return (this.name === varName.name) ? value : this;
+        if (this.name === varName.name) return value;
+        // Check for deep equality if varName is complex (e.g. replacing sin(x) with u)
+        if (varName instanceof Sym && this.name === varName.name) return value;
+        // If varName is an expression, we can't substitute a symbol with it unless the symbol IS the expression (already checked)
+        // But what if we want to substitute 'x' in 'x' with 'u'? (handled)
+
+        // If we try to substitute a sub-expression, it is handled by the caller traversing the tree.
+        // But if `varName` is `Pow(x, 2)` and `this` is `Sym('x')`, we don't match.
+        return this;
     }
     toLatex() {
         const greek = {
@@ -977,6 +985,18 @@ class Div extends BinaryOp {
 
 class Pow extends BinaryOp {
     toString() { return `(${this.left}^${this.right})`; }
+    substitute(varName, value) {
+        // If we are substituting the whole power expression
+        if (this.toString() === varName.toString()) return value; // Heuristic check
+        // Better equality check
+        if (varName instanceof Pow && this.left.toString() === varName.left.toString() && this.right.toString() === varName.right.toString()) {
+             // This is weak if toString() is not unique or order matters, but for standard forms it helps.
+             // Ideal would be .equals() method on all Expr.
+             return value;
+        }
+
+        return new Pow(this.left.substitute(varName, value), this.right.substitute(varName, value));
+    }
     simplify() {
         const l = this.left.simplify();
         const r = this.right.simplify();
@@ -1445,6 +1465,19 @@ class Call extends Expr {
         return new Call("integrate", [this, varName]);
     }
     substitute(varName, value) {
+        // Check if we are substituting the whole function call
+        if (this.toString() === varName.toString()) return value; // Heuristic
+        // Better equality check
+        if (varName instanceof Call && this.funcName === varName.funcName && this.args.length === varName.args.length) {
+             let allMatch = true;
+             for(let i=0; i<this.args.length; i++) {
+                 if (this.args[i].toString() !== varName.args[i].toString()) {
+                     allMatch = false; break;
+                 }
+             }
+             if (allMatch) return value;
+        }
+
         // Handle variable binding functions (integrate, sum, product, limit, diff, solve, etc.)
         // These functions typically take the bound variable as the second argument (index 1).
         const bindingFunctions = ['integrate', 'sum', 'product', 'limit', 'diff', 'solve', 'plot', 'taylor'];

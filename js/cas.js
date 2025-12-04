@@ -148,13 +148,13 @@ class CAS {
 
                 let res = func.integrate(varNode);
                 if (res instanceof Call && res.funcName === 'integrate') {
-                     // 1. Try Integration by Substitution (Logarithmic form f'/f)
+                     // 1. Try Integration by Substitution (Logarithmic form f'/f and others)
                      const subRes = this._integrateSubstitution(func, varNode);
-                     if (!(subRes instanceof Call && subRes.funcName === 'integrate')) return subRes;
+                     if (subRes && !(subRes instanceof Call && subRes.funcName === 'integrate')) return subRes;
 
                      // 2. Try Integration by Parts
                      const partsRes = this._integrateByParts(func, varNode);
-                     if (!(partsRes instanceof Call && partsRes.funcName === 'integrate')) return partsRes;
+                     if (partsRes && !(partsRes instanceof Call && partsRes.funcName === 'integrate')) return partsRes;
 
                      // 3. Try partial fraction decomposition
                      const pf = this._partfrac(func, varNode);
@@ -1410,6 +1410,64 @@ and, or, not, xor, int, evalf`;
                     return new Mul(ratio, new Call("ln", [den])).simplify();
                 }
             } catch(e) {}
+        }
+
+        // 2. General Substitution u = g(x)
+        // Candidates for u: arguments of functions, bases of powers, exponents
+        const candidates = new Set();
+        const findCandidates = (node) => {
+             if (node instanceof Call) {
+                 if (node.funcName !== 'integrate') {
+                     node.args.forEach(arg => {
+                         if (this._dependsOn(arg, varNode)) candidates.add(arg);
+                     });
+                 }
+             } else if (node instanceof Pow) {
+                 if (this._dependsOn(node.left, varNode)) candidates.add(node.left);
+                 if (this._dependsOn(node.right, varNode)) candidates.add(node.right);
+             }
+             if (node instanceof BinaryOp) { findCandidates(node.left); findCandidates(node.right); }
+             if (node instanceof Call) node.args.forEach(findCandidates);
+        };
+        findCandidates(expr);
+
+        for(const u of candidates) {
+            // Check if u is trivial (x)
+            if (u instanceof Sym && u.name === varNode.name) continue;
+
+            // du = u'(x)
+            const du = u.diff(varNode).simplify();
+
+            // Check if expr / du depends on x ONLY through u
+            // This is hard to check perfectly.
+            // Simplified check: Divide expr by du. If result is constant w.r.t x, it works.
+            // Or if result can be written as H(u).
+            // Example: 2x * e^(x^2). u=x^2, du=2x. expr/du = e^(x^2) = e^u.
+            // Example: x * e^(x^2). u=x^2, du=2x. expr/du = 1/2 * e^(x^2).
+
+            try {
+                const ratio = new Div(expr, du).simplify();
+
+                // If ratio depends on varNode, we check if it can be transformed to u.
+                // We use a heuristic: substitute u with a temp symbol 'U' in ratio.
+                // If 'U' remains and varNode is gone, we succeed.
+                // But substitution is structural. e^(x^2) matches u=x^2.
+                // x^4 matches u=x^2? substitute returns U^2? No, simple substitute doesn't do algebra.
+
+                const U = new Sym('__U__');
+                let transformed = ratio.substitute(u, U).simplify();
+
+                // If simplified transformed expression still has varNode, we try to see if remaining parts form u?
+                // For now, strict substitution check.
+                if (!this._dependsOn(transformed, varNode)) {
+                     // Integrate transformed w.r.t U
+                     const integral = transformed.integrate(U).simplify();
+                     if (!(integral instanceof Call && integral.funcName === 'integrate')) {
+                         // Substitute U back to u
+                         return integral.substitute(U, u).simplify();
+                     }
+                }
+            } catch (e) {}
         }
 
         return new Call("integrate", [expr, varNode]);
