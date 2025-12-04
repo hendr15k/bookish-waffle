@@ -747,28 +747,45 @@ class Div extends BinaryOp {
             return new Mul(new Div(new Num(1), this.right), this.left.integrate(varName));
         }
 
-        // integrate(c / (a*x+b)) -> c/a * ln(a*x+b)
-        // Check for c / (x +/- b)
-        // Allow c to be Num or constant Div (e.g. 1/2)
-        const isConstant = (e) => (e instanceof Num) || (e instanceof Div && e.left instanceof Num && e.right instanceof Num);
+        // Helper to check if expression depends on variable
+        const dependsOn = (expr, v) => {
+            if (expr instanceof Sym) return expr.name === v.name;
+            if (expr instanceof Num) return false;
+            if (expr instanceof BinaryOp) return dependsOn(expr.left, v) || dependsOn(expr.right, v);
+            if (expr instanceof Call) return expr.args.some(a => dependsOn(a, v));
+            return false;
+        };
 
-        if (isConstant(this.left)) {
+        // integrate(c / (a*x+b)) -> c/a * ln(a*x+b)
+        // Only if denominator is linear in x
+
+        if (!dependsOn(this.left, varName)) {
              const c = this.left;
-             // Denom x +/- b
-             if ((this.right instanceof Add || this.right instanceof Sub) &&
-                 (this.right.left instanceof Sym && this.right.left.name === varName.name && this.right.right instanceof Num)) {
-                 // 1/(x +/- b) -> ln(x +/- b)
-                 // Result: c * ln(denom)
-                 return new Mul(c, new Call("ln", [this.right]));
+             const den = this.right;
+
+             // Check if den is linear: a*x + b
+             // diff(den, x) should be independent of x
+             // We can't use full simplification here easily without circular dependencies or complex logic.
+             // But we can check structural forms.
+
+             // 1. Simple: x +/- b (b is constant)
+             if ((den instanceof Add || den instanceof Sub) && den.left instanceof Sym && den.left.name === varName.name && !dependsOn(den.right, varName)) {
+                 // x + b -> ln(x+b)
+                 // x - b -> ln(x-b)
+                 return new Mul(c, new Call("ln", [den]));
              }
-             // Denom b +/- x ?
-             if ((this.right instanceof Add || this.right instanceof Sub) &&
-                 (this.right.right instanceof Sym && this.right.right.name === varName.name && this.right.left instanceof Num)) {
-                 // 1/(b + x) -> ln(b+x)
-                 // 1/(b - x) -> -ln(b-x)
-                 if (this.right instanceof Add) return new Mul(c, new Call("ln", [this.right]));
-                 if (this.right instanceof Sub) return new Mul(new Mul(new Num(-1), c), new Call("ln", [this.right]));
-             }
+
+             // 2. Linear: a*x +/- b
+             // den.diff(varName) -> a
+             // If den.diff(varName) is constant (does not depend on varName) and non-zero
+             try {
+                 const diff = den.diff(varName).simplify();
+                 if (!dependsOn(diff, varName) && !(diff instanceof Num && diff.value === 0)) {
+                      // Result: c/a * ln(den)
+                      const coeff = new Div(c, diff);
+                      return new Mul(coeff, new Call("ln", [den]));
+                 }
+             } catch(e) {}
         }
 
         // integrate(1/x^n, x)

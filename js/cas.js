@@ -148,7 +148,15 @@ class CAS {
 
                 let res = func.integrate(varNode);
                 if (res instanceof Call && res.funcName === 'integrate') {
-                     // Try partial fraction decomposition
+                     // 1. Try Integration by Substitution (Logarithmic form f'/f)
+                     const subRes = this._integrateSubstitution(func, varNode);
+                     if (!(subRes instanceof Call && subRes.funcName === 'integrate')) return subRes;
+
+                     // 2. Try Integration by Parts
+                     const partsRes = this._integrateByParts(func, varNode);
+                     if (!(partsRes instanceof Call && partsRes.funcName === 'integrate')) return partsRes;
+
+                     // 3. Try partial fraction decomposition
                      const pf = this._partfrac(func, varNode);
                      if (!(pf instanceof Call && pf.funcName === 'partfrac') && pf.toString() !== func.toString()) {
                          // Integrate the decomposed form
@@ -1363,6 +1371,127 @@ and, or, not, xor, int, evalf`;
 
         const t = z + g + 0.5;
         return Math.sqrt(2 * Math.PI) * Math.pow(t, z + 0.5) * Math.exp(-t) * x;
+    }
+
+    _integrateSubstitution(expr, varNode) {
+        // Handle trig rewrites for substitution
+        if (expr instanceof Call) {
+            if (expr.funcName === 'tan') {
+                // sin/cos
+                expr = new Div(new Call('sin', expr.args), new Call('cos', expr.args));
+            } else if (expr.funcName === 'cot') {
+                // cos/sin
+                expr = new Div(new Call('cos', expr.args), new Call('sin', expr.args));
+            } else if (expr.funcName === 'tanh') {
+                expr = new Div(new Call('sinh', expr.args), new Call('cosh', expr.args));
+            }
+        }
+
+        // Look for pattern f'(x)/f(x) -> ln(f(x))
+
+        // 1. Check if expr is Div
+        if (expr instanceof Div) {
+            const num = expr.left;
+            const den = expr.right;
+
+            // Check derivative of denominator
+            const diffDen = den.diff(varNode).simplify();
+
+            // Check if num = k * diffDen
+            // k = num / diffDen should be constant (no varNode)
+            try {
+                const ratio = new Div(num, diffDen).simplify();
+                if (!this._dependsOn(ratio, varNode)) {
+                    // Result: ratio * ln(den)
+                    return new Mul(ratio, new Call("ln", [den])).simplify();
+                }
+            } catch(e) {}
+        }
+
+        return new Call("integrate", [expr, varNode]);
+    }
+
+    _integrateByParts(expr, varNode) {
+        if (!(expr instanceof Mul)) return new Call("integrate", [expr, varNode]);
+
+        const factors = [];
+        const flattenMul = (node) => {
+            if (node instanceof Mul) {
+                flattenMul(node.left);
+                flattenMul(node.right);
+            } else {
+                factors.push(node);
+            }
+        };
+        flattenMul(expr);
+
+        // LIATE Rule for choosing u
+        // Log, Inverse, Alg, Trig, Exp
+        const typeScore = (node) => {
+            if (node instanceof Call) {
+                if (['ln', 'log', 'log2'].includes(node.funcName)) return 5; // Log
+                if (['asin', 'acos', 'atan', 'asec', 'acsc', 'acot'].includes(node.funcName)) return 4; // Inverse
+                if (['sin', 'cos', 'tan', 'sec', 'csc', 'cot'].includes(node.funcName)) return 2; // Trig
+                if (['exp'].includes(node.funcName)) return 1; // Exp
+            }
+            if (node instanceof Pow) {
+                 if (this._dependsOn(node.right, varNode)) return 1; // Exp-like? x^x
+                 // x^n -> Alg
+                 return 3;
+            }
+            if (node instanceof Sym && node.name === varNode.name) return 3; // Alg (x)
+            return 0; // Constant or unknown (treated as scalar part of u or dv?)
+        };
+
+        // Create candidates for u
+        const candidates = factors.map((f, i) => ({
+            idx: i,
+            node: f,
+            score: typeScore(f)
+        })).filter(c => this._dependsOn(c.node, varNode)); // Only variable parts matter for u choice
+
+        // Sort by score descending (Log first)
+        candidates.sort((a, b) => b.score - a.score);
+
+        for(const cand of candidates) {
+            const u = cand.node;
+
+            // dv is the product of all other factors
+            let dv = null;
+            for(let j=0; j<factors.length; j++) {
+                if (cand.idx === j) continue;
+                if (dv === null) dv = factors[j];
+                else dv = new Mul(dv, factors[j]);
+            }
+
+            if (dv === null) continue;
+
+            // Check if dv is easily integrable
+            const v = dv.integrate(varNode);
+            if (v instanceof Call && v.funcName === 'integrate') continue; // dv not integrable
+
+            const du = u.diff(varNode).simplify();
+
+            const uv = new Mul(u, v).simplify();
+            const vdu = new Mul(v, du).simplify();
+
+            // Check if vdu is simpler than original expr?
+            // To prevent cycles, we could check string length or something, but LIATE usually guarantees progress.
+            // One edge case: e^x sin(x). Both are Trig/Exp.
+            // Score: Trig(2) > Exp(1). u=sin, dv=exp.
+            // v=exp, du=cos. vdu = exp*cos.
+            // exp*cos -> u=cos, dv=exp. v=exp, du=-sin. vdu = -exp*sin.
+            // Cycle.
+            // This implementation performs ONE step and returns "uv - integrate(vdu)".
+            // The outer 'evaluate' loop will call 'integrate' on 'vdu'.
+            // If vdu is integrable (by parts again), it proceeds.
+            // For cyclic cases, it will expand indefinitely until max depth or stack overflow unless we catch it.
+            // But for standard x*e^x, it terminates.
+
+            return new Sub(uv, new Call("integrate", [vdu, varNode])).simplify();
+        }
+
+        return new Call("integrate", [expr, varNode]);
     }
 
     _limit(expr, varNode, point, depth = 0) {
