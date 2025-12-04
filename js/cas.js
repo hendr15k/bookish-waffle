@@ -3856,48 +3856,55 @@ and, or, not, xor, int, evalf`;
             if (!this._dependsOn(expr.right, t)) return new Mul(expr.right, this._laplace(expr.left, t, s)).simplify();
 
             // Properties
-            // 1. Frequency Shift: L{e^(at) f(t)} = F(s-a)
-            const checkExp = (term, other) => {
+            // 1. Frequency Shift: L{e^(at)*f(t)} = F(s-a)
+            const checkExp = (term, func) => {
                 if (term instanceof Call && term.funcName === 'exp') {
                     const arg = term.args[0];
+                    // arg = a*t. Extract a.
                     const poly = this._getPolyCoeffs(arg, t);
                     if (poly && poly.maxDeg === 1 && (!poly.coeffs[0] || poly.coeffs[0].value === 0)) {
                         const a = poly.coeffs[1];
-                        const newS = new Sub(s, a).simplify();
-                        const F = this._laplace(other, t, newS);
-                        if (!(F instanceof Call && F.funcName === 'laplace')) return F;
+                        // Transform func(t) -> F(s)
+                        const F = this._laplace(func, t, s);
+                        if (!(F instanceof Call && F.funcName === 'laplace')) {
+                            // Substitute s -> s-a
+                            return F.substitute(s, new Sub(s, a)).simplify();
+                        }
                     }
                 }
                 return null;
             };
-            let shift = checkExp(expr.left, expr.right);
-            if (shift) return shift;
-            shift = checkExp(expr.right, expr.left);
-            if (shift) return shift;
 
-            // 2. Multiplication by t: L{t^n f(t)} = (-1)^n d^n/ds^n F(s)
-            const checkT = (term, other) => {
-                let n = null;
-                if (term instanceof Sym && term.name === t.name) n = new Num(1);
-                if (term instanceof Pow && term.left instanceof Sym && term.left.name === t.name && term.right instanceof Num && Number.isInteger(term.right.value) && term.right.value > 0) {
-                    n = term.right;
+            const shift1 = checkExp(expr.left, expr.right);
+            if (shift1) return shift1;
+            const shift2 = checkExp(expr.right, expr.left);
+            if (shift2) return shift2;
+
+            // 2. Mult by t^n: L{t^n * f(t)} = (-1)^n * d^n/ds^n F(s)
+            const checkT = (term, func) => {
+                let n = 0;
+                if (term instanceof Sym && term.name === t.name) n = 1;
+                else if (term instanceof Pow && term.left instanceof Sym && term.left.name === t.name && term.right instanceof Num && Number.isInteger(term.right.value)) {
+                    n = term.right.value;
                 }
-                if (n) {
-                    const F = this._laplace(other, t, s);
+
+                if (n > 0) {
+                    const F = this._laplace(func, t, s);
                     if (!(F instanceof Call && F.funcName === 'laplace')) {
-                        const order = n.value;
-                        let deriv = F;
-                        for(let i=0; i<order; i++) deriv = deriv.diff(s).simplify();
-                        const sign = (order % 2 === 0) ? new Num(1) : new Num(-1);
-                        return new Mul(sign, deriv).simplify();
+                        // diff(F, s, n)
+                        let dF = F;
+                        for(let i=0; i<n; i++) dF = dF.diff(s).simplify();
+                        const sign = (n % 2 === 0) ? new Num(1) : new Num(-1);
+                        return new Mul(sign, dF).simplify();
                     }
                 }
                 return null;
             };
-            let multT = checkT(expr.left, expr.right);
-            if (multT) return multT;
-            multT = checkT(expr.right, expr.left);
-            if (multT) return multT;
+
+            const multT1 = checkT(expr.left, expr.right);
+            if (multT1) return multT1;
+            const multT2 = checkT(expr.right, expr.left);
+            if (multT2) return multT2;
         }
         if (!this._dependsOn(expr, t)) {
             // L{c} = c/s
@@ -3920,7 +3927,7 @@ and, or, not, xor, int, evalf`;
              const arg = expr.args[0]; // at
              // We need to extract 'a' from 'at'
              const poly = this._getPolyCoeffs(arg, t);
-             if (poly && poly.maxDeg === 1 && poly.coeffs[0] && poly.coeffs[0].value === 0) {
+             if (poly && poly.maxDeg === 1 && (!poly.coeffs[0] || poly.coeffs[0].value === 0)) {
                  const a = poly.coeffs[1];
                  return new Div(new Num(1), new Sub(s, a)).simplify();
              }
@@ -3933,10 +3940,13 @@ and, or, not, xor, int, evalf`;
         if (expr instanceof Call && (expr.funcName === 'sin' || expr.funcName === 'cos')) {
              const arg = expr.args[0];
              let a = new Num(1);
-             if (arg instanceof Mul && arg.right instanceof Sym && arg.right.name === t.name) a = arg.left;
-             else if (arg instanceof Mul && arg.left instanceof Sym && arg.left.name === t.name) a = arg.right;
-             else if (arg instanceof Sym && arg.name === t.name) a = new Num(1);
-             else return new Call('laplace', [expr, t, s]);
+             // handle a*t
+             const poly = this._getPolyCoeffs(arg, t);
+             if (poly && poly.maxDeg === 1 && (!poly.coeffs[0] || poly.coeffs[0].value === 0)) {
+                 a = poly.coeffs[1];
+             } else {
+                 return new Call('laplace', [expr, t, s]);
+             }
 
              const denom = new Add(new Pow(s, new Num(2)), new Pow(a, new Num(2)));
              if (expr.funcName === 'sin') return new Div(a, denom).simplify();
@@ -3978,45 +3988,60 @@ and, or, not, xor, int, evalf`;
                  return num;
              }
 
-             // 1/(s-a)
-             if (den instanceof Sub && den.left instanceof Sym && den.left.name === s.name) {
-                 const a = den.right;
-                 return new Mul(num, new Call('exp', [new Mul(a, t)])).simplify();
-             }
-             if (den instanceof Add && den.left instanceof Sym && den.left.name === s.name) { // 1/(s+a) = 1/(s-(-a))
-                 const a = new Mul(new Num(-1), den.right);
-                 return new Mul(num, new Call('exp', [new Mul(a, t)])).simplify();
+             // 1/(s-a) or 1/(s+a)
+             // Check if den is linear in s
+             const polyDen = this._getPolyCoeffs(den, s);
+             if (polyDen && polyDen.maxDeg === 1) {
+                 // c1*s + c0
+                 // = c1 * (s + c0/c1)
+                 const c1 = polyDen.coeffs[1];
+                 const c0 = polyDen.coeffs[0] || new Num(0);
+                 const a = new Div(c0, c1).simplify(); // a is negative of pole if form is s-p
+                 // form: k / (s+a) -> k * e^(-at)
+                 const k = new Div(num, c1).simplify();
+                 return new Mul(k, new Call('exp', [new Mul(new Num(-1), new Mul(a, t))])).simplify();
              }
 
-             // k/(s^2 + k^2) -> sin(kt)
-             // s/(s^2 + k^2) -> cos(kt)
-             if (den instanceof Add) {
-                 // Check for s^2 + k^2
-                 let sSq = null, kSq = null;
-                 if (den.left instanceof Pow && den.left.left instanceof Sym && den.left.left.name === s.name && den.left.right.value === 2) {
-                     sSq = den.left; kSq = den.right;
-                 } else if (den.right instanceof Pow && den.right.left instanceof Sym && den.right.left.name === s.name && den.right.right.value === 2) {
-                     sSq = den.right; kSq = den.left;
-                 }
+             // s^2 + a^2 (Quadratic Denominator)
+             if (polyDen && polyDen.maxDeg === 2) {
+                 const c2 = polyDen.coeffs[2];
+                 const c1 = polyDen.coeffs[1] || new Num(0);
+                 const c0 = polyDen.coeffs[0] || new Num(0);
 
-                 if (sSq) {
-                     // We have s^2 + kSq.
-                     // Check num.
-                     // Case 1: num depends on s. If num = s, then cos.
-                     if (num instanceof Sym && num.name === s.name) {
-                         const k = new Call('sqrt', [kSq]).simplify();
-                         return new Call('cos', [new Mul(k, t)]).simplify();
+                 // Check if c1 = 0 (Pure quadratic s^2 + k)
+                 if (c1 instanceof Num && c1.value === 0) {
+                     // c2*s^2 + c0
+                     // = c2 * (s^2 + c0/c2)
+                     const kSq = new Div(c0, c2).simplify();
+                     // Check sign of kSq
+                     // If positive -> sin/cos
+                     // If negative -> sinh/cosh (or exp)
+                     // Let's assume kSq > 0 for now or treat symbolically
+                     const k = new Call('sqrt', [kSq]).simplify();
+
+                     // Numerator: As + B
+                     const polyNum = this._getPolyCoeffs(num, s);
+                     let A = new Num(0);
+                     let B = num;
+                     if (polyNum && polyNum.maxDeg <= 1) {
+                         A = polyNum.coeffs[1] || new Num(0);
+                         B = polyNum.coeffs[0] || new Num(0);
                      }
-                     // Case 2: num is const. k/(s^2+k^2) -> sin(kt)
-                     if (!this._dependsOn(num, s)) {
-                         const k = new Call('sqrt', [kSq]).simplify();
-                         // result = num/k * sin(kt)
-                         return new Mul(new Div(num, k), new Call('sin', [new Mul(k, t)])).simplify();
-                     }
+
+                     // Form: (As + B) / (c2(s^2 + k^2))
+                     // = (A/c2) * s/(s^2+k^2) + (B/c2) * 1/(s^2+k^2)
+                     // = (A/c2) * cos(kt) + (B/(c2*k)) * sin(kt)
+
+                     const term1 = new Mul(new Div(A, c2), new Call('cos', [new Mul(k, t)]));
+                     const term2 = new Mul(new Div(B, new Mul(c2, k)), new Call('sin', [new Mul(k, t)]));
+
+                     return new Add(term1, term2).simplify();
                  }
              }
+        }
 
-             // Try Partial Fractions (Fallback)
+        // Try Partial Fraction if Div
+        if (expr instanceof Div) {
              const pf = this._partfrac(expr, s);
              if (!(pf instanceof Call && pf.funcName === 'partfrac') && pf.toString() !== expr.toString()) {
                  return this._ilaplace(pf, s, t);
