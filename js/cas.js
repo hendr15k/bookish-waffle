@@ -2304,7 +2304,84 @@ and, or, not, xor, int, evalf`;
     }
 
     _lu(matrix) {
-        return new Call('lu', [matrix]); // Placeholder
+        if (!(matrix instanceof Vec)) throw new Error("lu requires a matrix");
+        const rows = matrix.elements.length;
+        if (rows === 0) return new Vec([]);
+        const cols = matrix.elements[0].elements.length;
+        if (rows !== cols) throw new Error("lu requires a square matrix");
+
+        // Initialize P, L, U
+        // U starts as copy of A
+        const U_rows = matrix.elements.map(row => [...row.elements]);
+        const L_rows = [];
+        const P_rows = [];
+
+        for (let i = 0; i < rows; i++) {
+            const lRow = [];
+            const pRow = [];
+            for (let j = 0; j < rows; j++) {
+                lRow.push(new Num(i === j ? 1 : 0));
+                pRow.push(new Num(i === j ? 1 : 0));
+            }
+            L_rows.push(lRow);
+            P_rows.push(pRow);
+        }
+
+        for (let k = 0; k < rows; k++) {
+            // Pivot strategy: Find first non-zero element in column k from k to rows-1
+            let pivotIdx = k;
+            let foundPivot = false;
+
+            // Check current diagonal first
+            let val = U_rows[k][k].evaluateNumeric();
+            if (isNaN(val) || Math.abs(val) > 1e-10) {
+                pivotIdx = k;
+                foundPivot = true;
+            } else {
+                // Search down
+                for (let i = k + 1; i < rows; i++) {
+                    val = U_rows[i][k].evaluateNumeric();
+                    if (isNaN(val) || Math.abs(val) > 1e-10) {
+                        pivotIdx = i;
+                        foundPivot = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!foundPivot) continue;
+
+            // Swap rows in U, P
+            // Swap columns 0..k-1 in L (vectors before diagonal)
+            if (pivotIdx !== k) {
+                [U_rows[k], U_rows[pivotIdx]] = [U_rows[pivotIdx], U_rows[k]];
+                [P_rows[k], P_rows[pivotIdx]] = [P_rows[pivotIdx], P_rows[k]];
+
+                for (let j = 0; j < k; j++) {
+                    [L_rows[k][j], L_rows[pivotIdx][j]] = [L_rows[pivotIdx][j], L_rows[k][j]];
+                }
+            }
+
+            const pivot = U_rows[k][k];
+
+            for (let i = k + 1; i < rows; i++) {
+                // factor = U[i][k] / U[k][k]
+                const factor = new Div(U_rows[i][k], pivot).simplify();
+                L_rows[i][k] = factor;
+                U_rows[i][k] = new Num(0); // Explicitly zero out
+
+                for (let j = k + 1; j < rows; j++) {
+                    // U[i][j] = U[i][j] - factor * U[k][j]
+                    U_rows[i][j] = new Sub(U_rows[i][j], new Mul(factor, U_rows[k][j])).simplify();
+                }
+            }
+        }
+
+        const L = new Vec(L_rows.map(r => new Vec(r)));
+        const U = new Vec(U_rows.map(r => new Vec(r)));
+        const P = new Vec(P_rows.map(r => new Vec(r)));
+
+        return new Vec([L, U, P]);
     }
 
     _qr(matrix) {
@@ -2339,7 +2416,38 @@ and, or, not, xor, int, evalf`;
     }
 
     _cholesky(matrix) {
-        return new Call('cholesky', [matrix]);
+        if (!(matrix instanceof Vec)) throw new Error("cholesky requires a matrix");
+        const rows = matrix.elements.length;
+        if (rows === 0) return new Vec([]);
+        const cols = matrix.elements[0].elements.length;
+        if (rows !== cols) throw new Error("cholesky requires a square matrix");
+
+        const L = [];
+        for (let i = 0; i < rows; i++) {
+            L.push(new Array(rows).fill(new Num(0)));
+        }
+
+        for (let i = 0; i < rows; i++) {
+            for (let j = 0; j <= i; j++) {
+                let sum = new Num(0);
+                for (let k = 0; k < j; k++) {
+                    sum = new Add(sum, new Mul(L[i][k], L[j][k])).simplify();
+                }
+
+                if (i === j) {
+                    // Diagonal
+                    // L[i][i] = sqrt( A[i][i] - sum )
+                    const diff = new Sub(matrix.elements[i].elements[i], sum).simplify();
+                    L[i][j] = new Call('sqrt', [diff]).simplify();
+                } else {
+                    // L[i][j] = (1/L[j][j]) * (A[i][j] - sum)
+                    const diff = new Sub(matrix.elements[i].elements[j], sum).simplify();
+                    L[i][j] = new Div(diff, L[j][j]).simplify();
+                }
+            }
+        }
+
+        return new Vec(L.map(r => new Vec(r)));
     }
 
     _desolve(eq, depVar) {
