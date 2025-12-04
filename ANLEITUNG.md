@@ -158,6 +158,7 @@ Diese Befehle können Sie direkt im "Calculator" oder in der Eingabezeile des De
 ### Lösen
 *   `solve(eq, x)`: Löst eine Gleichung nach $x$.
 *   `desolve(eq, y)`: Löst einfache Differentialgleichungen.
+*   `desolve([eq1, eq2], [y1, y2])`: Löst lineare homogene Differentialgleichungssysteme mit konstanten Koeffizienten (z.B. `desolve([y'=z, z'=-y], [y, z])`).
 
 ### Lineare Algebra
 Matrizen werden als Listen von Listen geschrieben: `[[1,2],[3,4]]`.

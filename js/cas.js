@@ -1236,7 +1236,43 @@ and, or, not, xor, int, evalf`;
         expr = expr.expand().simplify();
 
         try {
-            // Attempt linear solve a*x + b = 0
+            // Try polynomial extraction first
+            const poly = this._getPolyCoeffs(expr, varNode);
+            if (poly) {
+                if (poly.maxDeg === 1) {
+                    // ax + b = 0
+                    const a = poly.coeffs[1] || new Num(0);
+                    const b = poly.coeffs[0] || new Num(0);
+                    if (!(a instanceof Num && a.value === 0)) {
+                        return new Div(new Mul(new Num(-1), b), a).simplify();
+                    }
+                } else if (poly.maxDeg === 2) {
+                    // ax^2 + bx + c = 0
+                    const A = poly.coeffs[2];
+                    const B = poly.coeffs[1] || new Num(0);
+                    const C = poly.coeffs[0] || new Num(0);
+
+                    if (!(A instanceof Num && A.value === 0)) {
+                        const discriminant = new Sub(new Pow(B, new Num(2)), new Mul(new Num(4), new Mul(A, C))).simplify();
+                        let sqrtDisc;
+
+                        if (discriminant instanceof Num && discriminant.value < 0) {
+                             // Complex roots: i * sqrt(|D|)
+                             const absDisc = new Num(-discriminant.value);
+                             sqrtDisc = new Mul(new Sym('i'), new Call('sqrt', [absDisc])).simplify();
+                        } else {
+                             sqrtDisc = new Call("sqrt", [discriminant]);
+                        }
+
+                        const sol1 = new Div(new Add(new Mul(new Num(-1), B), sqrtDisc), new Mul(new Num(2), A));
+                        const sol2 = new Div(new Sub(new Mul(new Num(-1), B), sqrtDisc), new Mul(new Num(2), A));
+
+                        return new Call("set", [sol1.simplify(), sol2.simplify()]);
+                    }
+                }
+            }
+
+            // Attempt linear solve a*x + b = 0 via differentiation if poly extraction failed (e.g. non-polynomial terms that simplify)
             // a = derivative w.r.t varNode
             const a = expr.diff(varNode).simplify();
             const b = expr.substitute(varNode, new Num(0)).simplify();
@@ -1246,33 +1282,6 @@ and, or, not, xor, int, evalf`;
 
             if (diff instanceof Num && diff.value === 0 && !(a instanceof Num && a.value === 0)) {
                 return new Div(new Mul(new Num(-1), b), a).simplify();
-            }
-
-            // Fallback to quadratic check using substitution for c (b is already c)
-            const f1 = expr.substitute(varNode, new Num(1)).simplify();
-            const c = b;
-            const fm1 = expr.substitute(varNode, new Num(-1)).simplify();
-
-            const f1_c = new Sub(f1, c).simplify();
-            const fm1_c = new Sub(fm1, c).simplify();
-            const twoA = new Add(f1_c, fm1_c).simplify();
-            const A = new Div(twoA, new Num(2)).simplify();
-
-            const B = new Sub(f1_c, A).simplify();
-
-            const quadRecon = new Add(new Add(new Mul(A, new Pow(varNode, new Num(2))), new Mul(B, varNode)), c);
-            const diffQuad = new Sub(expr, quadRecon).expand().simplify();
-
-            // console.log("Solve debug:", expr.toString(), "Recon:", quadRecon.toString(), "Diff:", diffQuad.toString());
-
-            if (diffQuad instanceof Num && Math.abs(diffQuad.value) < 1e-10 && !(A instanceof Num && A.value === 0)) {
-                const discriminant = new Sub(new Pow(B, new Num(2)), new Mul(new Num(4), new Mul(A, c))).simplify();
-                const sqrtDisc = new Call("sqrt", [discriminant]); // Use sqrt instead of Pow(0.5)
-
-                const sol1 = new Div(new Add(new Mul(new Num(-1), B), sqrtDisc), new Mul(new Num(2), A));
-                const sol2 = new Div(new Sub(new Mul(new Num(-1), B), sqrtDisc), new Mul(new Num(2), A));
-
-                return new Call("set", [sol1.simplify(), sol2.simplify()]);
             }
 
         } catch (e) {
@@ -1512,7 +1521,15 @@ and, or, not, xor, int, evalf`;
         for (let r = 0; r < rows; r++) {
             if (cols <= lead) break;
             let i = r;
-            while (M[i][lead].evaluateNumeric() === 0) {
+
+            // Find pivot (non-zero)
+            const isZero = (val) => {
+                 val = val.simplify();
+                 if (val instanceof Num && val.value === 0) return true;
+                 return false; // Symbolic or non-zero number is treated as non-zero
+            };
+
+            while (isZero(M[i][lead])) {
                 i++;
                 if (rows === i) {
                     i = r;
@@ -2658,6 +2675,11 @@ and, or, not, xor, int, evalf`;
     }
 
     _desolve(eq, depVar) {
+        // Handle Systems: eq is Vec, depVar is Vec
+        if (eq instanceof Vec && depVar instanceof Vec) {
+            return this._desolveSystem(eq, depVar);
+        }
+
         // Handle depVar being y or y(x)
         if (depVar instanceof Call) {
             // Assume format y(x)
@@ -2998,6 +3020,262 @@ and, or, not, xor, int, evalf`;
 
         // Generic failure
         return new Call('desolve', [eq, depVar]);
+    }
+
+    _desolveSystem(eqs, vars) {
+        // Linear System X' = AX + B
+        // We assume vars contains y1(t), y2(t)...
+        // Independent variable t is implicit in derivatives
+
+        const n = eqs.elements.length;
+        if (vars.elements.length !== n) throw new Error("Number of equations must match number of variables");
+
+        // 1. Identify independent variable t
+        let t = null;
+        const findT = (node) => {
+            if (node instanceof Call && node.funcName === 'diff') {
+                if (node.args.length > 1) {
+                    const v = node.args[1];
+                    if (!t) t = v;
+                    else if (t.name !== v.name) throw new Error("Multiple independent variables found");
+                }
+            }
+            if (node instanceof Call) node.args.forEach(findT);
+            if (node instanceof BinaryOp) { findT(node.left); findT(node.right); }
+        };
+
+        eqs.elements.forEach(eq => {
+             if (eq instanceof Eq) {
+                 findT(eq.left); findT(eq.right);
+             } else {
+                 findT(eq);
+             }
+        });
+
+        if (!t) t = new Sym('t'); // Default
+
+        // 2. Normalize equations to X' - ... = 0 and extract A
+        // We expect form: diff(yi, t) = ...
+        // Or linear combinations.
+        // Let's assume standard form: diff(y_i, t) = Sum(a_ij * y_j) + f_i(t)
+
+        const A_rows = [];
+        const B_vec = [];
+
+        // Map variables to simple symbols for analysis
+        // And create a substitution map for the expressions
+        const varSyms = [];
+        const subMap = []; // { from: Expr, to: Sym }
+
+        vars.elements.forEach(v => {
+            let sym;
+            if (v instanceof Call) sym = new Sym(v.funcName);
+            else if (v instanceof Sym) sym = v;
+            else throw new Error("Variables must be symbols or functions");
+
+            varSyms.push(sym);
+            // Replace y(t) with y_sym
+            // We need deep substitution logic or just use substitute
+            subMap.push({ from: v, to: sym });
+        });
+
+        // Helper to substitute all dependent vars in an expression
+        const toPolyForm = (expr) => {
+             let res = expr;
+             // We must be careful with order if names overlap, but usually ok.
+             // We use a custom recursive replacement to handle Call vs Sym
+             const replace = (node) => {
+                 // Check if node matches any 'from'
+                 for(let k=0; k<n; k++) {
+                     const mapping = subMap[k];
+                     const f = mapping.from;
+                     if (f instanceof Call && node instanceof Call && f.funcName === node.funcName) return mapping.to;
+                     if (f instanceof Sym && node instanceof Sym && f.name === node.name) return mapping.to;
+                 }
+                 if (node instanceof BinaryOp) return new node.constructor(replace(node.left), replace(node.right));
+                 if (node instanceof Call) return new Call(node.funcName, node.args.map(replace));
+                 if (node instanceof Not) return new Not(replace(node.arg));
+                 return node;
+             };
+             return replace(res);
+        };
+
+        // Construct matrix A
+        // We assume equations are ordered same as vars: diff(vars[i]) = ...
+        // If not, we should match them.
+
+        // Find which equation corresponds to which variable's derivative
+        const orderedRHS = new Array(n).fill(null);
+
+        for(let i=0; i<n; i++) {
+            let eq = eqs.elements[i];
+            if (eq instanceof Eq) {
+                // Check LHS
+                let lhs = eq.left;
+                let rhs = eq.right;
+
+                // If LHS is diff(vars[k], t)
+                let foundK = -1;
+                for(let k=0; k<n; k++) {
+                     const v = vars.elements[k];
+                     // diff(v, t)
+                     // v might be y(t) or y
+                     let isMatch = false;
+                     if (lhs instanceof Call && lhs.funcName === 'diff') {
+                          const target = lhs.args[0]; // y(t)
+                          // Compare target with v
+                          if (target instanceof Call && v instanceof Call && target.funcName === v.funcName) isMatch = true;
+                          if (target instanceof Sym && v instanceof Sym && target.name === v.name) isMatch = true;
+                     }
+                     if (isMatch) {
+                         foundK = k;
+                         break;
+                     }
+                }
+
+                if (foundK !== -1) {
+                    orderedRHS[foundK] = rhs;
+                } else {
+                    // Maybe RHS has derivative? x = diff(y) - y -> diff(y) = x+y
+                    // For now, require explicit form.
+                    // Or maybe it was parsed as diff(y,t) - z = 0
+                    // In that case eq is Sub.
+                    // But we normalized to Eq in step 2?
+                    // No, step 2 logic was inside the loop but I removed it in search block replacement.
+                    // Let's assume user gives explicit Eq.
+                }
+            }
+        }
+
+        // Check if we found all
+        for(let i=0; i<n; i++) {
+            if (!orderedRHS[i]) {
+                // Try fallback: maybe index i corresponds to i
+                let eq = eqs.elements[i];
+                if (eq instanceof Eq) orderedRHS[i] = eq.right;
+                else throw new Error("System must be explicit ODEs");
+            }
+        }
+
+        for(let i=0; i<n; i++) {
+            let rhs = orderedRHS[i];
+            // Convert to polynomial form in terms of varSyms
+            const polyRHS = toPolyForm(rhs).expand().simplify();
+
+            const row = [];
+            for(let j=0; j<n; j++) {
+                // Coeff of varSyms[j]
+                const coeff = polyRHS.diff(varSyms[j]).simplify();
+                // Check if coeff depends on vars
+                for(const v of varSyms) {
+                    if (this._dependsOn(coeff, v)) throw new Error("Non-linear system not supported");
+                }
+                row.push(coeff);
+            }
+            A_rows.push(new Vec(row));
+        }
+
+        const A = new Vec(A_rows);
+
+        // Check for non-homogeneous terms: Remainder = RHS - A*Vars
+        // We need to substitute varSyms back or just check polyRHS - sum(coeff*var)
+        for(let i=0; i<n; i++) {
+            let rhs = orderedRHS[i];
+            const polyRHS = toPolyForm(rhs).expand().simplify();
+
+            // Construct linear part
+            let linearPart = new Num(0);
+            for(let j=0; j<n; j++) {
+                const coeff = A_rows[i].elements[j];
+                linearPart = new Add(linearPart, new Mul(coeff, varSyms[j])).simplify();
+            }
+
+            const remainder = new Sub(polyRHS, linearPart).expand().simplify();
+            if (!(remainder instanceof Num && remainder.value === 0)) {
+                // Check if remainder depends on t (non-homogeneous) or just clean zero check failure
+                // If it depends on t, throw error
+                if (this._dependsOn(remainder, t)) {
+                    throw new Error("Non-homogeneous systems not supported yet");
+                }
+                // If it's a constant non-zero, it's also non-homogeneous (X' = AX + B)
+                if (Math.abs(remainder.evaluateNumeric()) > 1e-9) {
+                     throw new Error("Non-homogeneous systems not supported yet");
+                }
+            }
+        }
+
+        // Solve X' = AX using eigenvalues
+        // X(t) = c1 * v1 * exp(lambda1 * t) + ...
+        try {
+            const evals = this._eigenvals(A);
+
+            // Get unique eigenvalues
+            const lambdas = [];
+            if (evals instanceof Vec) {
+                 // Deduplicate eigenvalues
+                 const seen = new Set();
+                 evals.elements.forEach(l => {
+                     const s = l.toString();
+                     if (!seen.has(s)) {
+                         seen.add(s);
+                         lambdas.push(l);
+                     }
+                 });
+            } else {
+                 lambdas.push(evals);
+            }
+
+            // For each lambda, find eigenvector
+            const terms = [];
+
+            let solIndex = 1;
+            for(const lambda of lambdas) {
+                // Kernel of (A - lambda*I)
+                const rows = n;
+                const cols = n;
+                const M_minus_lambdaI = [];
+                for(let r=0; r<rows; r++) {
+                    const mRow = [];
+                    for(let c=0; c<cols; c++) {
+                        let val = A.elements[r].elements[c];
+                        if (r === c) val = new Sub(val, lambda).simplify();
+                        mRow.push(val);
+                    }
+                    M_minus_lambdaI.push(new Vec(mRow));
+                }
+                const mat = new Vec(M_minus_lambdaI);
+                const kern = this._kernel(mat);
+
+                for(const v of kern.elements) {
+                    // Term: C_i * v * exp(lambda * t)
+                    const C = new Sym(`C${solIndex++}`);
+                    const exp = new Call('exp', [new Mul(lambda, t)]).simplify();
+                    const termVec = [];
+                    for(const el of v.elements) {
+                         termVec.push(new Mul(C, new Mul(el, exp)).simplify());
+                    }
+                    terms.push(new Vec(termVec));
+                }
+            }
+
+            if (terms.length < n) throw new Error("Defective matrix (Jordan form) not supported");
+
+            // Sum up terms to get X(t)
+            // X(t) = term1 + term2 + ...
+            const finalSol = [];
+            for(let i=0; i<n; i++) {
+                let sum = new Num(0);
+                for(const term of terms) {
+                    sum = new Add(sum, term.elements[i]).simplify();
+                }
+                finalSol.push(sum);
+            }
+            return new Vec(finalSol);
+
+        } catch (e) {
+            console.error(e);
+            return new Call('desolve', [eqs, vars]);
+        }
     }
 
     _factorRational(coeffs, maxDeg, varNode) {
