@@ -218,31 +218,6 @@ function polyDiv(numerator, denominator) {
 
     const Q = new Array(maxDeg).fill(0);
     let carry = 0;
-    for (let i = maxDeg; i > 0; i--) {
-        const val = P[i] + carry; // Wait, standard synthetic division:
-        // Divisor is (x - c).
-        // Coeffs: a_n, a_{n-1}, ... a_0.
-        // b_{n-1} = a_n
-        // b_{n-2} = a_{n-1} + c * b_{n-1}
-        // ...
-        // b_0 = a_1 + c * b_1
-        // R = a_0 + c * b_0
-
-        // My P array is P[0]=const, P[1]=x, etc.
-        // So P[maxDeg] corresponds to a_n.
-
-        // Let's use indices corresponding to power.
-        // Q has degree maxDeg - 1.
-        // Q[maxDeg - 1] = P[maxDeg]
-        // Q[k] = P[k+1] + c * Q[k+1]  <-- Wait, usually it propagates down.
-
-        // Example: (x^2 - 1) / (x - 1). c=1. P=[ -1, 0, 1 ]. maxDeg=2.
-        // Q degree 1.
-        // Q[1] = P[2] = 1.
-        // Q[0] = P[1] + c*Q[1] = 0 + 1*1 = 1.
-        // R = P[0] + c*Q[0] = -1 + 1*1 = 0. Correct.
-    }
-
     // Correct loop
     for (let i = maxDeg - 1; i >= 0; i--) {
         const p_next = P[i+1];
@@ -944,14 +919,6 @@ class Div extends BinaryOp {
         // Check if num = k * denomDiff
         // k = num / denomDiff
         const ratio = new Div(this.left, denomDiff).simplify();
-        // Check if ratio does not depend on varName
-        // reused dependsOn from above or check manually
-        // Since we are in the same scope, we cannot redeclare 'dependsOn' with const.
-        // We can just call the previous one if it's hoisted? No, it's const.
-        // But we are in the same function 'integrate'.
-        // Wait, the previous 'dependsOn' was inside an if block?
-        // No, look at line 849. It is inside `if (!dependsOn(this.left, varName)) { ... }` block?
-        // Let's check the indentation/scope in the file read.
 
         const dependsOn2 = (expr, v) => {
             if (expr instanceof Sym) return expr.name === v.name;
@@ -1956,11 +1923,87 @@ class BooleanEq extends BinaryOp {
     substitute(varName, value) { return new BooleanEq(this.left.substitute(varName, value), this.right.substitute(varName, value)); }
 }
 
+class If extends Expr {
+    constructor(condition, trueBlock, falseBlock) {
+        super();
+        this.condition = condition;
+        this.trueBlock = trueBlock;
+        this.falseBlock = falseBlock;
+    }
+    toString() {
+        let s = `if (${this.condition}) { ${this.trueBlock} }`;
+        if (this.falseBlock) s += ` else { ${this.falseBlock} }`;
+        return s;
+    }
+    simplify() {
+        return new If(this.condition.simplify(), this.trueBlock.simplify(), this.falseBlock ? this.falseBlock.simplify() : null);
+    }
+    toLatex() {
+        let s = `\\text{if } ${this.condition.toLatex()} \\text{ then } \\left\\{ ${this.trueBlock.toLatex()} \\right\\}`;
+        if (this.falseBlock) s += ` \\text{ else } \\left\\{ ${this.falseBlock.toLatex()} \\right\\}`;
+        return s;
+    }
+}
+
+class While extends Expr {
+    constructor(condition, body) {
+        super();
+        this.condition = condition;
+        this.body = body;
+    }
+    toString() { return `while (${this.condition}) { ${this.body} }`; }
+    simplify() { return new While(this.condition.simplify(), this.body.simplify()); }
+    toLatex() { return `\\text{while } ${this.condition.toLatex()} \\text{ do } \\left\\{ ${this.body.toLatex()} \\right\\}`; }
+}
+
+class For extends Expr {
+    constructor(init, condition, step, body) {
+        super();
+        this.init = init;
+        this.condition = condition;
+        this.step = step;
+        this.body = body;
+    }
+    toString() { return `for (${this.init}; ${this.condition}; ${this.step}) { ${this.body} }`; }
+    simplify() {
+        return new For(
+            this.init ? this.init.simplify() : null,
+            this.condition ? this.condition.simplify() : null,
+            this.step ? this.step.simplify() : null,
+            this.body.simplify()
+        );
+    }
+    toLatex() { return `\\text{for } ...`; }
+}
+
+class Return extends Expr {
+    constructor(value) {
+        super();
+        this.value = value;
+    }
+    toString() { return `return ${this.value}`; }
+    simplify() { return new Return(this.value.simplify()); }
+    toLatex() { return `\\text{return } ${this.value.toLatex()}`; }
+}
+
+class Break extends Expr {
+    toString() { return `break`; }
+    simplify() { return this; }
+    toLatex() { return `\\text{break}`; }
+}
+
+class Continue extends Expr {
+    toString() { return `continue`; }
+    simplify() { return this; }
+    toLatex() { return `\\text{continue}`; }
+}
+
 // Export classes for Global/CommonJS environments
 (function() {
     const exports = {
         Expr, Num, Sym, BinaryOp, Add, Sub, Mul, Div, Pow, Call, Assignment, Eq, Vec, FunctionDef, Block, toExpr,
-        And, Or, Xor, Not, Mod, Neq, Lt, Gt, Le, Ge, At, BooleanEq
+        And, Or, Xor, Not, Mod, Neq, Lt, Gt, Le, Ge, At, BooleanEq,
+        If, While, For, Return, Break, Continue
     };
     if (typeof globalThis !== 'undefined') {
         Object.assign(globalThis, exports);
