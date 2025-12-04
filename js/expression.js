@@ -333,6 +333,11 @@ class Add extends BinaryOp {
             return new Sub(l, r.right).simplify();
         }
 
+        // (-x) + x -> 0
+        if (l instanceof Mul && l.left instanceof Num && l.left.value === -1 && l.right.toString() === r.toString()) {
+            return new Num(0);
+        }
+
         if (l.toString() === r.toString()) return new Mul(new Num(2), l);
 
         // Pythagorean Identity: sin(x)^2 + cos(x)^2 -> 1
@@ -568,7 +573,9 @@ class Mul extends BinaryOp {
         const l = this.left.expand();
         const r = this.right.expand();
         if (l instanceof Add) return new Add(new Mul(l.left, r).expand(), new Mul(l.right, r).expand());
+        if (l instanceof Sub) return new Sub(new Mul(l.left, r).expand(), new Mul(l.right, r).expand());
         if (r instanceof Add) return new Add(new Mul(l, r.left).expand(), new Mul(l, r.right).expand());
+        if (r instanceof Sub) return new Sub(new Mul(l, r.left).expand(), new Mul(l, r.right).expand());
         return new Mul(l, r);
     }
     toLatex() {
@@ -638,6 +645,15 @@ class Div extends BinaryOp {
         if (r instanceof Num && r.value === 1) return l;
         if (r instanceof Sym && (r.name === "Infinity" || r.name === "infinity") && l instanceof Num) return new Num(0); // Finite / Infinity -> 0
         if (l.toString() === r.toString()) return new Num(1);
+
+        // Complex 1/i -> -i
+        if (l instanceof Num && l.value === 1 && r instanceof Sym && r.name === 'i') {
+            return new Mul(new Num(-1), new Sym('i'));
+        }
+        // Complex 1/-i -> i
+        if (l instanceof Num && l.value === 1 && r instanceof Mul && r.left instanceof Num && r.left.value === -1 && r.right instanceof Sym && r.right.name === 'i') {
+            return new Sym('i');
+        }
 
         // Cancellation: (a * b) / a -> b
         if (l instanceof Mul) {
@@ -811,6 +827,11 @@ class Pow extends BinaryOp {
         if (r instanceof Num && r.value === 0) return new Num(1);
         if (r instanceof Num && r.value === 1) return l;
         if (l instanceof Num && r instanceof Num) return new Num(Math.pow(l.value, r.value));
+
+        // Simplify (-x)^even -> x^even
+        if (l instanceof Mul && l.left instanceof Num && l.left.value === -1 && r instanceof Num && Number.isInteger(r.value) && r.value % 2 === 0) {
+             return new Pow(l.right, r).simplify();
+        }
 
         // Simplify roots: (x^a)^(1/b) -> x^(a/b) ?
         // Simplification rule: (a^b)^c = a^(b*c)
