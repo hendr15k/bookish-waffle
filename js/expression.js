@@ -769,6 +769,21 @@ class Div extends BinaryOp {
                  if (this.right instanceof Add) return new Mul(c, new Call("ln", [this.right]));
                  if (this.right instanceof Sub) return new Mul(new Mul(new Num(-1), c), new Call("ln", [this.right]));
              }
+
+             // Denom k * (x +/- b) or k * x
+             if (this.right instanceof Mul && isConstant(this.right.left)) {
+                 const k = this.right.left;
+                 const term = this.right.right;
+                 // c / (k * term) -> (c/k) * integrate(1/term)
+                 const newCoeff = new Div(c, k).simplify();
+                 return new Mul(newCoeff, new Div(new Num(1), term).integrate(varName));
+             }
+             if (this.right instanceof Mul && isConstant(this.right.right)) {
+                 const k = this.right.right;
+                 const term = this.right.left;
+                 const newCoeff = new Div(c, k).simplify();
+                 return new Mul(newCoeff, new Div(new Num(1), term).integrate(varName));
+             }
         }
 
         // integrate(1/x^n, x)
