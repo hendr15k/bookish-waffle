@@ -13,23 +13,121 @@ class Expr {
     expand() {
         // Expand properties like log(a*b) -> log(a) + log(b)
         // Only if user explicitly calls expand()
-        if (this.funcName === 'log' || this.funcName === 'ln') {
-            const arg = this.args[0].expand();
-            if (arg instanceof Mul) {
-                // log(a*b) = log(a) + log(b)
-                return new Add(new Call(this.funcName, [arg.left]), new Call(this.funcName, [arg.right])).expand();
-            }
-            if (arg instanceof Div) {
-                // log(a/b) = log(a) - log(b)
-                return new Sub(new Call(this.funcName, [arg.left]), new Call(this.funcName, [arg.right])).expand();
-            }
-            if (arg instanceof Pow) {
-                // log(a^b) = b * log(a)
-                return new Mul(arg.right, new Call(this.funcName, [arg.left])).expand();
-            }
-        }
         if (this.args) {
-            return new Call(this.funcName, this.args.map(a => a.expand()));
+            const simpleArgs = this.args.map(a => a.expand());
+
+            if (this.funcName === 'log' || this.funcName === 'ln') {
+                const arg = simpleArgs[0];
+                if (arg instanceof Mul) {
+                    // log(a*b) = log(a) + log(b)
+                    return new Add(new Call(this.funcName, [arg.left]), new Call(this.funcName, [arg.right])).expand();
+                }
+                if (arg instanceof Div) {
+                    // log(a/b) = log(a) - log(b)
+                    return new Sub(new Call(this.funcName, [arg.left]), new Call(this.funcName, [arg.right])).expand();
+                }
+                if (arg instanceof Pow) {
+                    // log(a^b) = b * log(a)
+                    return new Mul(arg.right, new Call(this.funcName, [arg.left])).expand();
+                }
+            }
+
+            // Trigonometric Expansion
+            if (this.funcName === 'sin') {
+                const arg = simpleArgs[0];
+                // sin(2*x) -> 2*sin(x)*cos(x)
+                if (arg instanceof Mul) {
+                    if (arg.left instanceof Num && arg.left.value === 2) {
+                        return new Mul(new Num(2), new Mul(new Call('sin', [arg.right]), new Call('cos', [arg.right]))).expand();
+                    }
+                    if (arg.right instanceof Num && arg.right.value === 2) {
+                        return new Mul(new Num(2), new Mul(new Call('sin', [arg.left]), new Call('cos', [arg.left]))).expand();
+                    }
+                }
+                // sin(a+b) -> sin(a)cos(b) + cos(a)sin(b)
+                if (arg instanceof Add) {
+                    const a = arg.left;
+                    const b = arg.right;
+                    return new Add(
+                        new Mul(new Call('sin', [a]), new Call('cos', [b])),
+                        new Mul(new Call('cos', [a]), new Call('sin', [b]))
+                    ).expand();
+                }
+                // sin(a-b) -> sin(a)cos(b) - cos(a)sin(b)
+                if (arg instanceof Sub) {
+                    const a = arg.left;
+                    const b = arg.right;
+                    return new Sub(
+                        new Mul(new Call('sin', [a]), new Call('cos', [b])),
+                        new Mul(new Call('cos', [a]), new Call('sin', [b]))
+                    ).expand();
+                }
+            }
+
+            if (this.funcName === 'cos') {
+                const arg = simpleArgs[0];
+                // cos(2*x) -> cos(x)^2 - sin(x)^2
+                if (arg instanceof Mul) {
+                    if (arg.left instanceof Num && arg.left.value === 2) {
+                        return new Sub(new Pow(new Call('cos', [arg.right]), new Num(2)), new Pow(new Call('sin', [arg.right]), new Num(2))).expand();
+                    }
+                    if (arg.right instanceof Num && arg.right.value === 2) {
+                        return new Sub(new Pow(new Call('cos', [arg.left]), new Num(2)), new Pow(new Call('sin', [arg.left]), new Num(2))).expand();
+                    }
+                }
+                // cos(a+b) -> cos(a)cos(b) - sin(a)sin(b)
+                if (arg instanceof Add) {
+                    const a = arg.left;
+                    const b = arg.right;
+                    return new Sub(
+                        new Mul(new Call('cos', [a]), new Call('cos', [b])),
+                        new Mul(new Call('sin', [a]), new Call('sin', [b]))
+                    ).expand();
+                }
+                // cos(a-b) -> cos(a)cos(b) + sin(a)sin(b)
+                if (arg instanceof Sub) {
+                    const a = arg.left;
+                    const b = arg.right;
+                    return new Add(
+                        new Mul(new Call('cos', [a]), new Call('cos', [b])),
+                        new Mul(new Call('sin', [a]), new Call('sin', [b]))
+                    ).expand();
+                }
+            }
+
+            if (this.funcName === 'tan') {
+                const arg = simpleArgs[0];
+                // tan(2*x) -> 2tan(x)/(1-tan(x)^2)
+                if (arg instanceof Mul) {
+                    if ((arg.left instanceof Num && arg.left.value === 2) || (arg.right instanceof Num && arg.right.value === 2)) {
+                        const x = (arg.left instanceof Num) ? arg.right : arg.left;
+                        return new Div(
+                            new Mul(new Num(2), new Call('tan', [x])),
+                            new Sub(new Num(1), new Pow(new Call('tan', [x]), new Num(2)))
+                        ).expand();
+                    }
+                }
+                // tan(a+b) -> (tan(a)+tan(b))/(1-tan(a)tan(b))
+                if (arg instanceof Add) {
+                    const a = arg.left;
+                    const b = arg.right;
+                    return new Div(
+                        new Add(new Call('tan', [a]), new Call('tan', [b])),
+                        new Sub(new Num(1), new Mul(new Call('tan', [a]), new Call('tan', [b])))
+                    ).expand();
+                }
+                // tan(a-b) -> (tan(a)-tan(b))/(1+tan(a)tan(b))
+                if (arg instanceof Sub) {
+                    const a = arg.left;
+                    const b = arg.right;
+                    return new Div(
+                        new Sub(new Call('tan', [a]), new Call('tan', [b])),
+                        new Add(new Num(1), new Mul(new Call('tan', [a]), new Call('tan', [b])))
+                    ).expand();
+                }
+            }
+
+            return new Call(this.funcName, simpleArgs);
         }
         return this;
     }
