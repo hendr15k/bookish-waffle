@@ -4099,7 +4099,7 @@ and, or, not, xor, int, evalf`;
                  u = expr;
                  dv = new Num(1);
              } else {
-                 return null;
+                 return new Call("integrate", [expr, varNode]);
              }
         }
 
