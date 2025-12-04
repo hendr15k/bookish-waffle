@@ -1625,10 +1625,20 @@ and, or, not, xor, int, evalf`;
                         p.maxDeg = newMaxDeg;
                     }
 
-                    // Reconstruct reduced polynomial to solve/analyze
+                    // 4. Higher Order Factorization (Rational Root Theorem)
+                    if (p.maxDeg > 2) {
+                         const ratRes = this._factorRational(p.coeffs, p.maxDeg, x);
+                         if (ratRes.found) {
+                             factors.push(...ratRes.factors);
+                             p.coeffs = ratRes.newCoeffs;
+                             p.maxDeg = ratRes.newMaxDeg;
+                         }
+                    }
+
+                    // Reconstruct reduced polynomial to solve/analyze (potentially reduced by step 4)
                     let reducedPoly = this._poly2symb(this._coeffsToVec(p.coeffs, p.maxDeg), x);
 
-                    // 4. Factor Quadratics
+                    // 5. Factor Quadratics or remainders
                     if (p.maxDeg === 2) {
                         const a = p.coeffs[2];
                         const rootsRes = this._solve(reducedPoly, x);
@@ -1642,23 +1652,15 @@ and, or, not, xor, int, evalf`;
                         if (roots.length > 0) {
                             factors.push(a); // leading coeff
                             for(const r of roots) {
-                                // Check if root is "nice" (Num or simple Fraction)
-                                // If it's a complicated surd, maybe we don't want to factor it unless requested?
-                                // Standard factor usually does rational factorization.
-                                // But let's allow factoring into (x - sqrt(2)) if solve found it.
                                 factors.push(new Sub(x, r).simplify());
                             }
-                            // Check if we found all roots. Quadratic should have 2.
-                            // If discriminant is 0, solve returns 1 root? _solve currently returns set of 2 identical if disc=0?
-                            // My _solve logic: if diffQuad is small, returns set[sol1, sol2].
-                            // If disc=0, sol1=sol2.
                         } else {
                             factors.push(reducedPoly);
                         }
                     } else if (p.maxDeg === 1) {
                         factors.push(reducedPoly);
                     } else if (p.maxDeg > 2) {
-                        // TODO: Higher order factorization (Rational Root Theorem, etc.)
+                        // Still > 2 implies no rational roots found, or irreducible cubic+
                         factors.push(reducedPoly);
                     } else if (p.maxDeg === 0) {
                          if (!(reducedPoly instanceof Num && reducedPoly.value === 1)) {
@@ -1666,7 +1668,7 @@ and, or, not, xor, int, evalf`;
                          }
                     }
 
-                    // 5. Combine factors
+                    // 6. Combine factors
                     if (factors.length === 0) return new Num(1);
                     let result = factors[0];
                     for(let i=1; i<factors.length; i++) {
@@ -2427,6 +2429,115 @@ and, or, not, xor, int, evalf`;
 
         // Generic failure
         return new Call('desolve', [eq, depVar]);
+    }
+
+    _factorRational(coeffs, maxDeg, varNode) {
+        let currentCoeffs = coeffs;
+        let currentMaxDeg = maxDeg;
+        const foundFactors = [];
+        let foundAny = false;
+
+        // Try to find roots until degree <= 2 or no more rational roots
+        // Safety loop
+        for (let iter = 0; iter < maxDeg; iter++) {
+            if (currentMaxDeg <= 2) break;
+
+            const a0 = currentCoeffs[0] || new Num(0);
+            const an = currentCoeffs[currentMaxDeg] || new Num(0);
+
+            // Rational Root Theorem requires integer coefficients (or at least we need to scale them)
+            // For now, assume integer coefficients or simple floats that are integers
+            if (!Number.isInteger(a0.value) || !Number.isInteger(an.value)) break;
+
+            const div0 = this._divisorsList(Math.abs(Math.round(a0.value)));
+            const divN = this._divisorsList(Math.abs(Math.round(an.value)));
+
+            const candidates = new Set();
+            for (const p of div0) {
+                for (const q of divN) {
+                    candidates.add(p / q);
+                    candidates.add(-p / q);
+                }
+            }
+            candidates.add(0); // Should be handled by x extraction, but safe to add
+
+            let foundRoot = false;
+            for (const r of candidates) {
+                // Evaluate P(r) using Horner
+                let val = 0;
+                for (let i = currentMaxDeg; i >= 0; i--) {
+                    const c = (currentCoeffs[i] ? currentCoeffs[i].value : 0);
+                    val = val * r + c;
+                }
+
+                if (Math.abs(val) < 1e-9) {
+                    // Root found!
+                    // Check if r is integer or fraction
+                    // If r = p/q, factor is (q*x - p) usually to keep integer coeffs,
+                    // but we simplify to (x - r) * an_new?
+                    // Let's use (x - r).
+
+                    // Construct factor
+                    let factor = new Sub(varNode, new Num(r)).simplify();
+                    foundFactors.push(factor);
+
+                    // Divide P(x) / (x - r)
+                    const res = this._polyDivNumeric(currentCoeffs, currentMaxDeg, r);
+                    currentCoeffs = res.coeffs;
+                    currentMaxDeg = res.maxDeg;
+                    foundRoot = true;
+                    foundAny = true;
+                    break; // Restart loop with reduced poly to re-evaluate candidates for multiplicity
+                }
+            }
+
+            if (!foundRoot) break; // No more rational roots found
+        }
+
+        return {
+            found: foundAny,
+            factors: foundFactors,
+            newCoeffs: currentCoeffs,
+            newMaxDeg: currentMaxDeg
+        };
+    }
+
+    _divisorsList(n) {
+        const res = [];
+        if (n === 0) return [1]; // Handling 0 case?
+        for (let i = 1; i * i <= n; i++) {
+            if (n % i === 0) {
+                res.push(i);
+                if (i * i !== n) res.push(n / i);
+            }
+        }
+        return res;
+    }
+
+    _polyDivNumeric(coeffs, maxDeg, r) {
+        // Synthetic division of P(x) by (x - r)
+        // Returns { coeffs, maxDeg } of quotient Q(x)
+        // Q[n-1] = P[n]
+        // Q[k-1] = P[k] + r * Q[k]
+
+        // My coeffs are indexed by power 0..maxDeg
+        // P[maxDeg] is coeff of x^maxDeg
+        // Q will have degree maxDeg - 1
+
+        const Q = {};
+        let val = coeffs[maxDeg].value;
+        Q[maxDeg - 1] = new Num(val);
+
+        for (let i = maxDeg - 1; i > 0; i--) {
+            const pi = coeffs[i] ? coeffs[i].value : 0;
+            val = pi + r * val;
+            Q[i - 1] = new Num(val);
+        }
+
+        return {
+            coeffs: Q,
+            maxDeg: maxDeg - 1
+        };
     }
 
     _partfrac(expr, varNode) {
