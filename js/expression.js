@@ -788,6 +788,33 @@ class Div extends BinaryOp {
             return new Div(new Mul(l, r.right).simplify(), r.left).simplify();
         }
 
+        // Recursive Reduction for Mul terms
+        const isSameDiv = (res, n, d) => (res instanceof Div && res.left.toString() === n.toString() && res.right.toString() === d.toString());
+
+        // (A * B) / C -> (A / C) * B or (B / C) * A
+        if (l instanceof Mul) {
+            const divLeft = new Div(l.left, r).simplify();
+            if (!isSameDiv(divLeft, l.left, r)) {
+                return new Mul(divLeft, l.right).simplify();
+            }
+            const divRight = new Div(l.right, r).simplify();
+            if (!isSameDiv(divRight, l.right, r)) {
+                return new Mul(divRight, l.left).simplify();
+            }
+        }
+
+        // C / (A * B) -> (C / A) / B or (C / B) / A
+        if (r instanceof Mul) {
+             const divLeft = new Div(l, r.left).simplify();
+             if (!isSameDiv(divLeft, l, r.left)) {
+                 return new Div(divLeft, r.right).simplify();
+             }
+             const divRight = new Div(l, r.right).simplify();
+             if (!isSameDiv(divRight, l, r.right)) {
+                 return new Div(divRight, r.left).simplify();
+             }
+        }
+
         // Simplify Powers in Division: x^a / x^b -> x^(a-b)
         let baseL = l;
         let expL = new Num(1);
