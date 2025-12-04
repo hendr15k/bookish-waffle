@@ -200,7 +200,7 @@ class CAS {
                  if (args.length < 2) throw new Error("solve requires at least 2 arguments: equation and variable");
                  const eq = args[0];
                  const varNode = args[1];
-                 if (!(varNode instanceof Sym)) throw new Error("Second argument to solve must be a variable");
+                 if (!(varNode instanceof Sym) && !(varNode instanceof Vec)) throw new Error("Second argument to solve must be a variable or list of variables");
                  return this._solve(eq, varNode);
             }
 
@@ -1047,8 +1047,115 @@ and, or, not, xor, int, evalf`;
         return new Div(new Mul(sign, res), an).simplify();
     }
 
+    _solveSystem(eqs, vars) {
+        const n = eqs.elements.length;
+        const m = vars.elements.length;
+        if (n !== m) throw new Error("Number of equations must match number of variables");
+
+        // Convert equations to linear form: A*x = B
+        // We build the augmented matrix [A | B]
+        const matrixRows = [];
+
+        for (let i = 0; i < n; i++) {
+            let eq = eqs.elements[i];
+            // Normalize to expression = 0
+            if (eq instanceof Eq) {
+                eq = new Sub(eq.left, eq.right).simplify();
+            }
+            eq = eq.expand().simplify();
+
+            const row = [];
+            // Extract coefficients for each variable
+            for (let j = 0; j < m; j++) {
+                const v = vars.elements[j];
+                // coeff of v in eq
+                // We can use derivative as a heuristic for linear coefficient
+                const coeff = eq.diff(v).simplify();
+                // Check if coeff depends on other variables (non-linear)
+                for (let k = 0; k < m; k++) {
+                    if (this._dependsOn(coeff, vars.elements[k])) {
+                        return new Call("solve", [eqs, vars]); // Non-linear system
+                    }
+                }
+                row.push(coeff);
+            }
+
+            // Constant term (RHS in Ax=B, but we have LHS-RHS=0, so Constant is part of 0)
+            // Actually, if we have ax + by + c = 0, then ax + by = -c.
+            // So B is -Constant.
+            // To get constant term, substitute all vars with 0.
+            let constant = eq;
+            for (let j = 0; j < m; j++) {
+                constant = constant.substitute(vars.elements[j], new Num(0));
+            }
+            constant = constant.simplify();
+            row.push(new Mul(new Num(-1), constant).simplify()); // B
+
+            matrixRows.push(new Vec(row));
+        }
+
+        const augmentedMatrix = new Vec(matrixRows);
+        const rref = this._rref(augmentedMatrix);
+
+        // Extract solution from RREF
+        // If unique solution, RREF should be [I | sol]
+
+        // 1. Check for inconsistency (0 = 1)
+        // A row like [0, 0, ..., 0, c] where c != 0
+        for (let i = 0; i < n; i++) {
+            const row = rref.elements[i];
+            let allZero = true;
+            for (let j = 0; j < m; j++) {
+                const el = row.elements[j];
+                if (!(el instanceof Num && el.value === 0)) {
+                    allZero = false;
+                    break;
+                }
+            }
+            if (allZero) {
+                const constant = row.elements[m];
+                if (!(constant instanceof Num && constant.value === 0)) {
+                    // 0 = c (c!=0) -> No solution
+                    return new Vec([]); // Or throw Error? Empty vec usually implies no solution in some systems
+                }
+            }
+        }
+
+        // 2. Extract unique solution
+        // Assume pivots are at (i, i). If not, we have infinite solutions or need free variables.
+        // For simple unique solution, we expect diagonal 1s.
+        const solutions = [];
+        for (let i = 0; i < m; i++) { // Loop over variables
+            if (i >= n) {
+                // More variables than equations?
+                // Or dependent rows reduced effective equations.
+                // Infinite solutions.
+                return new Call("solve", [eqs, vars]);
+            }
+
+            const row = rref.elements[i];
+            const pivot = row.elements[i]; // Expect 1
+
+            // Check if pivot is 1 (or close to it)
+            // And all other coeffs in row are 0?
+            // Actually RREF guarantees this for unique solution.
+
+            if (pivot instanceof Num && pivot.value === 1) {
+                 solutions.push(row.elements[m]);
+            } else {
+                 // Not a unique solution (pivot missing or displaced)
+                 return new Call("solve", [eqs, vars]);
+            }
+        }
+
+        return new Vec(solutions);
+    }
+
     _solve(eq, varNode) {
-        // ... (same as before)
+        if (eq instanceof Vec && varNode instanceof Vec) {
+            return this._solveSystem(eq, varNode);
+        }
+
         let expr;
         if (eq instanceof Eq) {
             expr = new Sub(eq.left, eq.right).simplify();

@@ -663,6 +663,17 @@ class Div extends BinaryOp {
             if (l.right.toString() === r.right.toString()) return new Div(l.left, r.left).simplify();
         }
 
+        // Div of Divs: (a/b) / (c/d) -> (a*d) / (b*c)
+        if (l instanceof Div && r instanceof Div) {
+            return new Div(new Mul(l.left, r.right).simplify(), new Mul(l.right, r.left).simplify()).simplify();
+        }
+        if (l instanceof Div) { // (a/b) / c -> a / (b*c)
+            return new Div(l.left, new Mul(l.right, r).simplify()).simplify();
+        }
+        if (r instanceof Div) { // a / (b/c) -> (a*c) / b
+            return new Div(new Mul(l, r.right).simplify(), r.left).simplify();
+        }
+
         // Simplify Powers in Division: x^a / x^b -> x^(a-b)
         let baseL = l;
         let expL = new Num(1);
