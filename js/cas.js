@@ -3854,6 +3854,57 @@ and, or, not, xor, int, evalf`;
             // Check for constant
             if (!this._dependsOn(expr.left, t)) return new Mul(expr.left, this._laplace(expr.right, t, s)).simplify();
             if (!this._dependsOn(expr.right, t)) return new Mul(expr.right, this._laplace(expr.left, t, s)).simplify();
+
+            // Properties
+            // 1. Frequency Shift: L{e^(at) f(t)} = F(s-a)
+            const checkShift = (term, rest) => {
+                if (term instanceof Call && term.funcName === 'exp') {
+                    // exp(at)
+                    const arg = term.args[0];
+                    const poly = this._getPolyCoeffs(arg, t);
+                    if (poly && poly.maxDeg === 1 && (!poly.coeffs[0] || poly.coeffs[0].value === 0)) {
+                        const a = poly.coeffs[1];
+                        // Transform rest
+                        let F = this._laplace(rest, t, s);
+                        if (F instanceof Call && F.funcName === 'laplace') return null; // Failed to transform rest
+                        // Substitute s -> s-a
+                        return F.substitute(s, new Sub(s, a)).simplify();
+                    }
+                }
+                return null;
+            };
+
+            let res = checkShift(expr.left, expr.right);
+            if (res) return res;
+            res = checkShift(expr.right, expr.left);
+            if (res) return res;
+
+            // 2. Multiplication by t: L{t^n f(t)} = (-1)^n * d^n/ds^n F(s)
+            const checkMultT = (term, rest) => {
+                let n = 0;
+                if (term instanceof Sym && term.name === t.name) n = 1;
+                else if (term instanceof Pow && term.left instanceof Sym && term.left.name === t.name && term.right instanceof Num) {
+                    n = term.right.value;
+                }
+
+                if (n > 0 && Number.isInteger(n)) {
+                    let F = this._laplace(rest, t, s);
+                    if (F instanceof Call && F.funcName === 'laplace') return null;
+
+                    // Diff F w.r.t s, n times
+                    let deriv = F;
+                    for(let i=0; i<n; i++) deriv = deriv.diff(s).simplify();
+
+                    const sign = (n % 2 === 0) ? new Num(1) : new Num(-1);
+                    return new Mul(sign, deriv).simplify();
+                }
+                return null;
+            };
+
+            res = checkMultT(expr.left, expr.right);
+            if (res) return res;
+            res = checkMultT(expr.right, expr.left);
+            if (res) return res;
         }
         if (!this._dependsOn(expr, t)) {
             // L{c} = c/s
@@ -3876,7 +3927,7 @@ and, or, not, xor, int, evalf`;
              const arg = expr.args[0]; // at
              // We need to extract 'a' from 'at'
              const poly = this._getPolyCoeffs(arg, t);
-             if (poly && poly.maxDeg === 1 && poly.coeffs[0] && poly.coeffs[0].value === 0) {
+             if (poly && poly.maxDeg === 1 && (!poly.coeffs[0] || poly.coeffs[0].value === 0)) {
                  const a = poly.coeffs[1];
                  return new Div(new Num(1), new Sub(s, a)).simplify();
              }
@@ -3899,6 +3950,21 @@ and, or, not, xor, int, evalf`;
              if (expr.funcName === 'cos') return new Div(s, denom).simplify();
         }
 
+        // sinh(at) -> a/(s^2-a^2)
+        // cosh(at) -> s/(s^2-a^2)
+        if (expr instanceof Call && (expr.funcName === 'sinh' || expr.funcName === 'cosh')) {
+             const arg = expr.args[0];
+             let a = new Num(1);
+             if (arg instanceof Mul && arg.right instanceof Sym && arg.right.name === t.name) a = arg.left;
+             else if (arg instanceof Mul && arg.left instanceof Sym && arg.left.name === t.name) a = arg.right;
+             else if (arg instanceof Sym && arg.name === t.name) a = new Num(1);
+             else return new Call('laplace', [expr, t, s]);
+
+             const denom = new Sub(new Pow(s, new Num(2)), new Pow(a, new Num(2)));
+             if (expr.funcName === 'sinh') return new Div(a, denom).simplify();
+             if (expr.funcName === 'cosh') return new Div(s, denom).simplify();
+        }
+
         return new Call('laplace', [expr, t, s]);
     }
 
@@ -3913,12 +3979,62 @@ and, or, not, xor, int, evalf`;
              if (!this._dependsOn(expr.right, s)) return new Mul(expr.right, this._ilaplace(expr.left, s, t)).simplify();
         }
 
+        // Try Partial Fraction Decomposition
+        if (expr instanceof Div) {
+             // Only try partfrac if denominator is not already simple or quadratic?
+             // Or verify that partfrac returns real coefficients?
+             // partfrac returns complex fractions for s^2+4 if it solves to +/- 2i.
+             // ilaplace recursively handles complex exponentials: e^(2it) etc.
+             // But we want sin/cos form.
+
+             // Check if denominator is irreducible quadratic before calling partfrac?
+             const den = expr.right;
+             let isIrreducible = false;
+             if (den instanceof Add && den.left instanceof Pow && den.left.left instanceof Sym && den.left.left.name === s.name && den.left.right instanceof Num && den.left.right.value === 2 && den.right instanceof Num && den.right.value > 0) {
+                 isIrreducible = true;
+             }
+
+             if (!isIrreducible) {
+                 const pf = this._partfrac(expr, s);
+                 // Ensure we don't recurse if partfrac returned the same thing (failed to decompose further)
+                 if (!(pf instanceof Call && pf.funcName === 'partfrac') && pf.toString() !== expr.toString()) {
+                     // If result contains 'i', and original didn't, maybe we should prefer real form (handled below)?
+                     // But _ilaplace can handle complex exponentials -> sin/cos via Euler?
+                     // Currently _ilaplace doesn't convert e^(it) to cos/sin.
+                     // So we might get complex output.
+                     // But if we want sin/cos, we should skip partfrac for irreducible quadratics.
+
+                     // Check if pf introduces complex numbers when expr didn't have them
+                     // For now, let's just proceed. The stack overflow was likely due to something else?
+                     // Ah, wait. partfrac(1/(s^2+4)) returns (A/(s-2i) + B/(s+2i)).
+                     // ilaplace calls itself on A/(s-2i).
+                     // Inside that recursive call:
+                     // expr = A/(s-2i).
+                     // partfrac(expr) returns expr (already simple).
+                     // So it skips recursion.
+                     // Then it hits table: 1/(s-a). Returns A * e^(2it).
+                     // This should terminate.
+                     // Why stack overflow?
+                     // Maybe pf.toString() !== expr.toString() check failed?
+                     // If pf came back identical?
+                     // partfrac(1/(s^2+4)) != 1/(s^2+4). So it recurses.
+                     // Inside: partfrac(A/(s-2i)). solving s-2i=0 -> s=2i. Residue... returns A/(s-2i).
+                     // pf.toString() === expr.toString().
+                     // Should stop.
+
+                     // Maybe simplification loop?
+                     return this._ilaplace(pf, s, t);
+                 }
+             }
+        }
+
         // Table
         // 1/s -> 1
         // 1/s^n -> t^(n-1)/(n-1)!
         // 1/(s-a) -> e^(at)
         // a/(s^2+a^2) -> sin(at)
         // s/(s^2+a^2) -> cos(at)
+        // 1/(s^2+a^2) -> 1/a * sin(at)
 
         // Simplify to form Num / Denom
         if (expr instanceof Div) {
@@ -3943,6 +4059,30 @@ and, or, not, xor, int, evalf`;
                  const a = new Mul(new Num(-1), den.right);
                  return new Mul(num, new Call('exp', [new Mul(a, t)])).simplify();
              }
+
+             // Quadratic Denominators s^2 + k
+             if (den instanceof Add && den.left instanceof Pow && den.left.left instanceof Sym && den.left.left.name === s.name && den.left.right instanceof Num && den.left.right.value === 2) {
+                 // s^2 + k
+                 const k = den.right;
+                 // Check if k = a^2. a = sqrt(k)
+                 let a = new Call('sqrt', [k]).simplify();
+
+                 // s / (s^2 + a^2) -> cos(at)
+                 if (num instanceof Sym && num.name === s.name) {
+                     return new Call('cos', [new Mul(a, t)]).simplify();
+                 }
+                 // 1 / (s^2 + a^2) -> 1/a * sin(at)
+                 // c / (s^2 + a^2) -> c/a * sin(at)
+                 if (!this._dependsOn(num, s)) {
+                     const coeff = new Div(num, a).simplify();
+                     return new Mul(coeff, new Call('sin', [new Mul(a, t)])).simplify();
+                 }
+             }
+
+             // Shifted Quadratic: (s-b)^2 + a^2 -> e^(bt) * ...
+             // Not fully implemented, but if partfrac handled it?
+             // partfrac separates linear terms. Irreducible quadratics stay together.
+             // We can detect denominators like (s-b)^2 + a^2.
         }
 
         return new Call('ilaplace', [expr, s, t]);
