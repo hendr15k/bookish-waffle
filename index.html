@@ -839,16 +839,35 @@
 
         <div id="tab-stat-dist" class="tab-content">
              <div class="tool-form">
+                 <div class="form-group">
+                     <label class="form-label">Distribution Type</label>
+                     <select id="stat-dist-type" class="form-input" onchange="updateDistType()">
+                         <option value="normal">Normal</option>
+                         <option value="binomial">Binomial</option>
+                     </select>
+                 </div>
                  <div style="text-align: center; margin-bottom: 10px;">
                      <canvas id="stat-dist-canvas" width="400" height="200" style="border: 1px solid #eee; background: #fff; border-radius: 8px; max-width: 100%;"></canvas>
                  </div>
-                 <div class="form-group">
-                     <label class="form-label" for="stat-mu" style="display:flex; justify-content:space-between;"><span>Mean (μ)</span> <span id="val-mu" style="font-weight:normal;">0</span></label>
-                     <input type="range" id="stat-mu" min="-10" max="10" step="0.1" value="0" style="width:100%;" oninput="updateDistPlot()">
+                 <div id="dist-inputs-normal">
+                     <div class="form-group">
+                         <label class="form-label" for="stat-mu" style="display:flex; justify-content:space-between;"><span>Mean (μ)</span> <span id="val-mu" style="font-weight:normal;">0</span></label>
+                         <input type="range" id="stat-mu" min="-10" max="10" step="0.1" value="0" style="width:100%;" oninput="updateDistPlot()">
+                     </div>
+                     <div class="form-group">
+                         <label class="form-label" for="stat-sigma" style="display:flex; justify-content:space-between;"><span>Std Dev (σ)</span> <span id="val-sigma" style="font-weight:normal;">1</span></label>
+                         <input type="range" id="stat-sigma" min="0.1" max="5" step="0.1" value="1" style="width:100%;" oninput="updateDistPlot()">
+                     </div>
                  </div>
-                 <div class="form-group">
-                     <label class="form-label" for="stat-sigma" style="display:flex; justify-content:space-between;"><span>Std Dev (σ)</span> <span id="val-sigma" style="font-weight:normal;">1</span></label>
-                     <input type="range" id="stat-sigma" min="0.1" max="5" step="0.1" value="1" style="width:100%;" oninput="updateDistPlot()">
+                 <div id="dist-inputs-binomial" style="display:none;">
+                     <div class="form-group">
+                         <label class="form-label" for="stat-n" style="display:flex; justify-content:space-between;"><span>Trials (n)</span> <span id="val-n" style="font-weight:normal;">10</span></label>
+                         <input type="range" id="stat-n" min="1" max="50" step="1" value="10" style="width:100%;" oninput="updateDistPlot()">
+                     </div>
+                     <div class="form-group">
+                         <label class="form-label" for="stat-p" style="display:flex; justify-content:space-between;"><span>Probability (p)</span> <span id="val-p" style="font-weight:normal;">0.5</span></label>
+                         <input type="range" id="stat-p" min="0" max="1" step="0.01" value="0.5" style="width:100%;" oninput="updateDistPlot()">
+                     </div>
                  </div>
              </div>
         </div>
@@ -1040,6 +1059,7 @@
              <button class="tab-btn active" onclick="openTab(event, 'tab-phys-kin')">Kinematics</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-dyn')">Dynamics</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-nrg')">Energy</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-phys-elec')">Electricity</button>
         </div>
 
         <!-- Kinematics Tab -->
@@ -1089,6 +1109,23 @@
                  </div>
                  <div id="phys-nrg-inputs"></div>
                  <button class="action-btn" onclick="runPhysics('nrg')">Calculate</button>
+             </div>
+        </div>
+
+        <!-- Electricity Tab -->
+        <div id="tab-phys-elec" class="tab-content">
+             <div class="tool-form">
+                 <div class="form-group">
+                     <label class="form-label">Calculation</label>
+                     <select id="phys-elec-type" class="form-input" onchange="updatePhysicsInputs('elec')">
+                         <option value="V">Voltage (V=IR)</option>
+                         <option value="I">Current (I=V/R)</option>
+                         <option value="R">Resistance (R=V/I)</option>
+                         <option value="P">Power (P=VI)</option>
+                     </select>
+                 </div>
+                 <div id="phys-elec-inputs"></div>
+                 <button class="action-btn" onclick="runPhysics('elec')">Calculate</button>
              </div>
         </div>
 
@@ -1260,6 +1297,7 @@
                 updatePhysicsInputs('kin');
                 updatePhysicsInputs('dyn');
                 updatePhysicsInputs('nrg');
+                updatePhysicsInputs('elec');
             }
         };
 
@@ -3060,20 +3098,24 @@
              }
         };
 
+        window.updateDistType = function() {
+            const type = document.getElementById('stat-dist-type').value;
+            const normInputs = document.getElementById('dist-inputs-normal');
+            const binInputs = document.getElementById('dist-inputs-binomial');
+            if (type === 'normal') {
+                normInputs.style.display = 'block';
+                binInputs.style.display = 'none';
+            } else {
+                normInputs.style.display = 'none';
+                binInputs.style.display = 'block';
+            }
+            updateDistPlot();
+        };
+
         window.updateDistPlot = function() {
-             const muInput = document.getElementById('stat-mu');
-             const sigmaInput = document.getElementById('stat-sigma');
-             const muVal = document.getElementById('val-mu');
-             const sigmaVal = document.getElementById('val-sigma');
+             const type = document.getElementById('stat-dist-type').value;
              const canvas = document.getElementById('stat-dist-canvas');
-             if (!canvas || !muInput || !sigmaInput) return;
-
-             const mu = parseFloat(muInput.value);
-             const sigma = parseFloat(sigmaInput.value);
-
-             muVal.textContent = mu;
-             sigmaVal.textContent = sigma;
-
+             if (!canvas) return;
              const ctx = canvas.getContext('2d');
              const width = canvas.width;
              const height = canvas.height;
@@ -3081,69 +3123,131 @@
              // Clear
              ctx.clearRect(0, 0, width, height);
 
-             // Define range: fixed X range [-20, 20] to see movement
-             const rangeMin = -20;
-             const rangeMax = 20;
+             if (type === 'normal') {
+                 const muInput = document.getElementById('stat-mu');
+                 const sigmaInput = document.getElementById('stat-sigma');
+                 const mu = parseFloat(muInput.value);
+                 const sigma = parseFloat(sigmaInput.value);
 
-             // Y range: max height is ~1.0 for sigma=0.4.
-             const rangeYMin = 0;
-             const rangeYMax = 1.0;
+                 document.getElementById('val-mu').textContent = mu;
+                 document.getElementById('val-sigma').textContent = sigma;
 
-             const mapX = (x) => ((x - rangeMin) / (rangeMax - rangeMin)) * width;
-             const mapY = (y) => height - ((y - rangeYMin) / (rangeYMax - rangeYMin)) * height;
+                 const rangeMin = -20;
+                 const rangeMax = 20;
+                 const rangeYMin = 0;
+                 const rangeYMax = 1.0;
 
-             // Draw Axes
-             ctx.strokeStyle = "#ccc";
-             ctx.beginPath();
-             // X axis
-             const yZero = mapY(0);
-             ctx.moveTo(0, yZero);
-             ctx.lineTo(width, yZero);
-             // Y axis
-             const xZero = mapX(0);
-             ctx.moveTo(xZero, 0);
-             ctx.lineTo(xZero, height);
-             ctx.stroke();
+                 const mapX = (x) => ((x - rangeMin) / (rangeMax - rangeMin)) * width;
+                 const mapY = (y) => height - ((y - rangeYMin) / (rangeYMax - rangeYMin)) * height;
 
-             // PDF Function
-             const pdf = (x) => {
-                 return (1 / (sigma * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((x - mu) / sigma, 2));
-             };
+                 // Draw Axes
+                 ctx.strokeStyle = "#ccc";
+                 ctx.beginPath();
+                 const yZero = mapY(0);
+                 ctx.moveTo(0, yZero);
+                 ctx.lineTo(width, yZero);
+                 const xZero = mapX(0);
+                 ctx.moveTo(xZero, 0);
+                 ctx.lineTo(xZero, height);
+                 ctx.stroke();
 
-             ctx.beginPath();
-             ctx.strokeStyle = "#007bff";
-             ctx.lineWidth = 2;
+                 // PDF
+                 const pdf = (x) => {
+                     return (1 / (sigma * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((x - mu) / sigma, 2));
+                 };
 
-             let first = true;
-             for (let px = 0; px <= width; px++) {
-                  const x = rangeMin + (px / width) * (rangeMax - rangeMin);
-                  const y = pdf(x);
-                  const py = mapY(y);
+                 ctx.beginPath();
+                 ctx.strokeStyle = "#007bff";
+                 ctx.lineWidth = 2;
 
-                  if (first) {
-                      ctx.moveTo(px, py);
-                      first = false;
-                  } else {
-                      ctx.lineTo(px, py);
-                  }
+                 let first = true;
+                 for (let px = 0; px <= width; px++) {
+                      const x = rangeMin + (px / width) * (rangeMax - rangeMin);
+                      const y = pdf(x);
+                      const py = mapY(y);
+                      if (first) { ctx.moveTo(px, py); first = false; }
+                      else { ctx.lineTo(px, py); }
+                 }
+                 ctx.stroke();
+                 ctx.fillStyle = "rgba(0, 123, 255, 0.1)";
+                 ctx.lineTo(width, mapY(0));
+                 ctx.lineTo(0, mapY(0));
+                 ctx.fill();
+
+                 const muX = mapX(mu);
+                 ctx.beginPath();
+                 ctx.strokeStyle = "rgba(255, 0, 0, 0.5)";
+                 ctx.setLineDash([5, 5]);
+                 ctx.moveTo(muX, 0);
+                 ctx.lineTo(muX, height);
+                 ctx.stroke();
+                 ctx.setLineDash([]);
+
+             } else {
+                 // Binomial
+                 const nInput = document.getElementById('stat-n');
+                 const pInput = document.getElementById('stat-p');
+                 const n = parseInt(nInput.value);
+                 const p = parseFloat(pInput.value);
+
+                 document.getElementById('val-n').textContent = n;
+                 document.getElementById('val-p').textContent = p;
+
+                 // Range X: 0 to n
+                 // Range Y: 0 to 1 (max prob)
+                 const rangeMin = -1;
+                 const rangeMax = n + 1;
+                 const rangeYMin = 0;
+                 const rangeYMax = 1.0; // Probability is usually < 1, maybe scale dynamically?
+                 // Max prob is at k approx n*p.
+                 // Let's use 0.5 as max Y for better visibility if n is large, but for small n, max prob can be large.
+                 // Actually max prob for n=10, p=0.5 is ~0.24. For n=1, p=0.5, max is 0.5.
+                 // Let's stick to 1.0 or adaptive? 1.0 is safe.
+
+                 const mapX = (x) => ((x - rangeMin) / (rangeMax - rangeMin)) * width;
+                 const mapY = (y) => height - ((y - rangeYMin) / (rangeYMax - rangeYMin)) * height;
+
+                 // Draw Axes
+                 ctx.strokeStyle = "#ccc";
+                 ctx.beginPath();
+                 const yZero = mapY(0);
+                 ctx.moveTo(0, yZero);
+                 ctx.lineTo(width, yZero);
+                 const xZero = mapX(0);
+                 ctx.moveTo(xZero, 0);
+                 ctx.lineTo(xZero, height);
+                 ctx.stroke();
+
+                 // Bars
+                 ctx.fillStyle = "rgba(0, 123, 255, 0.5)";
+                 ctx.strokeStyle = "#007bff";
+
+                 // Factorial helper
+                 const fact = (num) => {
+                     if (num <= 1) return 1;
+                     let r = 1;
+                     for (let i = 2; i <= num; i++) r *= i;
+                     return r;
+                 };
+                 const nCr = (n, r) => fact(n) / (fact(r) * fact(n - r));
+
+                 const binom = (k) => {
+                      if (k < 0 || k > n) return 0;
+                      return nCr(n, k) * Math.pow(p, k) * Math.pow(1 - p, n - k);
+                 };
+
+                 const barWidth = (width / (rangeMax - rangeMin)) * 0.8;
+
+                 for (let k = 0; k <= n; k++) {
+                      const prob = binom(k);
+                      const x = mapX(k) - barWidth / 2;
+                      const y = mapY(prob);
+                      const h = mapY(0) - y;
+
+                      ctx.fillRect(x, y, barWidth, h);
+                      ctx.strokeRect(x, y, barWidth, h);
+                 }
              }
-             ctx.stroke();
-
-             // Fill area
-             ctx.fillStyle = "rgba(0, 123, 255, 0.1)";
-             ctx.lineTo(width, mapY(0));
-             ctx.lineTo(0, mapY(0));
-             ctx.fill();
-
-             // Draw mu line
-             const muX = mapX(mu);
-             ctx.beginPath();
-             ctx.strokeStyle = "rgba(255, 0, 0, 0.5)";
-             ctx.setLineDash([5, 5]);
-             ctx.moveTo(muX, 0);
-             ctx.lineTo(muX, height);
-             ctx.stroke();
-             ctx.setLineDash([]);
         };
 
         // Initialize Plot on load
@@ -3269,6 +3373,20 @@
                         if(g) g.value = 9.81;
                      },0);
                  }
+             } else if (tab === 'elec') {
+                 if (type === 'V') {
+                     container.appendChild(createInput('phys-I', 'Current (I)'));
+                     container.appendChild(createInput('phys-R', 'Resistance (R)'));
+                 } else if (type === 'I') {
+                     container.appendChild(createInput('phys-V', 'Voltage (V)'));
+                     container.appendChild(createInput('phys-R', 'Resistance (R)'));
+                 } else if (type === 'R') {
+                     container.appendChild(createInput('phys-V', 'Voltage (V)'));
+                     container.appendChild(createInput('phys-I', 'Current (I)'));
+                 } else if (type === 'P') {
+                     container.appendChild(createInput('phys-V', 'Voltage (V)'));
+                     container.appendChild(createInput('phys-I', 'Current (I)'));
+                 }
              }
         };
 
@@ -3282,7 +3400,21 @@
                  return el ? parseFloat(el.value) : NaN;
              };
 
-             if (tab === 'kin') {
+             if (tab === 'elec') {
+                 if (type === 'V') {
+                     const I = val('phys-I'); const R = val('phys-R');
+                     if(!isNaN(I) && !isNaN(R)) result = `Voltage (V) = ${(I*R).toFixed(4)} V`;
+                 } else if (type === 'I') {
+                     const V = val('phys-V'); const R = val('phys-R');
+                     if(!isNaN(V) && !isNaN(R)) result = `Current (I) = ${(V/R).toFixed(4)} A`;
+                 } else if (type === 'R') {
+                     const V = val('phys-V'); const I = val('phys-I');
+                     if(!isNaN(V) && !isNaN(I)) result = `Resistance (R) = ${(V/I).toFixed(4)} Ω`;
+                 } else if (type === 'P') {
+                     const V = val('phys-V'); const I = val('phys-I');
+                     if(!isNaN(V) && !isNaN(I)) result = `Power (P) = ${(V*I).toFixed(4)} W`;
+                 }
+             } else if (tab === 'kin') {
                  const u = val('phys-u');
                  const v = val('phys-v');
                  const a = val('phys-a');
@@ -3358,6 +3490,16 @@
                      if(isNaN(m) || isNaN(h) || isNaN(g)) return;
                      result = `PE = ${(m*g*h).toFixed(4)} J`;
                  }
+             }
+
+             // Update Inputs for Electricity (helper for runPhysics)
+             if (tab === 'elec') {
+                  const container = document.getElementById('phys-elec-inputs');
+                  if (container && container.innerHTML === '') {
+                      // This part is actually inside updatePhysicsInputs usually, but runPhysics doesn't generate inputs.
+                      // updatePhysicsInputs('elec') is called on change.
+                      // So we don't need logic here.
+                  }
              }
 
              if (!result) result = "Invalid Input";
