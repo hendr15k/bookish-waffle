@@ -27,6 +27,20 @@ if (typeof window.insertMatrix !== 'function') {
     console.log("[PASS] window.insertMatrix is defined.");
 }
 
+// Verify window.updateDistPlot is defined
+if (typeof window.updateDistPlot !== 'function') {
+    console.error("[FAIL] window.updateDistPlot is not defined.");
+} else {
+    console.log("[PASS] window.updateDistPlot is defined.");
+}
+
+// Verify window.runRiemann is defined
+if (typeof window.runRiemann !== 'function') {
+    console.error("[FAIL] window.runRiemann is not defined.");
+} else {
+    console.log("[PASS] window.runRiemann is defined.");
+}
+
 // Verify labels have 'for' attribute
 const inputs = document.querySelectorAll('input.form-input');
 let labelFailures = 0;
