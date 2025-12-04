@@ -558,6 +558,7 @@
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-desolve')">Diff Eq</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-series')">Taylor Series</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-riemann')">Riemann</button>
+            <button class="tab-btn" onclick="openTab(event, 'tab-calc-fourier')">Fourier</button>
         </div>
 
         <!-- Diff & Limit Tab -->
@@ -695,6 +696,34 @@
                     </div>
                 </div>
                 <button class="action-btn" onclick="runRiemann()">Calculate & Plot</button>
+            </div>
+        </div>
+
+        <!-- Fourier Tab -->
+        <div id="tab-calc-fourier" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="fourier-expr">Function</label>
+                    <input type="text" class="form-input" id="fourier-expr" placeholder="e.g. x^2">
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="fourier-var">Var</label>
+                        <input type="text" class="form-input" id="fourier-var" placeholder="x" value="x">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="fourier-n">Order (N)</label>
+                        <input type="number" class="form-input" id="fourier-n" value="3">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="fourier-l">Half-Period (L)</label>
+                        <input type="text" class="form-input" id="fourier-l" placeholder="pi" value="pi">
+                    </div>
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('fourier', ['fourier-expr', 'fourier-var', 'fourier-n', 'fourier-l'])">Calculate</button>
+                    <button class="action-btn" onclick="runAndPlot('fourier', ['fourier-expr', 'fourier-var', 'fourier-n', 'fourier-l'])" style="background-color: #28a745;">Plot</button>
+                </div>
             </div>
         </div>
 
@@ -1600,6 +1629,12 @@
                 return;
             }
 
+            // Handle Implicit Plots
+            if (plots[0].subtype === 'implicit') {
+                drawImplicit(canvas, plots[0], explicitBounds);
+                return;
+            }
+
             // Determine global range
             // If explicitBounds is provided (from zoom/pan), use them.
             // Otherwise calculate default from args.
@@ -2116,18 +2151,159 @@
             canvas.addEventListener('wheel', onWheel, {passive: false});
         }
 
+        function drawImplicit(canvas, plot, explicitBounds = null) {
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+            ctx.clearRect(0, 0, width, height);
+
+            let minX, maxX, minY, maxY;
+            if (explicitBounds) {
+                minX = explicitBounds.minX; maxX = explicitBounds.maxX;
+                minY = explicitBounds.minY; maxY = explicitBounds.maxY;
+            } else {
+                minX = plot.xMin; maxX = plot.xMax;
+                minY = plot.yMin; maxY = plot.yMax;
+            }
+            canvas.plotBounds = { minX, maxX, minY, maxY };
+            canvas.plotResult = plot;
+
+            const mapX = (x) => ((x - minX) / (maxX - minX)) * width;
+            const mapY = (y) => height - ((y - minY) / (maxY - minY)) * height;
+
+            // Draw Axes/Grid
+            ctx.save();
+            ctx.strokeStyle = "#eee";
+            ctx.lineWidth = 1;
+            // Draw Grid... (simplified)
+            ctx.beginPath();
+            const yZero = mapY(0);
+            if (yZero >= 0 && yZero <= height) { ctx.moveTo(0, yZero); ctx.lineTo(width, yZero); }
+            const xZero = mapX(0);
+            if (xZero >= 0 && xZero <= width) { ctx.moveTo(xZero, 0); ctx.lineTo(xZero, height); }
+            ctx.stroke();
+            ctx.restore();
+
+            // Labels
+            ctx.fillStyle = "#333";
+            ctx.font = "10px sans-serif";
+            ctx.fillText(minX.toFixed(1), 5, height - 5);
+            ctx.fillText(maxX.toFixed(1), width - 35, height - 5);
+            ctx.fillText(maxY.toFixed(1), 5, 10);
+            ctx.fillText(minY.toFixed(1), 5, height - 20);
+
+            // Marching Squares
+            const resX = 64; // Performance trade-off
+            const resY = 64;
+            const stepX = (maxX - minX) / resX;
+            const stepY = (maxY - minY) / resY;
+
+            const values = [];
+            // Pre-calculate grid values
+            for(let i=0; i<=resX; i++) {
+                const col = [];
+                const x = minX + i * stepX;
+                for(let j=0; j<=resY; j++) {
+                    const y = minY + j * stepY;
+                    try {
+                        const valExpr = plot.expr.substitute(plot.varX, new Num(x)).substitute(plot.varY, new Num(y)).simplify();
+                        let val = (valExpr instanceof Num) ? valExpr.value : valExpr.evaluateNumeric();
+                        col.push(val);
+                    } catch(e) { col.push(NaN); }
+                }
+                values.push(col);
+            }
+
+            ctx.strokeStyle = "#007bff";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+
+            const lerp = (v0, v1, p0, p1) => {
+                if (Math.abs(v1 - v0) < 1e-9) return (p0 + p1) / 2;
+                return p0 + (p1 - p0) * (0 - v0) / (v1 - v0);
+            };
+
+            for(let i=0; i<resX; i++) {
+                for(let j=0; j<resY; j++) {
+                    const vBL = values[i][j];
+                    const vTL = values[i][j+1];
+                    const vBR = values[i+1][j];
+                    const vTR = values[i+1][j+1];
+
+                    if(isNaN(vBL) || isNaN(vBR) || isNaN(vTR) || isNaN(vTL)) continue;
+
+                    let index = 0;
+                    if (vBL > 0) index |= 8;
+                    if (vBR > 0) index |= 4;
+                    if (vTR > 0) index |= 2;
+                    if (vTL > 0) index |= 1;
+
+                    if (index === 0 || index === 15) continue;
+
+                    const xL = minX + i*stepX;
+                    const xR = minX + (i+1)*stepX;
+                    const yB = minY + j*stepY;
+                    const yT = minY + (j+1)*stepY;
+
+                    const ptL = { x: xL, y: lerp(vBL, vTL, yB, yT) };
+                    const ptR = { x: xR, y: lerp(vBR, vTR, yB, yT) };
+                    const ptB = { x: lerp(vBL, vBR, xL, xR), y: yB };
+                    const ptT = { x: lerp(vTL, vTR, xL, xR), y: yT };
+
+                    const draw = (p1, p2) => {
+                        ctx.moveTo(mapX(p1.x), mapY(p1.y));
+                        ctx.lineTo(mapX(p2.x), mapY(p2.y));
+                    };
+
+                    // Lookup table for Marching Squares
+                    switch(index) {
+                        case 1: draw(ptL, ptT); break;
+                        case 2: draw(ptR, ptT); break;
+                        case 3: draw(ptL, ptR); break;
+                        case 4: draw(ptR, ptB); break;
+                        case 5: draw(ptL, ptB); draw(ptR, ptT); break;
+                        case 6: draw(ptB, ptT); break;
+                        case 7: draw(ptL, ptB); break;
+                        case 8: draw(ptL, ptB); break;
+                        case 9: draw(ptB, ptT); break;
+                        case 10: draw(ptL, ptT); draw(ptR, ptB); break;
+                        case 11: draw(ptR, ptB); break;
+                        case 12: draw(ptL, ptR); break;
+                        case 13: draw(ptR, ptT); break;
+                        case 14: draw(ptL, ptT); break;
+                    }
+                }
+            }
+            ctx.stroke();
+        }
+
         function manualZoom(canvas, factor) {
             const b = canvas.plotBounds;
             if(!b) return;
 
             // Check if 3D
             if (canvas.plotResult && canvas.plotResult.subtype === '3d') {
-                // 3D zoom simply scales the rotation distance or scale factor
-                // For simplicity, we can't easily change bounds without re-evaluating which is slow for 3D.
-                // We can adjust a scale factor stored on canvas.
                 if (!canvas.scaleFactor3D) canvas.scaleFactor3D = 1;
-                canvas.scaleFactor3D *= (1/factor); // factor < 1 means zoom in (enlarge)
+                canvas.scaleFactor3D *= (1/factor);
                 drawPlot3D(canvas, canvas.plotResult);
+                return;
+            }
+
+            // Check if Implicit
+            if (canvas.plotResult && canvas.plotResult.subtype === 'implicit') {
+                const xRange = b.maxX - b.minX;
+                const yRange = b.maxY - b.minY;
+                const centerX = (b.minX + b.maxX) / 2;
+                const centerY = (b.minY + b.maxY) / 2;
+                const newXRange = xRange * factor;
+                const newYRange = yRange * factor;
+                const newBounds = {
+                    minX: centerX - newXRange / 2,
+                    maxX: centerX + newXRange / 2,
+                    minY: centerY - newYRange / 2,
+                    maxY: centerY + newYRange / 2
+                };
+                drawImplicit(canvas, canvas.plotResult, newBounds);
                 return;
             }
 
@@ -2413,6 +2589,41 @@
                 // Execute plot
                 input.value = plotCmd;
                 evaluate();
+
+                // Show result in tool result box
+                setTimeout(() => {
+                    const entries = document.querySelectorAll('.entry');
+                    if (entries.length > 0) {
+                        const lastEntry = entries[entries.length - 1];
+                        const resultDiv = lastEntry.querySelector('.result');
+                        const visibleTool = document.querySelector('.tool-view[style*="block"]');
+                        if (visibleTool && resultDiv) {
+                            const resultBox = visibleTool.querySelector('.tool-result');
+                            if (resultBox) {
+                                resultBox.innerHTML = '';
+                                const clone = resultDiv.cloneNode(true);
+                                resultBox.appendChild(clone);
+                                resultBox.style.display = 'block';
+
+                                const origCanvas = resultDiv.querySelector('canvas');
+                                if (origCanvas && origCanvas.plotResult) {
+                                    const newCanvas = clone.querySelector('canvas');
+                                    if (newCanvas) {
+                                        if (origCanvas.plotResult.subtype === 'implicit') {
+                                            drawImplicit(newCanvas, origCanvas.plotResult);
+                                        } else {
+                                            drawPlot(newCanvas, origCanvas.plotResult);
+                                        }
+                                        setupInteractivePlot(newCanvas);
+                                    }
+                                }
+                                if (window.MathJax && typeof MathJax.typesetPromise === 'function') {
+                                    MathJax.typesetPromise([resultBox]).catch(()=>{});
+                                }
+                            }
+                        }
+                    }
+                }, 50);
 
             } catch(e) {
                 addToHistory(command, e.message, true);

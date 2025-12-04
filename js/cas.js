@@ -128,10 +128,25 @@ class CAS {
                     const upper = args[3];
                     let indefinite = func.integrate(varNode);
 
-                    // Attempt partfrac if direct integration failed
+                    // Try strategies if direct integration failed
+                    if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
+                         // 1. Substitution
+                         const subRes = this._integrateSubstitution(func, varNode);
+                         if (subRes && !(subRes instanceof Call && subRes.funcName === 'integrate')) {
+                             indefinite = subRes;
+                         } else {
+                             // 2. Parts
+                             const partsRes = this._integrateByParts(func, varNode);
+                             if (partsRes && !(partsRes instanceof Call && partsRes.funcName === 'integrate')) {
+                                 indefinite = partsRes;
+                             }
+                         }
+                    }
+
+                    // Attempt partfrac if still failed
                     if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
                         const pf = this._partfrac(func, varNode);
-                        if (!(pf instanceof Call && pf.funcName === 'partfrac')) {
+                        if (!(pf instanceof Call && pf.funcName === 'partfrac') && pf.toString() !== func.toString()) {
                              indefinite = pf.integrate(varNode);
                         }
                     }
@@ -756,6 +771,51 @@ class CAS {
             if (node.funcName === 'desolve') {
                 if (args.length < 2) throw new Error("desolve requires at least 2 arguments");
                 return this._desolve(args[0], args[1]);
+            }
+
+            if (node.funcName === 'fourier') {
+                if (args.length < 3) throw new Error("fourier requires 3 arguments: expr, var, n, [L]");
+                const expr = args[0];
+                const varNode = args[1];
+                const n = args[2];
+                const L = args.length > 3 ? args[3] : new Sym('pi');
+                if (!(varNode instanceof Sym)) throw new Error("Second argument to fourier must be a variable");
+                return this._fourier(expr, varNode, n, L);
+            }
+
+            if (node.funcName === 'plotimplicit') {
+                 if (args.length < 3) throw new Error("plotimplicit requires at least 3 arguments: equation, x, y");
+                 const eq = args[0];
+                 const xVar = args[1];
+                 const yVar = args[2];
+
+                 let xMin = -10, xMax = 10, yMin = -10, yMax = 10;
+                 if (args.length >= 7) {
+                     xMin = args[3].evaluateNumeric();
+                     xMax = args[4].evaluateNumeric();
+                     yMin = args[5].evaluateNumeric();
+                     yMax = args[6].evaluateNumeric();
+                 }
+
+                 // Normalize Equation: LHS - RHS
+                 let expr = eq;
+                 if (eq instanceof Eq) {
+                     expr = new Sub(eq.left, eq.right).simplify();
+                 }
+
+                 return {
+                     type: 'plot',
+                     subtype: 'implicit',
+                     expr: expr,
+                     varX: xVar,
+                     varY: yVar,
+                     xMin: isNaN(xMin) ? -10 : xMin,
+                     xMax: isNaN(xMax) ? 10 : xMax,
+                     yMin: isNaN(yMin) ? -10 : yMin,
+                     yMax: isNaN(yMax) ? 10 : yMax,
+                     toString: () => `Implicit Plot ${eq}`,
+                     toLatex: () => `\\text{Implicit Plot } ${eq.toLatex()}`
+                 };
             }
 
             if (node.funcName === 'help') {
@@ -3777,6 +3837,164 @@ and, or, not, xor, int, evalf`;
         }
 
         return new Call('partfrac', [expr, varNode]);
+    }
+
+    _linearizeTrig(expr) {
+        if (expr instanceof Add) return new Add(this._linearizeTrig(expr.left), this._linearizeTrig(expr.right)).simplify();
+        if (expr instanceof Sub) return new Sub(this._linearizeTrig(expr.left), this._linearizeTrig(expr.right)).simplify();
+        if (expr instanceof Div) return new Div(this._linearizeTrig(expr.left), this._linearizeTrig(expr.right)).simplify();
+
+        if (expr instanceof Pow) {
+            // Handle sin^2, cos^2
+            if (expr.right instanceof Num && expr.right.value === 2) {
+                const base = expr.left;
+                if (base instanceof Call) {
+                    if (base.funcName === 'sin') {
+                        // (1 - cos(2x))/2
+                        const arg = base.args[0];
+                        return new Div(new Sub(new Num(1), new Call('cos', [new Mul(new Num(2), arg)])), new Num(2)).simplify();
+                    }
+                    if (base.funcName === 'cos') {
+                        // (1 + cos(2x))/2
+                        const arg = base.args[0];
+                        return new Div(new Add(new Num(1), new Call('cos', [new Mul(new Num(2), arg)])), new Num(2)).simplify();
+                    }
+                }
+            }
+            return new Pow(this._linearizeTrig(expr.left), this._linearizeTrig(expr.right));
+        }
+
+        if (expr instanceof Mul) {
+            // Flatten first
+            const terms = [];
+            const collect = (n) => {
+                if (n instanceof Mul) { collect(n.left); collect(n.right); }
+                else terms.push(this._linearizeTrig(n));
+            };
+            collect(expr);
+
+            // Separate trig terms and others
+            const trigTerms = [];
+            const otherTerms = [];
+
+            for(const t of terms) {
+                if (t instanceof Call && (t.funcName === 'sin' || t.funcName === 'cos')) {
+                    trigTerms.push(t);
+                } else {
+                    otherTerms.push(t);
+                }
+            }
+
+            if (trigTerms.length >= 2) {
+                // Combine first two
+                const t1 = trigTerms.pop();
+                const t2 = trigTerms.pop();
+
+                const A = t1.args[0];
+                const B = t2.args[0];
+
+                let combined = null;
+
+                const half = new Div(new Num(1), new Num(2));
+                const sum = new Add(A, B);
+                const diff = new Sub(A, B);
+
+                if (t1.funcName === 'sin' && t2.funcName === 'cos') {
+                    // sin(A)cos(B)
+                    combined = new Mul(half, new Add(new Call('sin', [sum]), new Call('sin', [diff])));
+                } else if (t1.funcName === 'cos' && t2.funcName === 'sin') {
+                    // cos(A)sin(B)
+                    combined = new Mul(half, new Add(new Call('sin', [sum]), new Call('sin', [new Sub(B, A)])));
+                } else if (t1.funcName === 'sin' && t2.funcName === 'sin') {
+                    // sin(A)sin(B)
+                    combined = new Mul(half, new Sub(new Call('cos', [diff]), new Call('cos', [sum])));
+                } else if (t1.funcName === 'cos' && t2.funcName === 'cos') {
+                    // cos(A)cos(B)
+                    combined = new Mul(half, new Add(new Call('cos', [diff]), new Call('cos', [sum])));
+                }
+
+                // Push back combined
+                trigTerms.push(this._linearizeTrig(combined));
+
+                // Rebuild Mul
+                let res = trigTerms[0];
+                for(let i=1; i<trigTerms.length; i++) res = new Mul(res, trigTerms[i]);
+                for(const t of otherTerms) res = new Mul(res, t);
+
+                return res.simplify();
+            }
+
+            // No pairs found
+            let res = terms[0];
+            for(let i=1; i<terms.length; i++) res = new Mul(res, terms[i]);
+            return res;
+        }
+
+        if (expr instanceof Call) {
+            return new Call(expr.funcName, expr.args.map(a => this._linearizeTrig(a)));
+        }
+
+        return expr;
+    }
+
+    _fourier(expr, varNode, n, L) {
+        if (!L) L = new Sym('pi');
+
+        // Coeffs:
+        // a0 = 1/L * int(f, -L, L)
+        // an = 1/L * int(f*cos(k*pi*x/L), -L, L)
+        // bn = 1/L * int(f*sin(k*pi*x/L), -L, L)
+
+        // Evaluate L numeric if possible for integration limits
+        // But keep symbolic L for integrand if needed?
+        // Actually, integration works best with matching symbols.
+
+        let pi = new Sym('pi');
+        // If L is numeric and close to PI, use numeric PI to allow cancellation
+        if (L instanceof Num && Math.abs(L.value - Math.PI) < 1e-5) {
+            pi = new Num(Math.PI);
+        }
+
+        const factor = new Div(new Num(1), L).simplify();
+        const negL = new Mul(new Num(-1), L).simplify();
+
+        // a0
+        const intA0 = this.evaluate(new Call('integrate', [expr, varNode, negL, L]));
+        const a0 = new Mul(factor, intA0).simplify();
+
+        // Term a0/2
+        let result = new Div(a0, new Num(2)).simplify();
+
+        const N = (n instanceof Num) ? n.value : 5;
+
+        for(let k=1; k<=N; k++) {
+            const kNum = new Num(k);
+            const angle = new Div(new Mul(kNum, new Mul(pi, varNode)), L).simplify();
+
+            // an
+            const cosTerm = new Call('cos', [angle]);
+            let integrandA = new Mul(expr, cosTerm).simplify();
+            integrandA = this._linearizeTrig(integrandA);
+
+            const intAn = this.evaluate(new Call('integrate', [integrandA, varNode, negL, L]));
+            const an = new Mul(factor, intAn).simplify();
+
+            // bn
+            const sinTerm = new Call('sin', [angle]);
+            let integrandB = new Mul(expr, sinTerm).simplify();
+            integrandB = this._linearizeTrig(integrandB);
+
+            const intBn = this.evaluate(new Call('integrate', [integrandB, varNode, negL, L]));
+            const bn = new Mul(factor, intBn).simplify();
+
+            // Add to result
+            const termA = new Mul(an, cosTerm).simplify();
+            const termB = new Mul(bn, sinTerm).simplify();
+
+            result = new Add(result, new Add(termA, termB)).simplify();
+        }
+
+        return result;
     }
 
     // --- Polynomial Tools ---
