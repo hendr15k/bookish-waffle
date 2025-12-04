@@ -861,6 +861,24 @@ class Pow extends BinaryOp {
                 return new Div(new Pow(this.left, new Num(n + 1)), new Num(n + 1));
             }
         }
+        // Exponential form: a^x
+        // Check if left (base) is constant w.r.t varName and right (exponent) is varName
+        // Or right is linear in varName? For now, just x.
+        const dependsOn = (node) => {
+             if (node instanceof Sym) return node.name === varName.name;
+             if (node instanceof Call) return node.args.some(dependsOn);
+             if (node instanceof BinaryOp) return dependsOn(node.left) || dependsOn(node.right);
+             return false;
+        };
+
+        if (!dependsOn(this.left) && this.right instanceof Sym && this.right.name === varName.name) {
+             // a^x
+             // if a = e -> e^x
+             if (this.left instanceof Sym && this.left.name === 'e') return this;
+             // a^x / ln(a)
+             return new Div(this, new Call("ln", [this.left]));
+        }
+
         return new Call("integrate", [this, varName]);
     }
     expand() {

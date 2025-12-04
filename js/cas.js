@@ -136,6 +136,15 @@ class CAS {
                         }
                     }
 
+                    // Attempt Integration by Parts
+                    if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
+                        const ibp = this._integrateByParts(func, varNode);
+                        if (ibp) {
+                            // Recursively evaluate the IBP result (which contains nested integrals)
+                            indefinite = this.evaluate(ibp);
+                        }
+                    }
+
                     // If integration failed (returned a Call to integrate), return symbolic definite integral
                     if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
                         return new Call('integrate', args);
@@ -157,6 +166,13 @@ class CAS {
                          if (!(res2 instanceof Call && res2.funcName === 'integrate')) {
                              return res2;
                          }
+                     }
+
+                     // Try Integration By Parts
+                     const ibp = this._integrateByParts(func, varNode);
+                     if (ibp) {
+                         // Recursively evaluate to resolve the new integral term
+                         return this.evaluate(ibp);
                      }
                 }
                 return res;
@@ -3385,6 +3401,70 @@ and, or, not, xor, int, evalf`;
             coeffs: Q,
             maxDeg: maxDeg - 1
         };
+    }
+
+    _integrateByParts(expr, varNode) {
+        // Attempt u-dv decomposition
+        let u, dv;
+
+        // Helper for LIATE priority (Lower is better candidate for u)
+        const getPriority = (node) => {
+             // L: Log
+             if (node instanceof Call && (node.funcName === 'ln' || node.funcName === 'log')) return 1;
+             // I: Inverse Trig
+             if (node instanceof Call && ['asin', 'acos', 'atan', 'asec', 'acsc', 'acot'].includes(node.funcName)) return 2;
+             // A: Algebraic (Polynomials in varNode)
+             const poly = this._getPolyCoeffs(node, varNode);
+             if (poly) return 3;
+
+             // T: Trig
+             if (node instanceof Call && ['sin', 'cos', 'tan', 'sec', 'csc', 'cot'].includes(node.funcName)) return 4;
+             // E: Exponential
+             if (node instanceof Call && node.funcName === 'exp') return 5;
+             if (node instanceof Pow) {
+                 // base const, exp depends on var -> exponential
+                 if (!this._dependsOn(node.left, varNode) && this._dependsOn(node.right, varNode)) return 5;
+             }
+
+             return 6; // Other
+        };
+
+        if (expr instanceof Mul) {
+            const l = expr.left;
+            const r = expr.right;
+            const pL = getPriority(l);
+            const pR = getPriority(r);
+
+            // LIATE rule: pick u with lower priority index
+            if (pL < pR) {
+                u = l; dv = r;
+            } else {
+                u = r; dv = l;
+            }
+        } else {
+            // Single term (e.g. ln(x), asin(x)) -> u = expr, dv = 1
+            const p = getPriority(expr);
+            if (p <= 2) { // Only try this for Log or Inverse Trig (Priority 1 or 2)
+                u = expr;
+                dv = new Num(1);
+            } else {
+                return null;
+            }
+        }
+
+        // v = integrate(dv)
+        let v = dv.integrate(varNode);
+        // If v is still a symbolic integrate call, parts failed (can't integrate dv)
+        if (v instanceof Call && v.funcName === 'integrate') return null;
+
+        // du = diff(u)
+        let du = u.diff(varNode).simplify();
+
+        // Result = uv - int(v du)
+        const uv = new Mul(u, v).simplify();
+        const vdu = new Mul(v, du).simplify();
+
+        return new Sub(uv, new Call('integrate', [vdu, varNode]));
     }
 
     _partfrac(expr, varNode) {
