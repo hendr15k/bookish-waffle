@@ -2407,6 +2407,153 @@ and, or, not, xor, int, evalf`;
         findDiff(expr);
         if(!indepVar) findDiffComplex(expr);
 
+        // Check for Second Derivative diff(y, x, 2)
+        let diffCall2 = null;
+        const findDiff2 = (node) => {
+            if (node instanceof Call && node.funcName === 'diff') {
+                if (node.args.length === 3 && node.args[2] instanceof Num && node.args[2].value === 2) {
+                    const target = node.args[0];
+                    if ((target instanceof Sym && target.name === depVar.name) ||
+                        (target instanceof Call && target.funcName === depVar.name)) {
+                            // Check indep var
+                            if (node.args[1] instanceof Sym) {
+                                if (indepVar && node.args[1].name !== indepVar.name) return; // Mismatch
+                                indepVar = node.args[1];
+                                diffCall2 = node;
+                            }
+                    }
+                }
+            }
+            if (node instanceof Call) node.args.forEach(findDiff2);
+            if (node instanceof BinaryOp) { findDiff2(node.left); findDiff2(node.right); }
+        };
+        findDiff2(expr);
+
+        // Handle Second Order
+        if (diffCall2) {
+             const D2Y = new Sym('__D2Y__');
+             const DY = new Sym('__DY__');
+
+             // Robust Linearity Check for Homogeneous Constant Coefficient
+             // Eq must be: a*y'' + b*y' + c*y = 0 (assuming LHS-RHS simplification)
+             // Check if it fits this form where a, b, c are constants (no x, no y)
+
+             // 1. Substitute derivatives with symbols to treat as polynomial in variables
+             const y_sym = new Sym(depVar.name);
+
+             const replaceDerivs = (node) => {
+                 if (node === diffCall2) return D2Y;
+                 // diff(y, x, 2)
+                 if (node instanceof Call && node.funcName === 'diff' && node.args.length === 3 && node.args[2].value === 2) {
+                     const target = node.args[0];
+                     if ((target instanceof Sym && target.name === depVar.name) || (target instanceof Call && target.funcName === depVar.name)) return D2Y;
+                 }
+                 // diff(y, x)
+                 if (node instanceof Call && node.funcName === 'diff' && node.args.length === 2) {
+                     const target = node.args[0];
+                     if ((target instanceof Sym && target.name === depVar.name) || (target instanceof Call && target.funcName === depVar.name)) return DY;
+                 }
+                 // y
+                 if (node instanceof Call && node.funcName === depVar.name) return y_sym;
+                 if (node instanceof Sym && node.name === depVar.name) return y_sym;
+
+                 if (node instanceof BinaryOp) return new node.constructor(replaceDerivs(node.left), replaceDerivs(node.right));
+                 if (node instanceof Call) return new Call(node.funcName, node.args.map(replaceDerivs));
+                 if (node instanceof Not) return new Not(replaceDerivs(node.arg));
+                 return node;
+             };
+
+             const polyForm = replaceDerivs(expr).expand().simplify();
+
+             // Extract Coefficients
+             // Coeff of D2Y
+             const a = polyForm.diff(D2Y).simplify();
+             // Coeff of DY
+             const b = polyForm.diff(DY).simplify();
+             // Coeff of y
+             const c = polyForm.diff(y_sym).simplify();
+
+             // Verify Linearity:
+             // 1. Coefficients a, b, c must not depend on y, DY, D2Y
+             const dependsOnVars = (n) => this._dependsOn(n, y_sym) || this._dependsOn(n, DY) || this._dependsOn(n, D2Y);
+
+             if (!dependsOnVars(a) && !dependsOnVars(b) && !dependsOnVars(c)) {
+                 // 2. Reconstruction check: expr should equal a*D2Y + b*DY + c*y + remainder
+                 // Remainder must be 0 for Homogeneous
+                 const recon = new Add(new Add(new Mul(a, D2Y), new Mul(b, DY)), new Mul(c, y_sym)).simplify();
+                 const remainder = new Sub(polyForm, recon).simplify();
+
+                 // Check if remainder is 0 (or close to 0)
+                 const isHomogeneous = (remainder instanceof Num && Math.abs(remainder.value) < 1e-9);
+
+                 // Check for Constant Coefficients (independent of x)
+                 if (isHomogeneous && !this._dependsOn(a, indepVar) && !this._dependsOn(b, indepVar) && !this._dependsOn(c, indepVar)) {
+                     // Solve Characteristic Equation: a*r^2 + b*r + c = 0
+                     const r = new Sym('r');
+                     const charPoly = new Add(new Add(new Mul(a, new Pow(r, new Num(2))), new Mul(b, r)), c);
+
+                     let roots = this._solve(charPoly, r);
+
+                     let r1, r2;
+                     if (roots instanceof Call && roots.funcName === 'set') {
+                         r1 = roots.args[0];
+                         r2 = roots.args[1];
+                     } else if (roots instanceof Expr && !(roots instanceof Call && roots.funcName === 'solve')) {
+                         r1 = roots;
+                         r2 = roots;
+                     } else {
+                         // Failed to solve characteristic equation
+                         return new Call('desolve', [eq, depVar]);
+                     }
+
+                     const C1 = new Sym('C1');
+                     const C2 = new Sym('C2');
+
+                     const diffR = new Sub(r1, r2).simplify();
+                     // Check for repeated roots
+                     if (diffR instanceof Num && Math.abs(diffR.value) < 1e-9) {
+                         const term1 = new Mul(C1, new Call('exp', [new Mul(r1, indepVar)])).simplify();
+                         const term2 = new Mul(C2, new Mul(indepVar, new Call('exp', [new Mul(r1, indepVar)]))).simplify();
+                         return new Add(term1, term2);
+                     } else {
+                         const term1 = new Mul(C1, new Call('exp', [new Mul(r1, indepVar)])).simplify();
+                         const term2 = new Mul(C2, new Call('exp', [new Mul(r2, indepVar)])).simplify();
+                         return new Add(term1, term2);
+                     }
+                 }
+             }
+
+             // Check simple y'' = f(x)
+             // Check if expr depends on y or y'
+             // If we replace y'' with D2Y, and result only depends on D2Y and x
+             const replaceD2Y = (node) => {
+                  if (node === diffCall2) return D2Y;
+                  if (node instanceof Call && node.funcName === 'diff' && node.args.length === 3 && node.args[2].value === 2) return D2Y;
+                  if (node instanceof BinaryOp) return new node.constructor(replaceD2Y(node.left), replaceD2Y(node.right));
+                  if (node instanceof Call) return new Call(node.funcName, node.args.map(replaceD2Y));
+                  return node;
+             };
+
+             const d2yEq = replaceD2Y(expr).simplify();
+             // Check if depends on diffCall (diff(y,x)) if diffCall exists
+             const dependsOnFirst = diffCall ? this._dependsOn(d2yEq, diffCall) : false;
+
+             if (!this._dependsOn(d2yEq, depVar) && !dependsOnFirst) {
+                 // Solve for D2Y
+                 const sol = this._solve(d2yEq, D2Y);
+                 if (!(sol instanceof Call && sol.funcName === 'solve')) {
+                     // Integrate twice
+                     const firstInt = sol.integrate(indepVar).simplify();
+                     const C1 = new Sym('C1');
+                     const firstWithC = new Add(firstInt, C1);
+                     const secondInt = firstWithC.integrate(indepVar).simplify();
+                     const C2 = new Sym('C2');
+                     return new Add(secondInt, C2);
+                 }
+             }
+        }
+
+
         if (!indepVar) {
             // Fallback if no derivative found (maybe algebraic eq involving y?)
             return new Call('desolve', [eq, depVar]);
