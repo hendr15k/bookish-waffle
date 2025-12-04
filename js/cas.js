@@ -249,6 +249,44 @@ class CAS {
                  };
             }
 
+            if (node.funcName === 'plot3d') {
+                // plot3d(expr, x, y, [x_min, x_max, y_min, y_max])
+                if (args.length < 3) throw new Error("plot3d requires at least 3 arguments: expression, var1, var2");
+                const expr = args[0];
+                const varX = args[1];
+                const varY = args[2];
+                let xMin = -10, xMax = 10, yMin = -10, yMax = 10;
+
+                if (args.length >= 7) {
+                    xMin = args[3].evaluateNumeric();
+                    xMax = args[4].evaluateNumeric();
+                    yMin = args[5].evaluateNumeric();
+                    yMax = args[6].evaluateNumeric();
+                } else if (args.length >= 5) {
+                    xMin = args[3].evaluateNumeric();
+                    xMax = args[4].evaluateNumeric();
+                }
+
+                if (isNaN(xMin)) xMin = -10;
+                if (isNaN(xMax)) xMax = 10;
+                if (isNaN(yMin)) yMin = -10;
+                if (isNaN(yMax)) yMax = 10;
+
+                return {
+                    type: 'plot',
+                    subtype: '3d',
+                    expr: expr,
+                    varX: varX,
+                    varY: varY,
+                    xMin: xMin,
+                    xMax: xMax,
+                    yMin: yMin,
+                    yMax: yMax,
+                    toString: () => `3D Plot ${expr}`,
+                    toLatex: () => `\\text{3D Plot } ${expr.toLatex()}`
+                };
+            }
+
             if (node.funcName === 'plotparam') {
                 // plotparam([x(t), y(t)], t, min, max)
                 // or plotparam(x(t), y(t), t, min, max)
@@ -763,10 +801,92 @@ and, or, not, xor, int, evalf`;
             return new Vec(node.elements.map(e => this._recursiveEval(e)));
         }
 
+        if (node instanceof If) {
+            // evaluate condition
+            const cond = this._recursiveEval(node.condition).simplify();
+            let val = cond.evaluateNumeric();
+            if (isNaN(val)) {
+                // If strictly not a number, maybe it's boolean 1 or 0 in CAS
+                if (cond instanceof Num) val = cond.value;
+            }
+            if (isNaN(val)) throw new Error("Condition must evaluate to a number");
+
+            if (val !== 0) {
+                // True
+                return this._recursiveEval(node.trueBlock);
+            } else {
+                if (node.falseBlock) {
+                    return this._recursiveEval(node.falseBlock);
+                }
+                return new Num(0); // Default undefined
+            }
+        }
+
+        if (node instanceof While) {
+            let limit = 10000;
+            let result = new Num(0);
+            while(limit-- > 0) {
+                const cond = this._recursiveEval(node.condition).simplify();
+                let val = cond.evaluateNumeric();
+                if (isNaN(val)) {
+                    if (cond instanceof Num) val = cond.value;
+                }
+                if (isNaN(val)) throw new Error("Condition must evaluate to a number");
+                if (val === 0) break;
+
+                const res = this._recursiveEval(node.body);
+                if (res instanceof Return) return res;
+                if (res instanceof Break) break;
+                if (res instanceof Continue) continue;
+                result = res;
+            }
+            if (limit <= 0) throw new Error("Infinite loop detected");
+            return result;
+        }
+
+        if (node instanceof For) {
+            let limit = 10000;
+            let result = new Num(0);
+
+            if (node.init) this._recursiveEval(node.init);
+
+            while(limit-- > 0) {
+                if (node.condition) {
+                    const cond = this._recursiveEval(node.condition).simplify();
+                    let val = cond.evaluateNumeric();
+                    if (isNaN(val)) {
+                        if (cond instanceof Num) val = cond.value;
+                    }
+                    if (isNaN(val)) throw new Error("Condition must evaluate to a number");
+                    if (val === 0) break;
+                }
+
+                const res = this._recursiveEval(node.body);
+                if (res instanceof Return) return res;
+                if (res instanceof Break) break;
+                if (res instanceof Continue) {
+                    if (node.step) this._recursiveEval(node.step);
+                    continue;
+                }
+                result = res;
+
+                if (node.step) this._recursiveEval(node.step);
+            }
+            if (limit <= 0) throw new Error("Infinite loop detected");
+            return result;
+        }
+
+        if (node instanceof Return || node instanceof Break || node instanceof Continue) {
+            return node;
+        }
+
         if (node instanceof Block) {
              const results = [];
              for(const stmt of node.statements) {
-                 results.push(this._recursiveEval(stmt));
+                 const res = this._recursiveEval(stmt);
+                 if (res instanceof Return) return res.value; // Unpack return value
+                 if (res instanceof Break || res instanceof Continue) return res; // Propagate up
+                 results.push(res);
              }
 
              // Check if we have multiple plots
@@ -814,6 +934,7 @@ and, or, not, xor, int, evalf`;
                       toLatex: () => plots.map(p => p.toLatex()).join("; ")
                   };
              }
+
 
              return results[results.length - 1];
         }

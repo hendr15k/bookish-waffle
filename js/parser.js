@@ -38,6 +38,15 @@ const TOKEN_LATEX_PROD = 'LATEX_PROD';
 const TOKEN_LATEX_INT = 'LATEX_INT';
 const TOKEN_LATEX_LIMIT = 'LATEX_LIMIT';
 
+// Control Flow Tokens
+const TOKEN_IF = 'IF';
+const TOKEN_ELSE = 'ELSE';
+const TOKEN_WHILE = 'WHILE';
+const TOKEN_FOR = 'FOR';
+const TOKEN_RETURN = 'RETURN';
+const TOKEN_BREAK = 'BREAK';
+const TOKEN_CONTINUE = 'CONTINUE';
+
 class Token {
     constructor(type, value) {
         this.type = type;
@@ -198,6 +207,16 @@ class Lexer {
                 if (lowerId === 'not') return new Token(TOKEN_NOT, id);
                 if (lowerId === 'xor') return new Token(TOKEN_XOR, id);
                 if (lowerId === 'mod') return new Token(TOKEN_MOD, id);
+
+                // Control Flow
+                if (lowerId === 'if') return new Token(TOKEN_IF, id);
+                if (lowerId === 'else') return new Token(TOKEN_ELSE, id);
+                if (lowerId === 'while') return new Token(TOKEN_WHILE, id);
+                if (lowerId === 'for') return new Token(TOKEN_FOR, id);
+                if (lowerId === 'return') return new Token(TOKEN_RETURN, id);
+                if (lowerId === 'break') return new Token(TOKEN_BREAK, id);
+                if (lowerId === 'continue') return new Token(TOKEN_CONTINUE, id);
+
                 return new Token(TOKEN_IDENTIFIER, id);
             }
             if (this.currentChar === ':') {
@@ -348,9 +367,6 @@ class Parser {
                             suffix += this.currentToken.value.toString();
                         } else {
                              // Skip other chars? or error?
-                             // For now append raw value if possible or just ignore?
-                             // If it's a + or -, we probably shouldn't merge it into a name.
-                             // But standard variable names don't have +.
                         }
                         this.eat(this.currentToken.type);
                     }
@@ -415,9 +431,24 @@ class Parser {
             return node;
         } else if (token.type === TOKEN_LBRACE) {
             this.eat(TOKEN_LBRACE);
-            const node = this.statement();
+            if (this.currentToken.type === TOKEN_RBRACE) {
+                // Empty block?
+                this.eat(TOKEN_RBRACE);
+                return new Block([]);
+            }
+            // Block parsing handled by statement list if block is not expression?
+            // But { a; b; c } is a block.
+            // Our parse() loop handles the top level.
+            // Here we want to parse statements inside braces.
+            const stmts = [];
+            while (this.currentToken.type !== TOKEN_RBRACE && this.currentToken.type !== TOKEN_EOF) {
+                stmts.push(this.statement());
+                while (this.currentToken.type === TOKEN_SEMI) {
+                    this.eat(TOKEN_SEMI);
+                }
+            }
             this.eat(TOKEN_RBRACE);
-            return node;
+            return new Block(stmts);
         } else if (token.type === TOKEN_LBRACKET) {
             this.eat(TOKEN_LBRACKET);
             const elements = [];
@@ -533,12 +564,8 @@ class Parser {
             let integrand = term;
 
             // Check if term is Mul(..., d<var>)
-            // Since we don't have easy access to inspect Mul structure here (it's built),
-            // we'd need to assume `term` returns an Expr tree.
-            // If term is Mul, we check the last operand.
             if (term.constructor.name === 'Mul') {
                 const operands = [];
-                // Flatten mul slightly to find last
                 function collect(node) {
                     if (node.constructor.name === 'Mul') {
                         collect(node.left);
@@ -588,9 +615,6 @@ class Parser {
                  this.eat(TOKEN_UNDERSCORE);
                  if (this.currentToken.type === TOKEN_LBRACE) {
                      this.eat(TOKEN_LBRACE);
-                     // Heuristic parsing for "x \to 0" or "x -> 0"
-                     // We consume tokens until RBRACE.
-                     // Expect IDENTIFIER (var) then TO then value.
 
                      if (this.currentToken.type === TOKEN_IDENTIFIER) {
                          variable = new Sym(this.currentToken.value);
@@ -690,7 +714,17 @@ class Parser {
                token.type === TOKEN_LATEX_SUM ||
                token.type === TOKEN_LATEX_PROD ||
                token.type === TOKEN_LATEX_INT ||
-               token.type === TOKEN_LATEX_LIMIT;
+               token.type === TOKEN_LATEX_LIMIT ||
+               // New control flow keywords should NOT trigger implicit mul (e.g. "x if" -> Mul(x, if) is wrong)
+               // But they are identifiers so Lexer might return them as keywords.
+               // We need to ensure IF, ELSE etc are not treated as implicit mul.
+               // Token types are specific.
+               token.type === TOKEN_IF || token.type === TOKEN_WHILE || token.type === TOKEN_FOR || token.type === TOKEN_RETURN;
+               // Wait, if I type "x if", implicitMul calls unary() which calls factor() which calls atom().
+               // atom() expects NUMBER, IDENTIFIER, etc.
+               // IF is a token type TOKEN_IF. atom() does not handle TOKEN_IF.
+               // So unary() will fail.
+               // This is correct behavior. "x if" is syntax error.
     }
 
     arithExpr() {
@@ -774,17 +808,86 @@ class Parser {
     }
 
     statement() {
+        if (this.currentToken.type === TOKEN_IF) {
+            this.eat(TOKEN_IF);
+            this.eat(TOKEN_LPAREN);
+            const condition = this.equation();
+            this.eat(TOKEN_RPAREN);
+
+            // Allow single statement or block
+            const trueBlock = this.statement();
+
+            let falseBlock = null;
+            if (this.currentToken.type === TOKEN_ELSE) {
+                this.eat(TOKEN_ELSE);
+                falseBlock = this.statement();
+            }
+            return new If(condition, trueBlock, falseBlock);
+
+        } else if (this.currentToken.type === TOKEN_WHILE) {
+            this.eat(TOKEN_WHILE);
+            this.eat(TOKEN_LPAREN);
+            const condition = this.equation();
+            this.eat(TOKEN_RPAREN);
+            const body = this.statement();
+            return new While(condition, body);
+
+        } else if (this.currentToken.type === TOKEN_FOR) {
+            this.eat(TOKEN_FOR);
+            this.eat(TOKEN_LPAREN);
+            // for (init; cond; step)
+
+            let init = null;
+            if (this.currentToken.type !== TOKEN_SEMI) {
+                init = this.statement(); // This consumes assignment
+            }
+            this.eat(TOKEN_SEMI);
+
+            let cond = null;
+            if (this.currentToken.type !== TOKEN_SEMI) {
+                cond = this.equation();
+            }
+            this.eat(TOKEN_SEMI);
+
+            let step = null;
+            if (this.currentToken.type !== TOKEN_RPAREN) {
+                step = this.statement(); // Assignment usually
+            }
+            this.eat(TOKEN_RPAREN);
+
+            const body = this.statement();
+            return new For(init, cond, step, body);
+
+        } else if (this.currentToken.type === TOKEN_RETURN) {
+            this.eat(TOKEN_RETURN);
+            let value = null;
+            if (this.currentToken.type !== TOKEN_SEMI && this.currentToken.type !== TOKEN_EOF && this.currentToken.type !== TOKEN_RBRACE) {
+                value = this.equation();
+            }
+            // Semi is consumed by block parser or here?
+            // Usually statements don't consume their own semi if inside a block loop, but here it's cleaner to leave it?
+            // Our block parser `parse()` and `LBRACE` handler consume SEMI.
+            return new Return(value);
+
+        } else if (this.currentToken.type === TOKEN_BREAK) {
+            this.eat(TOKEN_BREAK);
+            return new Break();
+
+        } else if (this.currentToken.type === TOKEN_CONTINUE) {
+            this.eat(TOKEN_CONTINUE);
+            return new Continue();
+
+        } else if (this.currentToken.type === TOKEN_LBRACE) {
+            // Forward to atom handling which calls block?
+            // atom() handles LBRACE for simple expressions or blocks.
+            // But if we are in statement, and see LBRACE, it's a block statement.
+            return this.atom();
+        }
+
         if (this.currentToken.type === TOKEN_IDENTIFIER) {
             const savedPos = this.lexer.pos;
             const savedChar = this.lexer.currentChar;
             const savedToken = this.currentToken;
-
-            // Note: We need to handle subscripts here as well if we want assignment to work with x_1 := ...
-            // But since 'atom' handles subscripts, we might consume them if we call atom?
-            // The issue is 'statement' peeks ahead.
-            // With subscripts as separate tokens, the lookahead logic in statement needs to be aware.
-            // For now, let's assume basic assignment doesn't use subscripts on LHS in this simplified parser.
-            // Or rely on fallback to equation().
 
             const name = this.currentToken.value;
             this.eat(TOKEN_IDENTIFIER);

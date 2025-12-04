@@ -1594,6 +1594,12 @@
                 plots = [result];
             }
 
+            // Handle 3D Plots
+            if (plots[0].subtype === '3d') {
+                drawPlot3D(canvas, plots[0]);
+                return;
+            }
+
             // Determine global range
             // If explicitBounds is provided (from zoom/pan), use them.
             // Otherwise calculate default from args.
@@ -2113,6 +2119,18 @@
         function manualZoom(canvas, factor) {
             const b = canvas.plotBounds;
             if(!b) return;
+
+            // Check if 3D
+            if (canvas.plotResult && canvas.plotResult.subtype === '3d') {
+                // 3D zoom simply scales the rotation distance or scale factor
+                // For simplicity, we can't easily change bounds without re-evaluating which is slow for 3D.
+                // We can adjust a scale factor stored on canvas.
+                if (!canvas.scaleFactor3D) canvas.scaleFactor3D = 1;
+                canvas.scaleFactor3D *= (1/factor); // factor < 1 means zoom in (enlarge)
+                drawPlot3D(canvas, canvas.plotResult);
+                return;
+            }
+
             const xRange = b.maxX - b.minX;
             const yRange = b.maxY - b.minY;
             const centerX = (b.minX + b.maxX) / 2;
@@ -2128,6 +2146,168 @@
                 maxY: centerY + newYRange / 2
             };
             drawPlot(canvas, canvas.plotResult, newBounds);
+        }
+
+        function drawPlot3D(canvas, plot) {
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+            ctx.clearRect(0, 0, width, height);
+
+            // Simple Isometric Projection
+            // x, y, z -> 2D
+            // Using a rotation matrix logic simplified
+            // We rotate around Z then X.
+            // Or simpler: Project (x, y, z) to (u, v)
+
+            const scale = (canvas.scaleFactor3D || 1) * Math.min(width, height) / (plot.xMax - plot.xMin) * 0.4;
+            const rotationX = canvas.rotX || -0.5; // radians
+            const rotationZ = canvas.rotZ || 0.5;
+
+            const project = (x, y, z) => {
+                // Rotate Z
+                const x1 = x * Math.cos(rotationZ) - y * Math.sin(rotationZ);
+                const y1 = x * Math.sin(rotationZ) + y * Math.cos(rotationZ);
+                // Rotate X
+                const y2 = y1 * Math.cos(rotationX) - z * Math.sin(rotationX);
+                const z2 = y1 * Math.sin(rotationX) + z * Math.cos(rotationX);
+
+                return {
+                    x: width / 2 + x1 * scale,
+                    y: height / 2 - y2 * scale // Invert Y
+                };
+            };
+
+            // Resolution
+            const steps = 30;
+            const dx = (plot.xMax - plot.xMin) / steps;
+            const dy = (plot.yMax - plot.yMin) / steps;
+
+            const points = []; // grid[i][j] = {x, y, z, px, py}
+
+            for(let i=0; i<=steps; i++) {
+                const row = [];
+                for(let j=0; j<=steps; j++) {
+                    const valX = plot.xMin + i * dx;
+                    const valY = plot.yMin + j * dy;
+
+                    try {
+                        // Evaluate z = f(x, y)
+                        // Need substitute X then Y
+                        const exprX = plot.expr.substitute(plot.varX, new Num(valX)).simplify();
+                        const exprY = exprX.substitute(plot.varY, new Num(valY)).simplify();
+
+                        let z = (exprY instanceof Num) ? exprY.value : exprY.evaluateNumeric();
+                        if (isNaN(z) || !isFinite(z)) z = 0;
+                        if (z > 50) z = 50; // Clamp
+                        if (z < -50) z = -50;
+
+                        const proj = project(valX, valY, z);
+                        row.push({x: valX, y: valY, z: z, px: proj.x, py: proj.y});
+                    } catch(e) {
+                        row.push(null);
+                    }
+                }
+                points.push(row);
+            }
+
+            // Draw Wireframe
+            ctx.strokeStyle = "#007bff";
+            ctx.lineWidth = 1;
+
+            // Lines along X
+            for(let i=0; i<=steps; i++) {
+                ctx.beginPath();
+                let first = true;
+                for(let j=0; j<=steps; j++) {
+                    const p = points[i][j];
+                    if (p) {
+                        if (first) { ctx.moveTo(p.px, p.py); first=false; }
+                        else ctx.lineTo(p.px, p.py);
+                    } else {
+                        first = true;
+                    }
+                }
+                ctx.stroke();
+            }
+
+            // Lines along Y
+            for(let j=0; j<=steps; j++) {
+                ctx.beginPath();
+                let first = true;
+                for(let i=0; i<=steps; i++) {
+                    const p = points[i][j];
+                    if (p) {
+                        if (first) { ctx.moveTo(p.px, p.py); first=false; }
+                        else ctx.lineTo(p.px, p.py);
+                    } else {
+                        first = true;
+                    }
+                }
+                ctx.stroke();
+            }
+
+            // Draw Axes
+            const origin = project(0, 0, 0);
+            const xAxis = project(plot.xMax, 0, 0);
+            const yAxis = project(0, plot.yMax, 0);
+            const zAxis = project(0, 0, 10); // arbitrary Z height
+
+            ctx.lineWidth = 2;
+
+            ctx.strokeStyle = "red";
+            ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(xAxis.x, xAxis.y); ctx.stroke();
+            ctx.fillStyle = "red"; ctx.fillText("x", xAxis.x, xAxis.y);
+
+            ctx.strokeStyle = "green";
+            ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(yAxis.x, yAxis.y); ctx.stroke();
+            ctx.fillStyle = "green"; ctx.fillText("y", yAxis.x, yAxis.y);
+
+            ctx.strokeStyle = "blue";
+            ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(zAxis.x, zAxis.y); ctx.stroke();
+            ctx.fillStyle = "blue"; ctx.fillText("z", zAxis.x, zAxis.y);
+
+            // Interactive handlers need to update rotX and rotZ on canvas
+            if (!canvas.has3DHandlers) {
+                canvas.has3DHandlers = true;
+                let isDragging = false;
+                let lastX=0, lastY=0;
+
+                const onStart = (e) => {
+                    isDragging = true;
+                    lastX = e.touches ? e.touches[0].clientX : e.clientX;
+                    lastY = e.touches ? e.touches[0].clientY : e.clientY;
+                    e.preventDefault();
+                };
+
+                const onMove = (e) => {
+                    if (!isDragging) return;
+                    e.preventDefault();
+                    const x = e.touches ? e.touches[0].clientX : e.clientX;
+                    const y = e.touches ? e.touches[0].clientY : e.clientY;
+                    const dx = x - lastX;
+                    const dy = y - lastY;
+                    lastX = x;
+                    lastY = y;
+
+                    canvas.rotZ = (canvas.rotZ || 0.5) - dx * 0.01;
+                    canvas.rotX = (canvas.rotX || -0.5) + dy * 0.01;
+
+                    if (canvas.plotResult && canvas.plotResult.subtype === '3d') {
+                        drawPlot3D(canvas, canvas.plotResult);
+                    }
+                };
+
+                const onEnd = () => isDragging = false;
+
+                canvas.addEventListener('mousedown', onStart);
+                canvas.addEventListener('mousemove', onMove);
+                canvas.addEventListener('mouseup', onEnd);
+                canvas.addEventListener('mouseleave', onEnd);
+                canvas.addEventListener('touchstart', onStart, {passive: false});
+                canvas.addEventListener('touchmove', onMove, {passive: false});
+                canvas.addEventListener('touchend', onEnd);
+            }
         }
 
         let calcDebounce;
