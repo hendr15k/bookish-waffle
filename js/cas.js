@@ -158,6 +158,10 @@ class CAS {
                              return res2;
                          }
                      }
+
+                     // Try Integration by Parts
+                     const parts = this._integrateByParts(func, varNode);
+                     if (parts) return parts;
                 }
                 return res;
             }
@@ -3813,6 +3817,100 @@ and, or, not, xor, int, evalf`;
         }
 
         return new Call('ilaplace', [expr, s, t]);
+    }
+
+    _integrateByParts(expr, varNode) {
+        // Heuristic Integration by Parts
+        // Formula: int(u dv) = u*v - int(v du)
+        // Selection Strategy (LIATE):
+        // L: Logarithmic
+        // I: Inverse Trig
+        // A: Algebraic
+        // T: Trig
+        // E: Exponential
+        // We pick 'u' as the type that comes first in LIATE.
+
+        // Helper to score expression type
+        const getScore = (e) => {
+            if (e instanceof Call) {
+                if (['ln', 'log', 'log2'].includes(e.funcName)) return 5; // Log
+                if (['asin', 'acos', 'atan', 'asinh', 'acosh', 'atanh'].includes(e.funcName)) return 4; // Inverse Trig
+                if (['sin', 'cos', 'tan', 'sinh', 'cosh', 'tanh', 'sec', 'csc', 'cot'].includes(e.funcName)) return 2; // Trig
+                if (['exp'].includes(e.funcName)) return 1; // Exponential
+            }
+            if (e instanceof Pow && e.left instanceof Sym && e.left.name === 'e') return 1; // e^x
+            if (this._getPolyCoeffs(e, varNode)) return 3; // Algebraic
+            return 0;
+        };
+
+        let u, dv;
+
+        if (expr instanceof Mul) {
+             const a = expr.left;
+             const b = expr.right;
+             const sA = getScore(a);
+             const sB = getScore(b);
+
+             // Pick u with higher score
+             if (sA >= sB) {
+                 u = a; dv = b;
+             } else {
+                 u = b; dv = a;
+             }
+        } else {
+             // Single term (e.g. ln(x), atan(x))
+             // Treat as 1 * expr
+             // u = expr, dv = 1
+             // Only if expr score is high (Log or InvTrig)
+             const s = getScore(expr);
+             if (s >= 4) {
+                 u = expr;
+                 dv = new Num(1);
+             } else {
+                 return null;
+             }
+        }
+
+        try {
+            // v = integrate(dv)
+            let v = dv.integrate(varNode).simplify();
+            if (v instanceof Call && v.funcName === 'integrate') return null; // Can't integrate dv
+
+            // du = diff(u)
+            let du = u.diff(varNode).simplify();
+
+            // Check if integral v*du is simpler or solvable
+            // We just attempt it recursively (but prevent infinite loops if it returns same form)
+            // Ideally we should have a depth check or complexity check.
+            // For now, let's just call integrate recursively.
+
+            // Term: u*v
+            const uv = new Mul(u, v).simplify();
+
+            // Integral: int(v * du)
+            const vdu = new Mul(v, du).simplify();
+
+            // Avoid infinite recursion: if vdu looks like original expr (up to constant), we might be cycling (like e^x sin x)
+            // For now, let's just try to integrate vdu.
+            // But we must NOT use _integrateByParts immediately if it's the same complexity?
+            // Actually, CAS.evaluate -> integrate -> _integrateByParts.
+            // If we call vdu.integrate(varNode), it calls recursiveEval -> integrate.
+            // So recursion is handled. We just need to stop if it returns symbolic.
+
+            let intVdu = vdu.integrate(varNode).simplify();
+
+            if (intVdu instanceof Call && intVdu.funcName === 'integrate') {
+                 // Second attempt? e.g. x^2 * e^x needs 2 steps.
+                 // The recursive call inside vdu.integrate should have tried parts again.
+                 // If it returned symbolic, it failed.
+                 return null;
+            }
+
+            return new Sub(uv, intVdu).simplify();
+
+        } catch (e) {
+            return null;
+        }
     }
 }
 

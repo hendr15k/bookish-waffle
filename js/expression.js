@@ -885,6 +885,27 @@ class Div extends BinaryOp {
             }
         }
 
+        // integrate(x / (x^2 + a)) -> 0.5 * ln(x^2 + a)
+        // More generally: integrate(f'(x)/f(x)) = ln(f(x))
+        // Check if numerator is derivative of denominator (up to constant)
+        const denomDiff = this.right.diff(varName).simplify();
+        // Check if num = k * denomDiff
+        // k = num / denomDiff
+        const ratio = new Div(this.left, denomDiff).simplify();
+        // Check if ratio does not depend on varName
+        const dependsOn = (expr, v) => {
+            if (expr instanceof Sym) return expr.name === v.name;
+            if (expr instanceof Num) return false;
+            if (expr instanceof BinaryOp) return dependsOn(expr.left, v) || dependsOn(expr.right, v);
+            if (expr instanceof Call) return expr.args.some(a => dependsOn(a, v));
+            return false;
+        };
+
+        if (!dependsOn(ratio, varName)) {
+             // result = ratio * ln(denom)
+             return new Mul(ratio, new Call("ln", [this.right]));
+        }
+
         return new Call("integrate", [this, varName]);
     }
     expand() {
