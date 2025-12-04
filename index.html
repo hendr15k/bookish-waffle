@@ -3490,6 +3490,28 @@
                      if(isNaN(m) || isNaN(h) || isNaN(g)) return;
                      result = `PE = ${(m*g*h).toFixed(4)} J`;
                  }
+             } else if (tab === 'elec') {
+                 // V=IR, P=VI
+                 const V = val('phys-V');
+                 const I = val('phys-I');
+                 const R = val('phys-R');
+                 // const P = val('phys-P');
+
+                 if (type === 'V') { // V = I*R
+                      if (isNaN(I) || isNaN(R)) return;
+                      result = `Voltage (V) = ${(I*R).toFixed(4)} V`;
+                 } else if (type === 'I') { // I = V/R
+                      if (isNaN(V) || isNaN(R)) return;
+                      if (R === 0) result = "Error: R=0";
+                      else result = `Current (I) = ${(V/R).toFixed(4)} A`;
+                 } else if (type === 'R') { // R = V/I
+                      if (isNaN(V) || isNaN(I)) return;
+                      if (I === 0) result = "Error: I=0";
+                      else result = `Resistance (R) = ${(V/I).toFixed(4)} Ω`;
+                 } else if (type === 'P') { // P = VI
+                      if (isNaN(V) || isNaN(I)) return;
+                      result = `Power (P) = ${(V*I).toFixed(4)} W`;
+                 }
              }
 
              // Update Inputs for Electricity (helper for runPhysics)
