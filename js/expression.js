@@ -910,15 +910,15 @@ class Div extends BinaryOp {
         // k = num / denomDiff
         const ratio = new Div(this.left, denomDiff).simplify();
         // Check if ratio does not depend on varName
-        const dependsOn = (expr, v) => {
+        const dependsOn2 = (expr, v) => {
             if (expr instanceof Sym) return expr.name === v.name;
             if (expr instanceof Num) return false;
-            if (expr instanceof BinaryOp) return dependsOn(expr.left, v) || dependsOn(expr.right, v);
-            if (expr instanceof Call) return expr.args.some(a => dependsOn(a, v));
+            if (expr instanceof BinaryOp) return dependsOn2(expr.left, v) || dependsOn2(expr.right, v);
+            if (expr instanceof Call) return expr.args.some(a => dependsOn2(a, v));
             return false;
         };
 
-        if (!dependsOn(ratio, varName)) {
+        if (!dependsOn2(ratio, varName)) {
              // result = ratio * ln(denom)
              return new Mul(ratio, new Call("ln", [this.right]));
         }
