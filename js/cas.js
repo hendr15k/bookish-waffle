@@ -812,8 +812,7 @@ and, or, not, xor, int, evalf`;
     _sum(expr, varNode, start, end) {
         if (!(varNode instanceof Sym)) throw new Error("Sum variable must be a symbol");
         if (!(start instanceof Num) || !(end instanceof Num)) {
-            // Symbolic sum not implemented, return call
-            return new Call("sum", [expr, varNode, start, end]);
+            return this._sumSymbolic(expr, varNode, start, end);
         }
 
         let sum = new Num(0);
@@ -822,6 +821,76 @@ and, or, not, xor, int, evalf`;
             sum = new Add(sum, term).simplify();
         }
         return sum;
+    }
+
+    _sumSymbolic(expr, varNode, start, end) {
+        expr = expr.expand().simplify();
+
+        // sum(c, k, 1, n) = c*n
+        if (!this._dependsOn(expr, varNode)) {
+            const count = new Add(new Sub(end, start), new Num(1)).simplify();
+            return new Mul(expr, count).simplify();
+        }
+
+        // sum(A+B)
+        if (expr instanceof Add) {
+            return new Add(this._sumSymbolic(expr.left, varNode, start, end), this._sumSymbolic(expr.right, varNode, start, end)).simplify();
+        }
+        if (expr instanceof Sub) {
+            return new Sub(this._sumSymbolic(expr.left, varNode, start, end), this._sumSymbolic(expr.right, varNode, start, end)).simplify();
+        }
+
+        // sum(c*A)
+        if (expr instanceof Mul) {
+            if (!this._dependsOn(expr.left, varNode)) {
+                return new Mul(expr.left, this._sumSymbolic(expr.right, varNode, start, end)).simplify();
+            }
+            if (!this._dependsOn(expr.right, varNode)) {
+                return new Mul(expr.right, this._sumSymbolic(expr.left, varNode, start, end)).simplify();
+            }
+        }
+
+        // Normalize sum(..., k, 1, n)
+        // If start != 1, sum(f(k), k, a, b) = sum(f(j+a-1), j, 1, b-a+1)
+        if (!(start instanceof Num && start.value === 1)) {
+             // Let j = k - a + 1 => k = j + a - 1
+             // newEnd = b - a + 1
+             const j = new Sym(varNode.name + "_idx"); // avoid collision
+             const shift = new Sub(start, new Num(1));
+             const subExpr = expr.substitute(varNode, new Add(j, shift)).simplify();
+             const newEnd = new Sub(end, shift).simplify();
+             // Recurse with 1..newEnd
+             const res = this._sumSymbolic(subExpr, j, new Num(1), newEnd);
+             // Substitute back? No, result should not depend on j.
+             return res;
+        }
+
+        const n = end;
+
+        // k
+        if (expr instanceof Sym && expr.name === varNode.name) {
+            // n(n+1)/2
+            return new Div(new Mul(n, new Add(n, new Num(1))), new Num(2)).simplify();
+        }
+
+        // k^p
+        if (expr instanceof Pow && expr.left instanceof Sym && expr.left.name === varNode.name && expr.right instanceof Num) {
+            const p = expr.right.value;
+            if (p === 1) return new Div(new Mul(n, new Add(n, new Num(1))), new Num(2)).simplify();
+            if (p === 2) {
+                // n(n+1)(2n+1)/6
+                const term1 = new Mul(n, new Add(n, new Num(1)));
+                const term2 = new Add(new Mul(new Num(2), n), new Num(1));
+                return new Div(new Mul(term1, term2), new Num(6)).simplify();
+            }
+            if (p === 3) {
+                // (n(n+1)/2)^2
+                const base = new Div(new Mul(n, new Add(n, new Num(1))), new Num(2));
+                return new Pow(base, new Num(2)).simplify();
+            }
+        }
+
+        return new Call("sum", [expr, varNode, start, end]);
     }
 
     _product(expr, varNode, start, end) {
@@ -1595,8 +1664,146 @@ and, or, not, xor, int, evalf`;
             const calcGcd = (u, v) => !v ? u : calcGcd(v, u % v);
             return new Num(calcGcd(x, y));
         }
-        // Polynomial GCD not implemented
+
+        // Polynomial GCD
+        try {
+             // Identify variable
+             let varNode = null;
+             const findVar = (n) => {
+                 if (n instanceof Sym && !['pi', 'e', 'i', 'infinity'].includes(n.name)) {
+                     if (!varNode) varNode = n;
+                     else if (varNode.name !== n.name) varNode = 'MIXED';
+                 }
+                 if (n instanceof Call) n.args.forEach(findVar);
+                 if (n instanceof BinaryOp) { findVar(n.left); findVar(n.right); }
+                 if (n instanceof Pow) { findVar(n.left); findVar(n.right); }
+             };
+             findVar(a);
+             findVar(b);
+
+             if (varNode && varNode !== 'MIXED') {
+                 // Check if both are polynomials
+                 const p1 = this._getPolyCoeffs(a, varNode);
+                 const p2 = this._getPolyCoeffs(b, varNode);
+
+                 if (p1 && p2) {
+                     // Euclidean Algorithm for Polynomials
+                     let u = a;
+                     let v = b;
+
+                     // Make monic? Or just standard division.
+                     // We need _polyRem(u, v, varNode)
+
+                     let loopCount = 0;
+                     while (!(v instanceof Num && v.value === 0)) {
+                         if (loopCount++ > 50) break; // Safety break
+                         const r = this._polyRem(u, v, varNode);
+
+                         if (r instanceof Call && r.funcName === 'rem') {
+                             return new Call('gcd', [a, b]);
+                         }
+
+                         // Check if degree reduced
+                         const pV = this._getPolyCoeffs(v, varNode);
+                         const pR = this._getPolyCoeffs(r, varNode);
+
+                         if (!pR || !pV) return new Call('gcd', [a, b]);
+
+                         if (pR.maxDeg >= pV.maxDeg) {
+                             // Degree did not decrease, symbolic cancellation failed
+                             if (!(r instanceof Num && r.value === 0)) {
+                                 // Not zero, and degree not reduced. Abort.
+                                 return new Call('gcd', [a, b]);
+                             }
+                         }
+
+                         u = v;
+                         v = r;
+                     }
+
+                     // Normalize result (make leading coefficient 1)
+                     const finalP = this._getPolyCoeffs(u, varNode);
+                     if (finalP) {
+                         const lc = finalP.coeffs[finalP.maxDeg];
+                         if (lc && !(lc instanceof Num && lc.value === 0)) {
+                             return new Div(u, lc).simplify();
+                         }
+                     }
+                     return u.simplify();
+                 }
+             }
+        } catch(e) {
+            // console.log("GCD error", e);
+        }
+
         return new Call('gcd', [a, b]);
+    }
+
+    _polyRem(a, b, varNode) {
+        // Polynomial Remainder of A / B
+        // A = Q*B + R
+        // We use polynomial division logic
+        const pA = this._getPolyCoeffs(a, varNode);
+        const pB = this._getPolyCoeffs(b, varNode);
+
+        if (!pA || !pB) return new Call('rem', [a, b]); // Should not happen if called from GCD
+
+        let degA = pA.maxDeg;
+        const degB = pB.maxDeg;
+
+        if (degB < 0) throw new Error("Division by zero polynomial");
+        if (degA < degB) return a; // Degree A < Degree B
+
+        // Clone coeffs of A to work on (remainder starts as A)
+        let R = a;
+        let pR = pA;
+
+        // While deg(R) >= deg(B)
+        // term = LT(R) / LT(B)
+        // R = R - term * B
+
+        // Safety counter
+        let limit = degA - degB + 5;
+        while (degA >= degB && limit-- > 0) {
+             const ltR = pR.coeffs[degA];
+             const ltB = pB.coeffs[degB];
+
+             // term = (lc(R)/lc(B)) * x^(degR - degB)
+             const coeff = new Div(ltR, ltB).simplify();
+             const degDiff = degA - degB;
+
+             let termVar;
+             if (degDiff === 0) termVar = new Num(1);
+             else if (degDiff === 1) termVar = varNode;
+             else termVar = new Pow(varNode, new Num(degDiff));
+
+             const term = new Mul(coeff, termVar).simplify();
+
+             // R = R - term * B
+             R = new Sub(R, new Mul(term, b)).simplify();
+
+             // Re-evaluate coeffs of R
+             pR = this._getPolyCoeffs(R, varNode);
+             if (!pR) break; // Should be 0
+             // Check if R is 0
+             if (Object.keys(pR.coeffs).length === 0) {
+                 return new Num(0);
+             }
+
+             // Update degA
+             // Usually maxDeg decreases
+             degA = pR.maxDeg;
+             // Check if maxDeg actually dropped?
+             // Floating point issues might keep small coeffs.
+             // _getPolyCoeffs does not filter small coeffs automatically, but simplify() usually handles it.
+
+             // Check if maxDeg has NOT dropped and we made no progress
+             if (degA >= degDiff + degB) {
+                 break;
+             }
+        }
+
+        return R;
     }
 
     _lcm(a, b) {
@@ -3061,7 +3268,23 @@ and, or, not, xor, int, evalf`;
 
         // simplify coeffs
         for(const d in coeffs) coeffs[d] = coeffs[d].simplify();
-        return { coeffs, maxDeg };
+
+        // Re-calculate maxDeg to ignore zero coefficients
+        let trueMaxDeg = 0;
+        let foundAny = false;
+        // Use Object.keys to iterate, but sort or check all
+        for (const d in coeffs) {
+            const deg = parseInt(d);
+            const c = coeffs[d];
+            // Check if non-zero
+            if (!(c instanceof Num && c.value === 0)) {
+                 if (deg > trueMaxDeg) trueMaxDeg = deg;
+                 foundAny = true;
+            }
+        }
+        if (!foundAny) trueMaxDeg = 0;
+
+        return { coeffs, maxDeg: trueMaxDeg };
     }
 
     _degree(expr, varNode) {
