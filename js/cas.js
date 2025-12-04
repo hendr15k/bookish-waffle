@@ -1541,21 +1541,162 @@ and, or, not, xor, int, evalf`;
 
             if (exprs.length === 1) return exprs[0];
 
-            // To prevent immediate simplification to a single number, we might need to wrap it?
-            // Or just return it and hope simplify doesn't merge Num * Num instantly?
-            // My simplify DOES merge Num * Num.
-            // So `2^2 * 3` -> `4 * 3` -> `12`.
-
-            // This is a known issue in simple CAS.
-            // I'll leave it as is, it might collapse.
-            // But if I return `Call('times', ...)` it won't simplify.
-            // Let's use `Call('times', ...)` or just accept it simplifies for now.
-            // Actually, Xcas `factor` on integer returns `2^2 * 3`.
-            // If I implement `Mul` to NOT multiply if one is a Power? No.
-
-            return new Call('factored', exprs); // Use a custom wrapper to display it?
+            return new Call('factored', exprs); // Use a custom wrapper to display it
         }
+
+        // Polynomial Factorization
+        try {
+            // 1. Identify variable
+            const vars = [];
+            const findVars = (node) => {
+                if (node instanceof Sym && !['pi', 'e', 'i', 'infinity'].includes(node.name)) {
+                    if (!vars.some(v => v.name === node.name)) vars.push(node);
+                }
+                if (node instanceof Call) node.args.forEach(findVars);
+                if (node instanceof BinaryOp) { findVars(node.left); findVars(node.right); }
+                if (node instanceof Pow) { findVars(node.left); findVars(node.right); }
+            };
+            findVars(n);
+
+            if (vars.length === 1) {
+                const x = vars[0];
+                const poly = this._getPolyCoeffs(n, x);
+
+                if (poly) {
+                    let factors = [];
+                    let p = poly; // { coeffs: {0: Num, 1: Num...}, maxDeg: N }
+
+                    // 2. Extract Common Content (Integer GCD of coefficients)
+                    const coefList = [];
+                    for(const d in p.coeffs) {
+                        const c = p.coeffs[d];
+                        if (c instanceof Num && Number.isInteger(c.value)) {
+                            coefList.push(Math.abs(c.value));
+                        } else {
+                            // Non-integer coefficient, abort content extraction
+                            coefList.length = 0;
+                            break;
+                        }
+                    }
+
+                    let content = 1;
+                    if (coefList.length > 0) {
+                         const calcGcd = (u, v) => !v ? u : calcGcd(v, u % v);
+                         content = coefList.reduce((acc, val) => calcGcd(acc, val));
+                    }
+
+                    if (content > 1) {
+                         factors.push(new Num(content));
+                         // Divide poly by content
+                         const newCoeffs = {};
+                         for(const d in p.coeffs) {
+                             newCoeffs[d] = new Div(p.coeffs[d], new Num(content)).simplify();
+                         }
+                         p.coeffs = newCoeffs;
+                    }
+
+                    // 3. Extract lowest degree term (x^k)
+                    let minDeg = p.maxDeg;
+                    let hasTerms = false;
+                    for(const d in p.coeffs) {
+                        const deg = parseInt(d);
+                        const c = p.coeffs[d];
+                        if (!(c instanceof Num && c.value === 0)) {
+                             if (deg < minDeg) minDeg = deg;
+                             hasTerms = true;
+                        }
+                    }
+                    if (!hasTerms) return new Num(0);
+
+                    if (minDeg > 0) {
+                        if (minDeg === 1) factors.push(x);
+                        else factors.push(new Pow(x, new Num(minDeg)));
+
+                        // Shift degrees down
+                        const newCoeffs = {};
+                        let newMaxDeg = 0;
+                        for(const d in p.coeffs) {
+                             const deg = parseInt(d);
+                             const newDeg = deg - minDeg;
+                             newCoeffs[newDeg] = p.coeffs[d];
+                             if (newDeg > newMaxDeg) newMaxDeg = newDeg;
+                        }
+                        p.coeffs = newCoeffs;
+                        p.maxDeg = newMaxDeg;
+                    }
+
+                    // Reconstruct reduced polynomial to solve/analyze
+                    let reducedPoly = this._poly2symb(this._coeffsToVec(p.coeffs, p.maxDeg), x);
+
+                    // 4. Factor Quadratics
+                    if (p.maxDeg === 2) {
+                        const a = p.coeffs[2];
+                        const rootsRes = this._solve(reducedPoly, x);
+                        let roots = [];
+                        if (rootsRes instanceof Call && rootsRes.funcName === 'set') {
+                            roots = rootsRes.args;
+                        } else if (rootsRes instanceof Expr && !(rootsRes instanceof Call && rootsRes.funcName === 'solve')) {
+                            roots = [rootsRes];
+                        }
+
+                        if (roots.length > 0) {
+                            factors.push(a); // leading coeff
+                            for(const r of roots) {
+                                // Check if root is "nice" (Num or simple Fraction)
+                                // If it's a complicated surd, maybe we don't want to factor it unless requested?
+                                // Standard factor usually does rational factorization.
+                                // But let's allow factoring into (x - sqrt(2)) if solve found it.
+                                factors.push(new Sub(x, r).simplify());
+                            }
+                            // Check if we found all roots. Quadratic should have 2.
+                            // If discriminant is 0, solve returns 1 root? _solve currently returns set of 2 identical if disc=0?
+                            // My _solve logic: if diffQuad is small, returns set[sol1, sol2].
+                            // If disc=0, sol1=sol2.
+                        } else {
+                            factors.push(reducedPoly);
+                        }
+                    } else if (p.maxDeg === 1) {
+                        factors.push(reducedPoly);
+                    } else if (p.maxDeg > 2) {
+                        // TODO: Higher order factorization (Rational Root Theorem, etc.)
+                        factors.push(reducedPoly);
+                    } else if (p.maxDeg === 0) {
+                         if (!(reducedPoly instanceof Num && reducedPoly.value === 1)) {
+                            factors.push(reducedPoly);
+                         }
+                    }
+
+                    // 5. Combine factors
+                    if (factors.length === 0) return new Num(1);
+                    let result = factors[0];
+                    for(let i=1; i<factors.length; i++) {
+                        result = new Mul(result, factors[i]); // Don't simplify fully to avoid expanding back?
+                        // If I use Mul constructor, it simplifies by default in this system?
+                        // The .simplify() method is called inside evaluate().
+                        // If I return a raw tree, evaluate() calls simplify().
+                        // Mul.simplify() might distribute.
+                        // We need a 'factored' wrapper or ensure Mul doesn't expand.
+                        // In this code, simplify() does expand sometimes.
+                        // Let's return Call('factored', factors) if we want to preserve structure?
+                        // Or just rely on Mul not expanding unless .expand() is called.
+                        // Mul.simplify usually just merges numbers and canonicalizes. It does NOT expand (a+b)(c+d).
+                    }
+                    return result; // returning Mul tree.
+                }
+            }
+        } catch (e) {
+            // console.log(e);
+        }
+
         return new Call('factor', [n]);
+    }
+
+    _coeffsToVec(coeffs, maxDeg) {
+        const list = [];
+        for(let i=maxDeg; i>=0; i--) {
+            list.push(coeffs[i] || new Num(0));
+        }
+        return new Vec(list);
     }
 
     _mean(list) {
