@@ -966,6 +966,8 @@
                          <option value="sphere">Sphere</option>
                          <option value="cylinder">Cylinder</option>
                          <option value="cube">Cube</option>
+                         <option value="cone">Cone</option>
+                         <option value="pyramid">Square Pyramid</option>
                      </select>
                  </div>
                  <div id="geo-3d-inputs"></div>
@@ -1040,6 +1042,8 @@
              <button class="tab-btn active" onclick="openTab(event, 'tab-phys-kin')">Kinematics</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-dyn')">Dynamics</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-nrg')">Energy</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-phys-elec')">Electricity</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-phys-wave')">Waves</button>
         </div>
 
         <!-- Kinematics Tab -->
@@ -1089,6 +1093,36 @@
                  </div>
                  <div id="phys-nrg-inputs"></div>
                  <button class="action-btn" onclick="runPhysics('nrg')">Calculate</button>
+             </div>
+        </div>
+
+        <!-- Electricity Tab -->
+        <div id="tab-phys-elec" class="tab-content">
+             <div class="tool-form">
+                 <div class="form-group">
+                     <label class="form-label">Calculation</label>
+                     <select id="phys-elec-type" class="form-input" onchange="updatePhysicsInputs('elec')">
+                         <option value="ohm">Ohm's Law (V=IR)</option>
+                         <option value="power">Power (P=VI)</option>
+                     </select>
+                 </div>
+                 <div id="phys-elec-inputs"></div>
+                 <button class="action-btn" onclick="runPhysics('elec')">Calculate</button>
+             </div>
+        </div>
+
+        <!-- Waves Tab -->
+        <div id="tab-phys-wave" class="tab-content">
+             <div class="tool-form">
+                 <div class="form-group">
+                     <label class="form-label">Calculation</label>
+                     <select id="phys-wave-type" class="form-input" onchange="updatePhysicsInputs('wave')">
+                         <option value="speed">Wave Speed (v=fλ)</option>
+                         <option value="period">Period (T=1/f)</option>
+                     </select>
+                 </div>
+                 <div id="phys-wave-inputs"></div>
+                 <button class="action-btn" onclick="runPhysics('wave')">Calculate</button>
              </div>
         </div>
 
@@ -2894,6 +2928,24 @@
                       container.appendChild(row);
                  }
                  if (shape === 'cube') container.appendChild(createInput('geo-s', 'Side (s)'));
+                 if (shape === 'cone') {
+                      const row = document.createElement('div'); row.className = 'form-row';
+                      const g1 = document.createElement('div'); g1.className='form-group'; g1.style.flex='1';
+                      g1.innerHTML = `<label class="form-label">Radius (r)</label><input type="number" class="form-input" id="geo-r3">`;
+                      const g2 = document.createElement('div'); g2.className='form-group'; g2.style.flex='1';
+                      g2.innerHTML = `<label class="form-label">Height (h)</label><input type="number" class="form-input" id="geo-h3">`;
+                      row.appendChild(g1); row.appendChild(g2);
+                      container.appendChild(row);
+                 }
+                 if (shape === 'pyramid') {
+                      const row = document.createElement('div'); row.className = 'form-row';
+                      const g1 = document.createElement('div'); g1.className='form-group'; g1.style.flex='1';
+                      g1.innerHTML = `<label class="form-label">Base Side (a)</label><input type="number" class="form-input" id="geo-a3">`;
+                      const g2 = document.createElement('div'); g2.className='form-group'; g2.style.flex='1';
+                      g2.innerHTML = `<label class="form-label">Height (h)</label><input type="number" class="form-input" id="geo-h3">`;
+                      row.appendChild(g1); row.appendChild(g2);
+                      container.appendChild(row);
+                 }
              }
         };
 
@@ -2945,6 +2997,26 @@
                      if (isNaN(s)) return;
                      const vol = Math.pow(s, 3);
                      const surf = 6 * s * s;
+                     result = `Volume = ${vol.toFixed(4)}\nSurface Area = ${surf.toFixed(4)}`;
+                 }
+                 if (shape === 'cone') {
+                     const r = parseFloat(document.getElementById('geo-r3').value);
+                     const h = parseFloat(document.getElementById('geo-h3').value);
+                     if (isNaN(r) || isNaN(h)) return;
+                     const vol = (1/3) * Math.PI * r * r * h;
+                     // Surface = pi*r*(r + sqrt(h^2 + r^2))
+                     const slant = Math.sqrt(h*h + r*r);
+                     const surf = Math.PI * r * (r + slant);
+                     result = `Volume = ${vol.toFixed(4)}\nSurface Area = ${surf.toFixed(4)}`;
+                 }
+                 if (shape === 'pyramid') {
+                     const a = parseFloat(document.getElementById('geo-a3').value);
+                     const h = parseFloat(document.getElementById('geo-h3').value);
+                     if (isNaN(a) || isNaN(h)) return;
+                     const vol = (a * a * h) / 3;
+                     // Surface = a^2 + 2*a*sqrt(a^2/4 + h^2)
+                     const slant = Math.sqrt((a*a)/4 + h*h);
+                     const surf = a*a + 2*a*slant;
                      result = `Volume = ${vol.toFixed(4)}\nSurface Area = ${surf.toFixed(4)}`;
                  }
              }
@@ -3269,6 +3341,25 @@
                         if(g) g.value = 9.81;
                      },0);
                  }
+             } else if (tab === 'elec') {
+                 if (type === 'ohm') {
+                     // V = IR
+                     container.appendChild(createInput('phys-I', 'Current (I)'));
+                     container.appendChild(createInput('phys-R', 'Resistance (R)'));
+                 } else if (type === 'power') {
+                     // P = VI
+                     container.appendChild(createInput('phys-V', 'Voltage (V)'));
+                     container.appendChild(createInput('phys-I', 'Current (I)'));
+                 }
+             } else if (tab === 'wave') {
+                 if (type === 'speed') {
+                     // v = f lambda
+                     container.appendChild(createInput('phys-f', 'Frequency (f)'));
+                     container.appendChild(createInput('phys-l', 'Wavelength (λ)'));
+                 } else if (type === 'period') {
+                     // T = 1/f
+                     container.appendChild(createInput('phys-f', 'Frequency (f)'));
+                 }
              }
         };
 
@@ -3357,6 +3448,30 @@
                      const g = val('phys-g');
                      if(isNaN(m) || isNaN(h) || isNaN(g)) return;
                      result = `PE = ${(m*g*h).toFixed(4)} J`;
+                 }
+             } else if (tab === 'elec') {
+                 if (type === 'ohm') {
+                     const I = val('phys-I');
+                     const R = val('phys-R');
+                     if (isNaN(I) || isNaN(R)) return;
+                     result = `Voltage (V) = ${(I*R).toFixed(4)} V`;
+                 } else if (type === 'power') {
+                     const V = val('phys-V');
+                     const I = val('phys-I');
+                     if (isNaN(V) || isNaN(I)) return;
+                     result = `Power (P) = ${(V*I).toFixed(4)} W`;
+                 }
+             } else if (tab === 'wave') {
+                 if (type === 'speed') {
+                     const f = val('phys-f');
+                     const l = val('phys-l');
+                     if (isNaN(f) || isNaN(l)) return;
+                     result = `Speed (v) = ${(f*l).toFixed(4)} m/s`;
+                 } else if (type === 'period') {
+                     const f = val('phys-f');
+                     if (isNaN(f)) return;
+                     if (f === 0) result = "Error: Freq is 0";
+                     else result = `Period (T) = ${(1/f).toFixed(4)} s`;
                  }
              }
 
