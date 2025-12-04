@@ -910,13 +910,7 @@ class Div extends BinaryOp {
         // k = num / denomDiff
         const ratio = new Div(this.left, denomDiff).simplify();
         // Check if ratio does not depend on varName
-        const dependsOn = (expr, v) => {
-            if (expr instanceof Sym) return expr.name === v.name;
-            if (expr instanceof Num) return false;
-            if (expr instanceof BinaryOp) return dependsOn(expr.left, v) || dependsOn(expr.right, v);
-            if (expr instanceof Call) return expr.args.some(a => dependsOn(a, v));
-            return false;
-        };
+        // Note: variable 'dependsOn' is already defined above in scope
 
         if (!dependsOn(ratio, varName)) {
              // result = ratio * ln(denom)
@@ -996,6 +990,18 @@ class Pow extends BinaryOp {
                 const n = this.right.value;
                 return new Div(new Pow(this.left, new Num(n + 1)), new Num(n + 1));
             }
+        }
+        // Handle a^x -> a^x / ln(a)
+        if (this.right instanceof Sym && this.right.name === varName.name) {
+             const baseIsConstant = !(this.left instanceof Sym && this.left.name === varName.name);
+             // Ideally check full dependency, but for now check direct variable match
+
+             if (baseIsConstant) {
+                 if (this.left instanceof Sym && (this.left.name === 'e' || this.left.name === 'E')) {
+                     return this;
+                 }
+                 return new Div(this, new Call("ln", [this.left]));
+             }
         }
         return new Call("integrate", [this, varName]);
     }

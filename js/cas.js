@@ -1412,12 +1412,114 @@ and, or, not, xor, int, evalf`;
             } catch(e) {}
         }
 
+        // General u-substitution
+        // Heuristic: identify candidates for u from inner expressions
+        const candidates = [];
+        const seen = new Set();
+
+        const collect = (node) => {
+            // Avoid recursing too deep into already collected nodes
+            if (!node) return;
+            const s = node.toString();
+            if (seen.has(s)) return;
+            seen.add(s);
+
+            if (this._dependsOn(node, varNode)) {
+                if (node instanceof Call) {
+                    candidates.push(...node.args);
+                } else if (node instanceof Pow) {
+                    candidates.push(node.left);
+                }
+            }
+
+            if (node instanceof Call) node.args.forEach(collect);
+            if (node instanceof BinaryOp) { collect(node.left); collect(node.right); }
+            if (node instanceof Not) collect(node.arg);
+        };
+        collect(expr);
+
+        // Filter valid candidates (must depend on varNode and not be just varNode itself)
+        const uList = candidates.filter(c =>
+            this._dependsOn(c, varNode) &&
+            !(c instanceof Sym && c.name === varNode.name)
+        );
+
+        // Sort by complexity (length?) to try complex substitutions first
+        uList.sort((a, b) => b.toString().length - a.toString().length);
+
+        for (const u of uList) {
+            const du = u.diff(varNode).simplify();
+            if (du instanceof Num && du.value === 0) continue;
+
+            // Check if expr = f(u) * du
+            // Compute expr / du
+            try {
+                const quotient = new Div(expr, du).simplify();
+
+                // Check if quotient can be expressed purely in terms of U
+                // We assume strict substitution: replace u with U
+                const U = new Sym('__U_TEMP__');
+                const subbed = quotient.substitute(u, U).simplify();
+
+                if (!this._dependsOn(subbed, varNode)) {
+                    // Success: integrate(subbed, U)
+                    const intRes = subbed.integrate(U);
+                    if (!(intRes instanceof Call && intRes.funcName === 'integrate')) {
+                        // Substitute U back to u
+                        return intRes.substitute(U, u).simplify();
+                    }
+                }
+            } catch(e) {}
+        }
+
         return new Call("integrate", [expr, varNode]);
     }
 
     _integrateByParts(expr, varNode) {
-        if (!(expr instanceof Mul)) return new Call("integrate", [expr, varNode]);
+        // LIATE Rule helper
+        const typeScore = (node) => {
+            if (node instanceof Call) {
+                if (['ln', 'log', 'log2'].includes(node.funcName)) return 5; // Log
+                if (['asin', 'acos', 'atan', 'asec', 'acsc', 'acot', 'asinh', 'acosh', 'atanh'].includes(node.funcName)) return 4; // Inverse
+                if (['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'sinh', 'cosh', 'tanh'].includes(node.funcName)) return 2; // Trig
+                if (['exp'].includes(node.funcName)) return 1; // Exp
+            }
+            if (node instanceof Pow) {
+                 if (this._dependsOn(node.right, varNode)) return 1; // Exp-like
+                 return 3; // Algebraic x^n
+            }
+            if (node instanceof Sym && node.name === varNode.name) return 3; // Alg (x)
+            if (this._getPolyCoeffs(node, varNode)) return 3; // Algebraic polynomial
+            return 0;
+        };
 
+        // Helper to perform integration by parts: int(u dv) = uv - int(v du)
+        const applyParts = (u, dv) => {
+             // v = integrate(dv)
+            const v = dv.integrate(varNode).simplify();
+            if (v instanceof Call && v.funcName === 'integrate') return null; // dv not integrable
+
+            const du = u.diff(varNode).simplify();
+            const uv = new Mul(u, v).simplify();
+            const vdu = new Mul(v, du).simplify();
+
+            // Try to integrate vdu directly (handles simple cases like 1, x, cos(x))
+            let intVdu = vdu.integrate(varNode).simplify();
+
+            return new Sub(uv, intVdu).simplify();
+        };
+
+        // Case 1: Single Term (u = expr, dv = 1)
+        if (!(expr instanceof Mul)) {
+             const score = typeScore(expr);
+             if (score >= 4) {
+                 // Try parts with u=expr, dv=1
+                 return applyParts(expr, new Num(1)) || new Call("integrate", [expr, varNode]);
+             }
+             return new Call("integrate", [expr, varNode]);
+        }
+
+        // Case 2: Product
         const factors = [];
         const flattenMul = (node) => {
             if (node instanceof Mul) {
@@ -1429,30 +1531,12 @@ and, or, not, xor, int, evalf`;
         };
         flattenMul(expr);
 
-        // LIATE Rule for choosing u
-        // Log, Inverse, Alg, Trig, Exp
-        const typeScore = (node) => {
-            if (node instanceof Call) {
-                if (['ln', 'log', 'log2'].includes(node.funcName)) return 5; // Log
-                if (['asin', 'acos', 'atan', 'asec', 'acsc', 'acot'].includes(node.funcName)) return 4; // Inverse
-                if (['sin', 'cos', 'tan', 'sec', 'csc', 'cot'].includes(node.funcName)) return 2; // Trig
-                if (['exp'].includes(node.funcName)) return 1; // Exp
-            }
-            if (node instanceof Pow) {
-                 if (this._dependsOn(node.right, varNode)) return 1; // Exp-like? x^x
-                 // x^n -> Alg
-                 return 3;
-            }
-            if (node instanceof Sym && node.name === varNode.name) return 3; // Alg (x)
-            return 0; // Constant or unknown (treated as scalar part of u or dv?)
-        };
-
-        // Create candidates for u
+        // Candidates for u
         const candidates = factors.map((f, i) => ({
             idx: i,
             node: f,
             score: typeScore(f)
-        })).filter(c => this._dependsOn(c.node, varNode)); // Only variable parts matter for u choice
+        })).filter(c => this._dependsOn(c.node, varNode));
 
         // Sort by score descending (Log first)
         candidates.sort((a, b) => b.score - a.score);
@@ -1468,31 +1552,10 @@ and, or, not, xor, int, evalf`;
                 else dv = new Mul(dv, factors[j]);
             }
 
-            if (dv === null) continue;
+            if (dv === null) dv = new Num(1);
 
-            // Check if dv is easily integrable
-            const v = dv.integrate(varNode);
-            if (v instanceof Call && v.funcName === 'integrate') continue; // dv not integrable
-
-            const du = u.diff(varNode).simplify();
-
-            const uv = new Mul(u, v).simplify();
-            const vdu = new Mul(v, du).simplify();
-
-            // Check if vdu is simpler than original expr?
-            // To prevent cycles, we could check string length or something, but LIATE usually guarantees progress.
-            // One edge case: e^x sin(x). Both are Trig/Exp.
-            // Score: Trig(2) > Exp(1). u=sin, dv=exp.
-            // v=exp, du=cos. vdu = exp*cos.
-            // exp*cos -> u=cos, dv=exp. v=exp, du=-sin. vdu = -exp*sin.
-            // Cycle.
-            // This implementation performs ONE step and returns "uv - integrate(vdu)".
-            // The outer 'evaluate' loop will call 'integrate' on 'vdu'.
-            // If vdu is integrable (by parts again), it proceeds.
-            // For cyclic cases, it will expand indefinitely until max depth or stack overflow unless we catch it.
-            // But for standard x*e^x, it terminates.
-
-            return new Sub(uv, new Call("integrate", [vdu, varNode])).simplify();
+            const res = applyParts(u, dv);
+            if (res) return res;
         }
 
         return new Call("integrate", [expr, varNode]);
@@ -3311,7 +3374,8 @@ and, or, not, xor, int, evalf`;
         const A = new Vec(A_rows);
 
         // Check for non-homogeneous terms: Remainder = RHS - A*Vars
-        // We need to substitute varSyms back or just check polyRHS - sum(coeff*var)
+        const B_rows = [];
+
         for(let i=0; i<n; i++) {
             let rhs = orderedRHS[i];
             const polyRHS = toPolyForm(rhs).expand().simplify();
@@ -3324,20 +3388,38 @@ and, or, not, xor, int, evalf`;
             }
 
             const remainder = new Sub(polyRHS, linearPart).expand().simplify();
-            if (!(remainder instanceof Num && remainder.value === 0)) {
-                // Check if remainder depends on t (non-homogeneous) or just clean zero check failure
-                // If it depends on t, throw error
-                if (this._dependsOn(remainder, t)) {
-                    throw new Error("Non-homogeneous systems not supported yet");
-                }
-                // If it's a constant non-zero, it's also non-homogeneous (X' = AX + B)
-                if (Math.abs(remainder.evaluateNumeric()) > 1e-9) {
-                     throw new Error("Non-homogeneous systems not supported yet");
-                }
+            if (this._dependsOn(remainder, t)) {
+                throw new Error("Time-dependent non-homogeneous systems not supported yet");
+            }
+            B_rows.push(remainder);
+        }
+
+        const B = new Vec(B_rows);
+
+        // Check if B is zero vector
+        let isHomogeneous = true;
+        for(const b of B.elements) {
+             const val = b.evaluateNumeric();
+             if (isNaN(val) || Math.abs(val) > 1e-9) isHomogeneous = false;
+        }
+
+        // Calculate Particular Solution X_p for constant B
+        // X_p = -A^-1 * B
+        let X_p = null;
+        if (!isHomogeneous) {
+            try {
+                // Check if A is invertible? _inv throws if singular
+                const invA = this._inv(A);
+                const negB = new Vec(B.elements.map(e => new Mul(new Num(-1), e).simplify()));
+                // Matrix * Vector
+                X_p = new Mul(invA, negB).simplify();
+            } catch(e) {
+                // A is singular, cannot use -A^-1*B method.
+                throw new Error("Non-homogeneous system with singular matrix not supported");
             }
         }
 
-        // Solve X' = AX using eigenvalues
+        // Solve Homogeneous X' = AX using eigenvalues
         // X(t) = c1 * v1 * exp(lambda1 * t) + ...
         try {
             const evals = this._eigenvals(A);
@@ -3394,12 +3476,15 @@ and, or, not, xor, int, evalf`;
             if (terms.length < n) throw new Error("Defective matrix (Jordan form) not supported");
 
             // Sum up terms to get X(t)
-            // X(t) = term1 + term2 + ...
+            // X(t) = term1 + term2 + ... + X_p
             const finalSol = [];
             for(let i=0; i<n; i++) {
                 let sum = new Num(0);
                 for(const term of terms) {
                     sum = new Add(sum, term.elements[i]).simplify();
+                }
+                if (X_p && X_p.elements[i]) {
+                    sum = new Add(sum, X_p.elements[i]).simplify();
                 }
                 finalSol.push(sum);
             }
@@ -3948,99 +4033,6 @@ and, or, not, xor, int, evalf`;
         return new Call('ilaplace', [expr, s, t]);
     }
 
-    _integrateByParts(expr, varNode) {
-        // Heuristic Integration by Parts
-        // Formula: int(u dv) = u*v - int(v du)
-        // Selection Strategy (LIATE):
-        // L: Logarithmic
-        // I: Inverse Trig
-        // A: Algebraic
-        // T: Trig
-        // E: Exponential
-        // We pick 'u' as the type that comes first in LIATE.
-
-        // Helper to score expression type
-        const getScore = (e) => {
-            if (e instanceof Call) {
-                if (['ln', 'log', 'log2'].includes(e.funcName)) return 5; // Log
-                if (['asin', 'acos', 'atan', 'asinh', 'acosh', 'atanh'].includes(e.funcName)) return 4; // Inverse Trig
-                if (['sin', 'cos', 'tan', 'sinh', 'cosh', 'tanh', 'sec', 'csc', 'cot'].includes(e.funcName)) return 2; // Trig
-                if (['exp'].includes(e.funcName)) return 1; // Exponential
-            }
-            if (e instanceof Pow && e.left instanceof Sym && e.left.name === 'e') return 1; // e^x
-            if (this._getPolyCoeffs(e, varNode)) return 3; // Algebraic
-            return 0;
-        };
-
-        let u, dv;
-
-        if (expr instanceof Mul) {
-             const a = expr.left;
-             const b = expr.right;
-             const sA = getScore(a);
-             const sB = getScore(b);
-
-             // Pick u with higher score
-             if (sA >= sB) {
-                 u = a; dv = b;
-             } else {
-                 u = b; dv = a;
-             }
-        } else {
-             // Single term (e.g. ln(x), atan(x))
-             // Treat as 1 * expr
-             // u = expr, dv = 1
-             // Only if expr score is high (Log or InvTrig)
-             const s = getScore(expr);
-             if (s >= 4) {
-                 u = expr;
-                 dv = new Num(1);
-             } else {
-                 return null;
-             }
-        }
-
-        try {
-            // v = integrate(dv)
-            let v = dv.integrate(varNode).simplify();
-            if (v instanceof Call && v.funcName === 'integrate') return null; // Can't integrate dv
-
-            // du = diff(u)
-            let du = u.diff(varNode).simplify();
-
-            // Check if integral v*du is simpler or solvable
-            // We just attempt it recursively (but prevent infinite loops if it returns same form)
-            // Ideally we should have a depth check or complexity check.
-            // For now, let's just call integrate recursively.
-
-            // Term: u*v
-            const uv = new Mul(u, v).simplify();
-
-            // Integral: int(v * du)
-            const vdu = new Mul(v, du).simplify();
-
-            // Avoid infinite recursion: if vdu looks like original expr (up to constant), we might be cycling (like e^x sin x)
-            // For now, let's just try to integrate vdu.
-            // But we must NOT use _integrateByParts immediately if it's the same complexity?
-            // Actually, CAS.evaluate -> integrate -> _integrateByParts.
-            // If we call vdu.integrate(varNode), it calls recursiveEval -> integrate.
-            // So recursion is handled. We just need to stop if it returns symbolic.
-
-            let intVdu = vdu.integrate(varNode).simplify();
-
-            if (intVdu instanceof Call && intVdu.funcName === 'integrate') {
-                 // Second attempt? e.g. x^2 * e^x needs 2 steps.
-                 // The recursive call inside vdu.integrate should have tried parts again.
-                 // If it returned symbolic, it failed.
-                 return null;
-            }
-
-            return new Sub(uv, intVdu).simplify();
-
-        } catch (e) {
-            return null;
-        }
-    }
 }
 
 // Export classes for Global/CommonJS environments
