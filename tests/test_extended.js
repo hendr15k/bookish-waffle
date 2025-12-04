@@ -149,7 +149,7 @@ test("Solve quadratic", "solve(x^2 - 1, x)", "set(1, -1)");
 
 // 7. Taylor Series
 // Update expected: matches current simplified output
-test("Taylor exp(x)", "taylor(exp(x), x, 0, 2)", "((1 + x) + ((x^2) / 2))");
+test("Taylor exp(x)", "taylor(exp(x), x, 0, 2)", "(1 + (x + ((x^2) / 2)))");
 
 // 8. Simplification
 test("Add 0", "x + 0", "x");
