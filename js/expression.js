@@ -910,15 +910,23 @@ class Div extends BinaryOp {
         // k = num / denomDiff
         const ratio = new Div(this.left, denomDiff).simplify();
         // Check if ratio does not depend on varName
-        const dependsOn = (expr, v) => {
+        // reused dependsOn from above or check manually
+        // Since we are in the same scope, we cannot redeclare 'dependsOn' with const.
+        // We can just call the previous one if it's hoisted? No, it's const.
+        // But we are in the same function 'integrate'.
+        // Wait, the previous 'dependsOn' was inside an if block?
+        // No, look at line 849. It is inside `if (!dependsOn(this.left, varName)) { ... }` block?
+        // Let's check the indentation/scope in the file read.
+
+        const dependsOn2 = (expr, v) => {
             if (expr instanceof Sym) return expr.name === v.name;
             if (expr instanceof Num) return false;
-            if (expr instanceof BinaryOp) return dependsOn(expr.left, v) || dependsOn(expr.right, v);
-            if (expr instanceof Call) return expr.args.some(a => dependsOn(a, v));
+            if (expr instanceof BinaryOp) return dependsOn2(expr.left, v) || dependsOn2(expr.right, v);
+            if (expr instanceof Call) return expr.args.some(a => dependsOn2(a, v));
             return false;
         };
 
-        if (!dependsOn(ratio, varName)) {
+        if (!dependsOn2(ratio, varName)) {
              // result = ratio * ln(denom)
              return new Mul(ratio, new Call("ln", [this.right]));
         }
