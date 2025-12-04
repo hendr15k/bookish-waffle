@@ -557,6 +557,7 @@
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-int')">Integration</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-desolve')">Diff Eq</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-series')">Taylor Series</button>
+            <button class="tab-btn" onclick="openTab(event, 'tab-calc-riemann')">Riemann</button>
         </div>
 
         <!-- Diff & Limit Tab -->
@@ -655,6 +656,45 @@
                      <button class="action-btn" onclick="runTool('taylor', ['taylor-expr', 'taylor-var', 'taylor-pt', 'taylor-order'])">Calculate</button>
                      <button class="action-btn" onclick="runAndPlot('taylor', ['taylor-expr', 'taylor-var', 'taylor-pt', 'taylor-order'])" style="background-color: #28a745;">Compare & Plot</button>
                  </div>
+            </div>
+        </div>
+
+        <!-- Riemann Tab -->
+        <div id="tab-calc-riemann" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="riemann-expr">Function</label>
+                    <input type="text" class="form-input" id="riemann-expr" placeholder="e.g. x^2">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="riemann-var">Variable</label>
+                    <input type="text" class="form-input" id="riemann-var" placeholder="x" value="x">
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="riemann-start">Start</label>
+                        <input type="text" class="form-input" id="riemann-start" placeholder="0">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="riemann-end">End</label>
+                        <input type="text" class="form-input" id="riemann-end" placeholder="1">
+                    </div>
+                </div>
+                <div class="form-row">
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="riemann-n">N (Rects)</label>
+                        <input type="number" class="form-input" id="riemann-n" value="10">
+                    </div>
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="riemann-method">Method</label>
+                        <select id="riemann-method" class="form-input">
+                            <option value="left">Left</option>
+                            <option value="right">Right</option>
+                            <option value="mid">Midpoint</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="action-btn" onclick="runRiemann()">Calculate & Plot</button>
             </div>
         </div>
 
@@ -769,6 +809,7 @@
         <div class="tab-header">
              <button class="tab-btn active" onclick="openTab(event, 'tab-stat-desc')">Descriptive</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-stat-reg')">Regression</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-stat-dist')">Distributions</button>
         </div>
 
         <div id="tab-stat-desc" class="tab-content active">
@@ -1796,6 +1837,26 @@
                     ctx.beginPath();
                     ctx.arc(px, py, 4, 0, 2 * Math.PI);
                     ctx.fill();
+                }
+            }
+
+            // Draw Riemann Rects
+            if (result.rects) {
+                ctx.fillStyle = "rgba(255, 0, 0, 0.2)";
+                ctx.strokeStyle = "rgba(255, 0, 0, 0.5)";
+                ctx.lineWidth = 1;
+
+                for(const r of result.rects) {
+                     const x = mapX(r.x);
+                     const w = mapX(r.x + r.w) - mapX(r.x);
+                     const y = mapY(r.y);
+                     const y0 = mapY(0);
+
+                     const top = Math.min(y, y0);
+                     const h = Math.abs(y - y0);
+
+                     ctx.fillRect(x, top, w, h);
+                     ctx.strokeRect(x, top, w, h);
                 }
             }
 
@@ -2899,6 +2960,199 @@
                  resBox.style.display = 'block';
              }
         };
+
+        window.runRiemann = function() {
+             const exprStr = document.getElementById('riemann-expr').value;
+             const varStr = document.getElementById('riemann-var').value;
+             const startStr = document.getElementById('riemann-start').value;
+             const endStr = document.getElementById('riemann-end').value;
+             const nStr = document.getElementById('riemann-n').value;
+             const method = document.getElementById('riemann-method').value;
+
+             if (!exprStr || !varStr || !startStr || !endStr || !nStr) return;
+
+             try {
+                 const lexer = new Lexer(exprStr);
+                 const parser = new Parser(lexer);
+                 const expr = parser.parse();
+                 const varNode = new Sym(varStr);
+
+                 // Evaluate bounds using CAS to handle pi, etc.
+                 const val = (s) => {
+                      const l = new Lexer(s);
+                      const p = new Parser(l);
+                      const t = p.parse();
+                      return cas.evaluate(t).evaluateNumeric();
+                 };
+
+                 const a = val(startStr);
+                 const b = val(endStr);
+                 const n = parseInt(nStr);
+
+                 if (isNaN(a) || isNaN(b) || isNaN(n) || n <= 0) throw new Error("Invalid bounds or N");
+
+                 const dx = (b - a) / n;
+                 let sum = 0;
+                 const rects = [];
+
+                 for(let i=0; i<n; i++) {
+                      let x;
+                      if (method === 'left') x = a + i * dx;
+                      else if (method === 'right') x = a + (i + 1) * dx;
+                      else if (method === 'mid') x = a + (i + 0.5) * dx;
+
+                      const valExpr = expr.substitute(varNode, new Num(x)).simplify();
+                      let y = (valExpr instanceof Num) ? valExpr.value : valExpr.evaluateNumeric();
+                      if (isNaN(y)) y = 0;
+
+                      sum += y * dx;
+
+                      // For visualization, we always draw bar starting at interval start, width dx, height determined by method point
+                      // Rect: start x = a + i*dx
+                      rects.push({ x: a + i * dx, y: y, w: dx });
+                 }
+
+                 const resultText = `Riemann Sum (${method}) = ${sum.toFixed(6)}`;
+                 const info = {
+                      type: 'plot',
+                      expr: expr,
+                      var: varNode,
+                      min: a - (b-a)*0.1, // Zoom out a bit
+                      max: b + (b-a)*0.1,
+                      rects: rects,
+                      toLatex: () => `\\text{${method} Sum} \\approx ${sum.toFixed(6)}`
+                 };
+
+                 addToHistory(`Riemann(${exprStr}, ${method})`, info, false);
+
+                 // Show result in tool panel
+                 setTimeout(() => {
+                    const visibleTool = document.querySelector('.tool-view[style*="block"]');
+                    if(visibleTool) {
+                        const resultBox = visibleTool.querySelector('.tool-result');
+                        if (resultBox) {
+                             // Use history entry logic to render
+                             const entries = document.querySelectorAll('.entry');
+                             const lastEntry = entries[entries.length-1];
+                             if(lastEntry) {
+                                 const resDiv = lastEntry.querySelector('.result');
+                                 resultBox.innerHTML = '';
+                                 resultBox.appendChild(resDiv.cloneNode(true));
+                                 resultBox.style.display = 'block';
+
+                                 // Re-hook canvas
+                                 const newCanvas = resultBox.querySelector('canvas');
+                                 if(newCanvas) {
+                                      drawPlot(newCanvas, info); // info acts as result
+                                      setupInteractivePlot(newCanvas);
+                                 }
+
+                                 if (window.MathJax && typeof MathJax.typesetPromise === 'function') {
+                                    MathJax.typesetPromise([resultBox]).catch(()=>{});
+                                }
+                             }
+                        }
+                    }
+                 }, 50);
+
+             } catch(e) {
+                 addToHistory("Riemann Error", e.message, true);
+             }
+        };
+
+        window.updateDistPlot = function() {
+             const muInput = document.getElementById('stat-mu');
+             const sigmaInput = document.getElementById('stat-sigma');
+             const muVal = document.getElementById('val-mu');
+             const sigmaVal = document.getElementById('val-sigma');
+             const canvas = document.getElementById('stat-dist-canvas');
+             if (!canvas || !muInput || !sigmaInput) return;
+
+             const mu = parseFloat(muInput.value);
+             const sigma = parseFloat(sigmaInput.value);
+
+             muVal.textContent = mu;
+             sigmaVal.textContent = sigma;
+
+             const ctx = canvas.getContext('2d');
+             const width = canvas.width;
+             const height = canvas.height;
+
+             // Clear
+             ctx.clearRect(0, 0, width, height);
+
+             // Define range: fixed X range [-20, 20] to see movement
+             const rangeMin = -20;
+             const rangeMax = 20;
+
+             // Y range: max height is ~1.0 for sigma=0.4.
+             const rangeYMin = 0;
+             const rangeYMax = 1.0;
+
+             const mapX = (x) => ((x - rangeMin) / (rangeMax - rangeMin)) * width;
+             const mapY = (y) => height - ((y - rangeYMin) / (rangeYMax - rangeYMin)) * height;
+
+             // Draw Axes
+             ctx.strokeStyle = "#ccc";
+             ctx.beginPath();
+             // X axis
+             const yZero = mapY(0);
+             ctx.moveTo(0, yZero);
+             ctx.lineTo(width, yZero);
+             // Y axis
+             const xZero = mapX(0);
+             ctx.moveTo(xZero, 0);
+             ctx.lineTo(xZero, height);
+             ctx.stroke();
+
+             // PDF Function
+             const pdf = (x) => {
+                 return (1 / (sigma * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((x - mu) / sigma, 2));
+             };
+
+             ctx.beginPath();
+             ctx.strokeStyle = "#007bff";
+             ctx.lineWidth = 2;
+
+             let first = true;
+             for (let px = 0; px <= width; px++) {
+                  const x = rangeMin + (px / width) * (rangeMax - rangeMin);
+                  const y = pdf(x);
+                  const py = mapY(y);
+
+                  if (first) {
+                      ctx.moveTo(px, py);
+                      first = false;
+                  } else {
+                      ctx.lineTo(px, py);
+                  }
+             }
+             ctx.stroke();
+
+             // Fill area
+             ctx.fillStyle = "rgba(0, 123, 255, 0.1)";
+             ctx.lineTo(width, mapY(0));
+             ctx.lineTo(0, mapY(0));
+             ctx.fill();
+
+             // Draw mu line
+             const muX = mapX(mu);
+             ctx.beginPath();
+             ctx.strokeStyle = "rgba(255, 0, 0, 0.5)";
+             ctx.setLineDash([5, 5]);
+             ctx.moveTo(muX, 0);
+             ctx.lineTo(muX, height);
+             ctx.stroke();
+             ctx.setLineDash([]);
+        };
+
+        // Initialize Plot on load
+        window.addEventListener('load', () => {
+             // Delay slightly to ensure tabs initialized
+             setTimeout(() => {
+                 if (typeof window.updateDistPlot === 'function') window.updateDistPlot();
+             }, 500);
+        });
 
         // Finance Logic
         window.runFinance = function(type) {
