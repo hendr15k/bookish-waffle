@@ -3117,6 +3117,7 @@ and, or, not, xor, int, evalf`;
         if(!indepVar) findDiffComplex(expr);
 
         // Check for Second Derivative diff(y, x, 2)
+        // Can be diff(y, x, 2) OR diff(diff(y, x), x)
         let diffCall2 = null;
         const findDiff2 = (node) => {
             if (node instanceof Call && node.funcName === 'diff') {
@@ -3130,6 +3131,26 @@ and, or, not, xor, int, evalf`;
                                 indepVar = node.args[1];
                                 diffCall2 = node;
                             }
+                    }
+                }
+                // Handle nested diff(diff(y, x), x)
+                if (node.args.length === 2) {
+                    const inner = node.args[0];
+                    const outerVar = node.args[1];
+                    if (inner instanceof Call && inner.funcName === 'diff' && inner.args.length === 2) {
+                        const target = inner.args[0];
+                        const innerVar = inner.args[1];
+                        let isMatch = false;
+                        if ((target instanceof Sym && target.name === depVar.name) ||
+                            (target instanceof Call && target.funcName === depVar.name)) {
+                            isMatch = true;
+                        }
+                        if (isMatch) {
+                            if (!indepVar) indepVar = outerVar;
+                            if (outerVar.name === indepVar.name && innerVar.name === indepVar.name) {
+                                diffCall2 = node;
+                            }
+                        }
                     }
                 }
             }
@@ -3157,6 +3178,12 @@ and, or, not, xor, int, evalf`;
                      const target = node.args[0];
                      if ((target instanceof Sym && target.name === depVar.name) || (target instanceof Call && target.funcName === depVar.name)) return D2Y;
                  }
+                 // nested diff(diff(y, x), x) - handled by ref equality check mostly, but generic struct check:
+                 if (node instanceof Call && node.funcName === 'diff' && node.args.length === 2 && node.args[0] instanceof Call && node.args[0].funcName === 'diff') {
+                      // assume correct if we found it earlier
+                      if (indepVar && node.args[1].name === indepVar.name) return D2Y;
+                 }
+
                  // diff(y, x)
                  if (node instanceof Call && node.funcName === 'diff' && node.args.length === 2) {
                      const target = node.args[0];
@@ -3190,13 +3217,12 @@ and, or, not, xor, int, evalf`;
                  // 2. Reconstruction check: expr should equal a*D2Y + b*DY + c*y + remainder
                  // Remainder must be 0 for Homogeneous
                  const recon = new Add(new Add(new Mul(a, D2Y), new Mul(b, DY)), new Mul(c, y_sym)).simplify();
-                 const remainder = new Sub(polyForm, recon).simplify();
-
-                 // Check if remainder is 0 (or close to 0)
-                 const isHomogeneous = (remainder instanceof Num && Math.abs(remainder.value) < 1e-9);
+                 // Calculate remainder and force clean derivatives (they should cancel mathematically)
+                 let remainder = new Sub(polyForm, recon).expand().simplify();
+                 remainder = remainder.substitute(D2Y, new Num(0)).substitute(DY, new Num(0)).substitute(y_sym, new Num(0)).simplify();
 
                  // Check for Constant Coefficients (independent of x)
-                 if (isHomogeneous && !this._dependsOn(a, indepVar) && !this._dependsOn(b, indepVar) && !this._dependsOn(c, indepVar)) {
+                 if (!this._dependsOn(a, indepVar) && !this._dependsOn(b, indepVar) && !this._dependsOn(c, indepVar)) {
                      // Solve Characteristic Equation: a*r^2 + b*r + c = 0
                      const r = new Sym('r');
                      const charPoly = new Add(new Add(new Mul(a, new Pow(r, new Num(2))), new Mul(b, r)), c);
@@ -3217,17 +3243,131 @@ and, or, not, xor, int, evalf`;
 
                      const C1 = new Sym('C1');
                      const C2 = new Sym('C2');
+                     let y_c;
 
                      const diffR = new Sub(r1, r2).simplify();
                      // Check for repeated roots
                      if (diffR instanceof Num && Math.abs(diffR.value) < 1e-9) {
                          const term1 = new Mul(C1, new Call('exp', [new Mul(r1, indepVar)])).simplify();
                          const term2 = new Mul(C2, new Mul(indepVar, new Call('exp', [new Mul(r1, indepVar)]))).simplify();
-                         return new Add(term1, term2);
+                         y_c = new Add(term1, term2);
                      } else {
                          const term1 = new Mul(C1, new Call('exp', [new Mul(r1, indepVar)])).simplify();
                          const term2 = new Mul(C2, new Call('exp', [new Mul(r2, indepVar)])).simplify();
-                         return new Add(term1, term2);
+                         y_c = new Add(term1, term2);
+                     }
+
+                     // Check Non-Homogeneous
+                     const rhs = new Mul(new Num(-1), remainder).simplify();
+                     if (rhs instanceof Num && rhs.value === 0) {
+                         return y_c;
+                     }
+
+                     // Method of Undetermined Coefficients (Basic cases)
+                     let y_p = null;
+
+                     // Case 1: Polynomial / Constant
+                     // Check if rhs is polynomial in indepVar
+                     const rhsPoly = this._getPolyCoeffs(rhs, indepVar);
+                     if (rhsPoly) {
+                         // Simplify: only handle constant or linear RHS for stability
+                         // Guess A*x + B
+                         if (rhsPoly.maxDeg <= 1) {
+                             const A = new Sym('__A__');
+                             const B = new Sym('__B__');
+                             let guess = new Add(new Mul(A, indepVar), B);
+
+                             // Resonance check
+                             if (c instanceof Num && c.value === 0) {
+                                 guess = new Mul(indepVar, guess);
+                                 if (b instanceof Num && b.value === 0) {
+                                     guess = new Mul(indepVar, guess);
+                                 }
+                             }
+
+                             // Substitute into ODE: a*y'' + b*y' + c*y - rhs = 0
+                             const yp_prime = guess.diff(indepVar).simplify();
+                             const yp_double = yp_prime.diff(indepVar).simplify();
+
+                             const LHS = new Add(new Add(new Mul(a, yp_double), new Mul(b, yp_prime)), new Mul(c, guess)).simplify();
+                             const eqSys = new Sub(LHS, rhs).simplify();
+
+                             // Solve for A and B by comparing coefficients
+                             // eqSys should be 0.
+                             // Extract coeffs of indepVar
+                             const sysPoly = this._getPolyCoeffs(eqSys, indepVar);
+                             if (sysPoly) {
+                                 const eqs = [];
+                                 const vars = [A, B];
+                                 // We need to solve for A and B. We have coeffs for x^0, x^1, ...
+                                 for(let d in sysPoly.coeffs) {
+                                     eqs.push(new Eq(sysPoly.coeffs[d], new Num(0)));
+                                 }
+                                 // Solve system
+                                 const sol = this._solveSystem(new Vec(eqs), new Vec(vars));
+                                 if (sol instanceof Vec && sol.elements.length === 2) {
+                                     const valA = sol.elements[0];
+                                     const valB = sol.elements[1];
+                                     y_p = guess.substitute(A, valA).substitute(B, valB).simplify();
+                                 }
+                             }
+                         }
+                     }
+
+                     // Case 2: Exponential C * e^(k*x)
+                     let expNode = rhs;
+                     // Handle Coeff * exp
+                     if (rhs instanceof Mul && rhs.left instanceof Num) expNode = rhs.right;
+
+                     // console.log("DEBUG Exp", expNode.toString(), expNode.constructor.name);
+
+                     let uExp = null;
+                     if (expNode instanceof Call && expNode.funcName === 'exp') uExp = expNode.args[0];
+                     else if (expNode instanceof Pow) {
+                         if (expNode.left instanceof Sym && expNode.left.name === 'e') uExp = expNode.right;
+                         // Handle evaluated 'e' (Num)
+                         if (expNode.left instanceof Num && Math.abs(expNode.left.value - Math.E) < 1e-9) uExp = expNode.right;
+                     }
+
+                     if (!y_p && uExp) {
+                         // rhs = exp(u). u linear in x?
+                         const uPoly = this._getPolyCoeffs(uExp, indepVar);
+                         if (uPoly && uPoly.maxDeg === 1 && (!uPoly.coeffs[0] || uPoly.coeffs[0].value === 0)) {
+                             // exp(k*x)
+                             const k = uPoly.coeffs[1];
+                             const A = new Sym('__A__');
+                             let guess = new Mul(A, expNode); // Guess A * e^kx (ignoring C in rhs, A will absorb it)
+
+                             // Resonance: is k a root?
+                             // Check a*k^2 + b*k + c = 0
+                             const charVal = new Add(new Add(new Mul(a, new Pow(k, new Num(2))), new Mul(b, k)), c).simplify();
+                             if (charVal instanceof Num && charVal.value === 0) {
+                                 guess = new Mul(indepVar, guess);
+                                 // Double root check
+                                 const charDeriv = new Add(new Mul(new Num(2), new Mul(a, k)), b).simplify();
+                                 if (charDeriv instanceof Num && charDeriv.value === 0) {
+                                     guess = new Mul(indepVar, guess);
+                                 }
+                             }
+
+                             // Substitute
+                             const yp_prime = guess.diff(indepVar).simplify();
+                             const yp_double = yp_prime.diff(indepVar).simplify();
+                             const LHS = new Add(new Add(new Mul(a, yp_double), new Mul(b, yp_prime)), new Mul(c, guess)).simplify();
+                             const eqSys = new Sub(LHS, rhs).simplify();
+
+                             // Factor out e^(kx) or divide by it?
+                             // Dividing might be safer
+                             const reduced = new Div(eqSys, expNode).simplify(); // Should be linear in A
+                             const valA = this._solve(reduced, A);
+                             if (!(valA instanceof Call && valA.funcName === 'solve')) {
+                                 y_p = guess.substitute(A, valA).simplify();
+                             }
+                         }
+                     }
+
+                     if (y_p) {
+                         return new Add(y_c, y_p).simplify();
                      }
                  }
              }
