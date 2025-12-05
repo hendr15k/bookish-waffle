@@ -1436,69 +1436,6 @@ and, or, not, xor, int, evalf`;
         return new Vec(solutions);
     }
 
-    _minimize(expr, varNode) {
-        return this._optimize(expr, varNode, 'min');
-    }
-
-    _maximize(expr, varNode) {
-        return this._optimize(expr, varNode, 'max');
-    }
-
-    _optimize(expr, varNode, type) {
-        // 1. Differentiate
-        const deriv = expr.diff(varNode).simplify();
-
-        // 2. Solve deriv = 0
-        const criticalPoints = this._solve(deriv, varNode);
-
-        // Extract points
-        let points = [];
-        if (criticalPoints instanceof Call && criticalPoints.funcName === 'set') {
-            points = criticalPoints.args;
-        } else if (criticalPoints instanceof Expr && !(criticalPoints instanceof Call && criticalPoints.funcName === 'solve')) {
-            points = [criticalPoints];
-        } else {
-            // Failed to solve
-            return new Call(type === 'min' ? 'minimize' : 'maximize', [expr, varNode]);
-        }
-
-        // 3. Second Derivative Test
-        const deriv2 = deriv.diff(varNode).simplify();
-        const results = [];
-
-        for(const pt of points) {
-            try {
-                const val2 = deriv2.substitute(varNode, pt).simplify();
-                // If min: val2 > 0
-                // If max: val2 < 0
-                const numVal = val2.evaluateNumeric();
-                let isMatch = false;
-                if (!isNaN(numVal)) {
-                     if (type === 'min' && numVal > 0) isMatch = true;
-                     if (type === 'max' && numVal < 0) isMatch = true;
-                } else {
-                     // Symbolic check? Assume match if we can't prove otherwise?
-                     // Or return symbolic condition?
-                     // Let's include it if we can't determine, user can check.
-                     isMatch = true;
-                }
-
-                if (isMatch) {
-                    // Return the value f(x) or the point x?
-                    // Usually minimize returns the minimal VALUE? Or the point?
-                    // Standard: minimize(f) -> value. argmin(f) -> point.
-                    // But Xcas minimize(f) returns value.
-                    const val = expr.substitute(varNode, pt).simplify();
-                    results.push(val);
-                }
-            } catch(e) {}
-        }
-
-        if (results.length === 0) return new Call('set', []);
-        if (results.length === 1) return results[0];
-        return new Call('set', results);
-    }
-
     _solve(eq, varNode) {
         if (eq instanceof Vec && varNode instanceof Vec) {
             return this._solveSystem(eq, varNode);

@@ -1292,6 +1292,28 @@ class Call extends Expr {
             if (arg instanceof Num && arg.value === 0) return new Num(0);
         }
 
+        if (this.funcName === 'erf') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) {
+                const val = arg.value;
+                // Use approximation for numeric erf
+                const sign = (val >= 0) ? 1 : -1;
+                const x = Math.abs(val);
+
+                // Abramowitz & Stegun 7.1.26
+                const a1 =  0.254829592;
+                const a2 = -0.284496736;
+                const a3 =  1.421413741;
+                const a4 = -1.453152027;
+                const a5 =  1.061405429;
+                const p  =  0.3275911;
+
+                const t = 1.0 / (1.0 + p * x);
+                const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+                return new Num(sign * y);
+            }
+        }
+
         if (this.funcName === 'power') {
              // Do not simplify to Pow or Num, keep as 'power' to preserve factorization structure
              return new Call('power', simpleArgs);
@@ -1371,6 +1393,23 @@ class Call extends Expr {
         if (this.funcName === 'floor') return Math.floor(argsVal[0]);
         if (this.funcName === 'ceil') return Math.ceil(argsVal[0]);
         if (this.funcName === 'round') return Math.round(argsVal[0]);
+        if (this.funcName === 'erf') {
+             // Approximation (same logic as simplify or just call it)
+             // But evaluateNumeric returns a number, not Expr.
+             const val = argsVal[0];
+             if (isNaN(val)) return NaN;
+             const sign = (val >= 0) ? 1 : -1;
+             const x = Math.abs(val);
+             const a1 =  0.254829592;
+             const a2 = -0.284496736;
+             const a3 =  1.421413741;
+             const a4 = -1.453152027;
+             const a5 =  1.061405429;
+             const p  =  0.3275911;
+             const t = 1.0 / (1.0 + p * x);
+             const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+             return sign * y;
+        }
         return NaN; // Unknown
     }
     diff(varName) {
@@ -1422,6 +1461,12 @@ class Call extends Expr {
         }
         if (this.funcName === 'sqrt') return new Div(u.diff(varName), new Mul(new Num(2), new Call('sqrt', [u])));
         if (this.funcName === 'abs') return new Mul(new Call('sign', [u]), u.diff(varName));
+        if (this.funcName === 'erf') {
+            // d/dx erf(u) = 2/sqrt(pi) * e^(-u^2) * u'
+            const coeff = new Div(new Num(2), new Call('sqrt', [new Sym('pi')]));
+            const exp = new Call('exp', [new Mul(new Num(-1), new Pow(u, new Num(2)))]);
+            return new Mul(new Mul(coeff, exp), u.diff(varName));
+        }
         // Default to symbolic diff
         return new Call('diff', [this, varName]);
     }
@@ -1496,7 +1541,8 @@ class Call extends Expr {
             'real': '\\Re',
             'imag': '\\Im',
             'conj': '\\overline{' + argsTex[0] + '}',
-            'sign': '\\operatorname{sgn}'
+            'sign': '\\operatorname{sgn}',
+            'erf': '\\operatorname{erf}'
         };
 
         if (this.funcName === 'floor') return `\\lfloor ${argsTex[0]} \\rfloor`;
