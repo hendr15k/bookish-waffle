@@ -622,12 +622,19 @@
                     <label class="form-label" for="desolve-eq">Equation (Use y' or diff(y,x))</label>
                     <input type="text" class="form-input" id="desolve-eq" placeholder="e.g. diff(y,x) = y">
                 </div>
-                <div class="form-group">
-                    <label class="form-label" for="desolve-var">Dependent Var</label>
-                    <input type="text" class="form-input" id="desolve-var" placeholder="y" value="y">
+                <div class="form-row">
+                    <div class="form-group" style="flex: 1;">
+                        <label class="form-label" for="desolve-var">Dep Var (y)</label>
+                        <input type="text" class="form-input" id="desolve-var" placeholder="y" value="y">
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label class="form-label" for="desolve-x">Indep Var (x)</label>
+                        <input type="text" class="form-input" id="desolve-x" placeholder="x" value="x">
+                    </div>
                 </div>
                 <div class="action-grid">
                     <button class="action-btn" onclick="runTool('desolve', ['desolve-eq', 'desolve-var'])">Solve ODE</button>
+                    <button class="action-btn" onclick="runAndPlot('slopefield', ['desolve-eq', 'desolve-x', 'desolve-var'])" style="background-color: #28a745;">Plot Slope Field</button>
                 </div>
             </div>
         </div>
@@ -1635,6 +1642,12 @@
                 return;
             }
 
+            // Handle Vector Fields
+            if (plots[0].subtype === 'slopefield' || plots[0].subtype === 'vectorfield') {
+                drawVectorField(canvas, plots[0], explicitBounds);
+                return;
+            }
+
             // Determine global range
             // If explicitBounds is provided (from zoom/pan), use them.
             // Otherwise calculate default from args.
@@ -2151,6 +2164,172 @@
             canvas.addEventListener('wheel', onWheel, {passive: false});
         }
 
+        function drawVectorField(canvas, plot, explicitBounds = null) {
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+            ctx.clearRect(0, 0, width, height);
+
+            let minX, maxX, minY, maxY;
+            if (explicitBounds) {
+                minX = explicitBounds.minX; maxX = explicitBounds.maxX;
+                minY = explicitBounds.minY; maxY = explicitBounds.maxY;
+            } else {
+                minX = plot.min; maxX = plot.max;
+                minY = plot.yMin; maxY = plot.yMax;
+            }
+            canvas.plotBounds = { minX, maxX, minY, maxY };
+            canvas.plotResult = plot;
+
+            const mapX = (x) => ((x - minX) / (maxX - minX)) * width;
+            const mapY = (y) => height - ((y - minY) / (maxY - minY)) * height;
+
+            // Draw Axes
+            ctx.save();
+            ctx.strokeStyle = "#333";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            const yZero = mapY(0);
+            if (yZero >= 0 && yZero <= height) { ctx.moveTo(0, yZero); ctx.lineTo(width, yZero); }
+            const xZero = mapX(0);
+            if (xZero >= 0 && xZero <= width) { ctx.moveTo(xZero, 0); ctx.lineTo(xZero, height); }
+            ctx.stroke();
+            ctx.restore();
+
+            // Labels
+            ctx.fillStyle = "#333";
+            ctx.font = "10px sans-serif";
+            ctx.fillText(minX.toFixed(1), 5, height - 5);
+            ctx.fillText(maxX.toFixed(1), width - 35, height - 5);
+            ctx.fillText(maxY.toFixed(1), 5, 10);
+            ctx.fillText(minY.toFixed(1), 5, height - 20);
+
+            // Grid Resolution
+            const resX = 20;
+            const resY = 20;
+            const stepX = (maxX - minX) / resX;
+            const stepY = (maxY - minY) / resY;
+
+            ctx.strokeStyle = "#007bff";
+            ctx.lineWidth = 1;
+
+            for(let i=0; i<=resX; i++) {
+                const x = minX + i * stepX;
+                for(let j=0; j<=resY; j++) {
+                    const y = minY + j * stepY;
+
+                    const px = mapX(x);
+                    const py = mapY(y);
+
+                    if (plot.subtype === 'slopefield') {
+                        // y' = f(x, y)
+                        try {
+                            const mExpr = plot.expr.substitute(plot.varX, new Num(x)).substitute(plot.varY, new Num(y)).simplify();
+                            const m = (mExpr instanceof Num) ? mExpr.value : mExpr.evaluateNumeric();
+
+                            if (!isNaN(m) && isFinite(m)) {
+                                // Draw segment with slope m
+                                // Length approx 10px
+                                const len = 10;
+                                const angle = Math.atan(m);
+                                // In canvas, Y is down, so slope m means dy/dx = m.
+                                // If dy is pos, py decreases.
+                                // angle should be -atan(m) visually? No, standard math atan(m).
+                                // But dx pos -> px increases. dy pos -> py decreases.
+                                // So visual angle is -angle.
+                                const dx = Math.cos(angle) * len;
+                                const dy = Math.sin(angle) * len;
+
+                                // Note: Canvas Y is inverted relative to Cartesian Y.
+                                // A positive slope (up-right) corresponds to decreasing Y pixels.
+                                // dx > 0, dy > 0 (Cartesian). Pixel dy should be negative.
+                                // mapY(y+dy) < mapY(y).
+                                // Let's calculate endpoints in Cartesian then map.
+                                // But simple rotation:
+                                // Line from (x-d, y-md) to (x+d, y+md)
+                                // Normalized:
+                                // Vector (1, m) normalized -> (u, v).
+                                // Segment: (x,y) +/- scale * (u, v).
+
+                                // Visual approach:
+                                // Center at px, py.
+                                // Draw line from -dx, +dy (visual down) to +dx, -dy (visual up) for positive slope?
+                                // Math: slope m. Angle theta = atan(m).
+                                // Visually, we want line at angle -theta.
+                                ctx.beginPath();
+                                ctx.moveTo(px - dx, py + dy); // +dy is down
+                                ctx.lineTo(px + dx, py - dy); // -dy is up
+                                ctx.stroke();
+                            }
+                        } catch(e) {}
+                    } else if (plot.subtype === 'vectorfield') {
+                        // F = [u, v]
+                        try {
+                            const uExpr = plot.exprX.substitute(plot.varX, new Num(x)).substitute(plot.varY, new Num(y)).simplify();
+                            const vExpr = plot.exprY.substitute(plot.varX, new Num(x)).substitute(plot.varY, new Num(y)).simplify();
+                            const u = (uExpr instanceof Num) ? uExpr.value : uExpr.evaluateNumeric();
+                            const v = (vExpr instanceof Num) ? vExpr.value : vExpr.evaluateNumeric();
+
+                            if (!isNaN(u) && !isNaN(v) && isFinite(u) && isFinite(v)) {
+                                // Draw arrow from (x,y) representing (u,v)
+                                // Scale?
+                                const mag = Math.sqrt(u*u + v*v);
+                                if (mag === 0) continue;
+
+                                // Limit length to cell size visually
+                                const maxLen = Math.min(width/resX, height/resY) * 0.8;
+                                // const scale = maxLen / Math.max(1, mag); // Scale if too big? Or just unit vectors?
+                                // Usually vector fields show magnitude by length.
+                                // Let's log-scale or clamp?
+                                // Simple: constant scaling factor based on grid.
+                                const scale = maxLen / (Math.max(maxX-minX, maxY-minY) / Math.max(resX, resY)); // Approximate
+                                // Or just visual length:
+                                // Map vector (u, v) to pixel deltas.
+                                // dPx = u * (width / (maxX-minX))
+                                // dPy = v * (height / (maxY-minY))
+                                // This might be huge.
+                                // Let's normalize to fixed length for direction, color for magnitude?
+                                // Or clamp length.
+                                const len = 15; // px
+                                const angle = Math.atan2(v, u);
+
+                                const dx = Math.cos(angle) * len;
+                                const dy = Math.sin(angle) * len;
+
+                                // Arrow from px, py
+                                const x1 = px;
+                                const y1 = py;
+                                const x2 = px + dx;
+                                const y2 = py - dy; // Y invert
+
+                                ctx.beginPath();
+                                ctx.moveTo(x1, y1);
+                                ctx.lineTo(x2, y2);
+                                ctx.stroke();
+
+                                // Arrowhead
+                                const headLen = 4;
+                                const headAngle = Math.PI / 6;
+                                // Angle of line is -angle (visual)
+                                const visualAngle = -angle;
+                                ctx.beginPath();
+                                ctx.moveTo(x2, y2);
+                                ctx.lineTo(x2 - headLen * Math.cos(visualAngle - headAngle), y2 - headLen * Math.sin(visualAngle - headAngle));
+                                ctx.moveTo(x2, y2);
+                                ctx.lineTo(x2 - headLen * Math.cos(visualAngle + headAngle), y2 - headLen * Math.sin(visualAngle + headAngle));
+                                ctx.stroke();
+
+                                // Dot at base
+                                ctx.beginPath();
+                                ctx.arc(x1, y1, 1, 0, 2*Math.PI);
+                                ctx.fill();
+                            }
+                        } catch(e) {}
+                    }
+                }
+            }
+        }
+
         function drawImplicit(canvas, plot, explicitBounds = null) {
             const ctx = canvas.getContext('2d');
             const width = canvas.width;
@@ -2289,8 +2468,8 @@
                 return;
             }
 
-            // Check if Implicit
-            if (canvas.plotResult && canvas.plotResult.subtype === 'implicit') {
+            // Check if Implicit or Vector Field
+            if (canvas.plotResult && (canvas.plotResult.subtype === 'implicit' || canvas.plotResult.subtype === 'slopefield' || canvas.plotResult.subtype === 'vectorfield')) {
                 const xRange = b.maxX - b.minX;
                 const yRange = b.maxY - b.minY;
                 const centerX = (b.minX + b.maxX) / 2;
@@ -2303,7 +2482,8 @@
                     minY: centerY - newYRange / 2,
                     maxY: centerY + newYRange / 2
                 };
-                drawImplicit(canvas, canvas.plotResult, newBounds);
+                if (canvas.plotResult.subtype === 'implicit') drawImplicit(canvas, canvas.plotResult, newBounds);
+                else drawVectorField(canvas, canvas.plotResult, newBounds);
                 return;
             }
 

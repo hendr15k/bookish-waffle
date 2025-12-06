@@ -805,6 +805,75 @@ class CAS {
                 return this._fourier(expr, varNode, n, L);
             }
 
+            if (node.funcName === 'slopefield') {
+                 // slopefield(diffEq, x, y, [minX, maxX, minY, maxY])
+                 if (args.length < 3) throw new Error("slopefield requires at least 3 arguments: equation, x, y");
+                 const eq = args[0];
+                 const xVar = args[1];
+                 const yVar = args[2];
+
+                 let expr = eq;
+                 // If eq is Eq (y' = ...), extract RHS
+                 if (eq instanceof Eq) {
+                     expr = eq.right;
+                 }
+
+                 let min = -10, max = 10, yMin = -10, yMax = 10;
+                 if (args.length >= 7) {
+                     min = args[3].evaluateNumeric();
+                     max = args[4].evaluateNumeric();
+                     yMin = args[5].evaluateNumeric();
+                     yMax = args[6].evaluateNumeric();
+                 }
+
+                 return {
+                     type: 'plot',
+                     subtype: 'slopefield',
+                     expr: expr,
+                     varX: xVar,
+                     varY: yVar,
+                     min: isNaN(min) ? -10 : min,
+                     max: isNaN(max) ? 10 : max,
+                     yMin: isNaN(yMin) ? -10 : yMin,
+                     yMax: isNaN(yMax) ? 10 : yMax,
+                     toString: () => `Slope Field ${expr}`,
+                     toLatex: () => `\\text{Slope Field } y' = ${expr.toLatex()}`
+                 };
+            }
+
+            if (node.funcName === 'vectorfield') {
+                 // vectorfield([u, v], x, y, [minX, maxX, minY, maxY])
+                 if (args.length < 3) throw new Error("vectorfield requires at least 3 arguments: vector, x, y");
+                 const vec = args[0];
+                 const xVar = args[1];
+                 const yVar = args[2];
+
+                 if (!(vec instanceof Vec) || vec.elements.length !== 2) throw new Error("Vector field must be 2D vector [u, v]");
+
+                 let min = -10, max = 10, yMin = -10, yMax = 10;
+                 if (args.length >= 7) {
+                     min = args[3].evaluateNumeric();
+                     max = args[4].evaluateNumeric();
+                     yMin = args[5].evaluateNumeric();
+                     yMax = args[6].evaluateNumeric();
+                 }
+
+                 return {
+                     type: 'plot',
+                     subtype: 'vectorfield',
+                     exprX: vec.elements[0],
+                     exprY: vec.elements[1],
+                     varX: xVar,
+                     varY: yVar,
+                     min: isNaN(min) ? -10 : min,
+                     max: isNaN(max) ? 10 : max,
+                     yMin: isNaN(yMin) ? -10 : yMin,
+                     yMax: isNaN(yMax) ? 10 : yMax,
+                     toString: () => `Vector Field ${vec}`,
+                     toLatex: () => `\\text{Vector Field } ${vec.toLatex()}`
+                 };
+            }
+
             if (node.funcName === 'plotimplicit') {
                  if (args.length < 3) throw new Error("plotimplicit requires at least 3 arguments: equation, x, y");
                  const eq = args[0];
