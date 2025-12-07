@@ -1766,6 +1766,13 @@ class And extends BinaryOp {
         if (l instanceof Num && r instanceof Num) {
             return new Num((l.value && r.value) ? 1 : 0);
         }
+        // Short-circuit logic: false && x -> false
+        if (l instanceof Num && l.value === 0) return new Num(0);
+        if (r instanceof Num && r.value === 0) return new Num(0);
+        // true && x -> x
+        if (l instanceof Num && l.value !== 0) return r;
+        if (r instanceof Num && r.value !== 0) return l;
+
         return new And(l, r);
     }
     evaluateNumeric() { return (this.left.evaluateNumeric() && this.right.evaluateNumeric()) ? 1 : 0; }
@@ -1780,6 +1787,13 @@ class Or extends BinaryOp {
         if (l instanceof Num && r instanceof Num) {
             return new Num((l.value || r.value) ? 1 : 0);
         }
+        // Short-circuit logic: true || x -> true
+        if (l instanceof Num && l.value !== 0) return new Num(1);
+        if (r instanceof Num && r.value !== 0) return new Num(1);
+        // false || x -> x
+        if (l instanceof Num && l.value === 0) return r;
+        if (r instanceof Num && r.value === 0) return l;
+
         return new Or(l, r);
     }
     evaluateNumeric() { return (this.left.evaluateNumeric() || this.right.evaluateNumeric()) ? 1 : 0; }
@@ -1793,6 +1807,15 @@ class Xor extends BinaryOp {
         const r = this.right.simplify();
         if (l instanceof Num && r instanceof Num) {
             return new Num((!!l.value !== !!r.value) ? 1 : 0);
+        }
+        // xor(0, x) -> x, xor(1, x) -> not x
+        if (l instanceof Num) {
+            if (l.value === 0) return r;
+            if (l.value !== 0) return new Not(r).simplify();
+        }
+        if (r instanceof Num) {
+            if (r.value === 0) return l;
+            if (r.value !== 0) return new Not(l).simplify();
         }
         return new Xor(l, r);
     }
@@ -1811,6 +1834,10 @@ class Not extends Expr {
         if (a instanceof Num) {
             // Check for explicit 0 or non-zero
             return new Num(a.value === 0 ? 1 : 0);
+        }
+        // Double negation: not(not(x)) -> x
+        if (a instanceof Not) {
+            return a.arg;
         }
         return new Not(a);
     }

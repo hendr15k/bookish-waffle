@@ -622,9 +622,34 @@ class CAS {
                 return this._normalCDF(args[0], args[1], args[2]);
             }
 
+            if (node.funcName === 'invNorm') {
+                if (args.length !== 3) throw new Error("invNorm requires 3 arguments: area, mu, sigma");
+                return this._invNorm(args[0], args[1], args[2]);
+            }
+
             if (node.funcName === 'binomialCDF') {
                 if (args.length !== 3) throw new Error("binomialCDF requires 3 arguments: k, n, p");
                 return this._binomialCDF(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'poissonPDF') {
+                if (args.length !== 2) throw new Error("poissonPDF requires 2 arguments: k, lambda");
+                return this._poissonPDF(args[0], args[1]);
+            }
+
+            if (node.funcName === 'poissonCDF') {
+                if (args.length !== 2) throw new Error("poissonCDF requires 2 arguments: k, lambda");
+                return this._poissonCDF(args[0], args[1]);
+            }
+
+            if (node.funcName === 'compound') {
+                if (args.length !== 4) throw new Error("compound requires 4 arguments: P, r, n, t");
+                return this._compound(args[0], args[1], args[2], args[3]);
+            }
+
+            if (node.funcName === 'loan') {
+                if (args.length !== 3) throw new Error("loan requires 3 arguments: P, r, n");
+                return this._loan(args[0], args[1], args[2]);
             }
 
             if (node.funcName === 'dot') {
@@ -916,7 +941,9 @@ expand, simplify, solve, minimize, maximize,
 det, inv, trans, cross, dot, norm, grad, curl, divergence,
 gcd, lcm, factor, nCr, nPr, isPrime, factorial,
 mean, median, variance, linearRegression,
-normalPDF, normalCDF, binomialPDF, binomialCDF,
+normalPDF, normalCDF, invNorm, binomialPDF, binomialCDF,
+poissonPDF, poissonCDF,
+compound, loan,
 degree, coeff, symb2poly, poly2symb,
 seq, range, sort, reverse,
 diag, identity,
@@ -2703,6 +2730,45 @@ and, or, not, xor, int, evalf`;
         return new Mul(new Num(0.5), new Add(new Num(1), erfTerm)).simplify();
     }
 
+    _invNorm(area, mu, sigma) {
+        area = area.simplify();
+        mu = mu.simplify();
+        sigma = sigma.simplify();
+
+        if (area instanceof Num && mu instanceof Num && sigma instanceof Num) {
+            const p = area.value;
+            const m = mu.value;
+            const s = sigma.value;
+
+            if (p <= 0 || p >= 1) return new Sym("NaN");
+            if (s < 0) return new Sym("NaN");
+
+            // Rational approximation for standard normal quantile
+            // Abramowitz and Stegun 26.2.23
+            const c0 = 2.515517;
+            const c1 = 0.802853;
+            const c2 = 0.010328;
+            const d1 = 1.432788;
+            const d2 = 0.189269;
+            const d3 = 0.001308;
+
+            let t, num, den, xp;
+
+            let q = (p < 0.5) ? p : 1.0 - p;
+            t = Math.sqrt(-2.0 * Math.log(q));
+            num = c0 + c1 * t + c2 * t * t;
+            den = 1.0 + d1 * t + d2 * t * t + d3 * t * t * t;
+
+            // Abramowitz and Stegun 26.2.23 gives x_p = t - num/den for upper tail Q(x_p) = q
+            xp = t - num / den;
+
+            if (p < 0.5) xp = -xp;
+
+            return new Num(m + s * xp);
+        }
+        return new Call('invNorm', [area, mu, sigma]);
+    }
+
     _binomialCDF(k, n, p) {
         k = k.simplify();
         n = n.simplify();
@@ -2732,6 +2798,82 @@ and, or, not, xor, int, evalf`;
              new Num(0),
              new Call('floor', [k])
         ]);
+    }
+
+    _poissonPDF(k, lambda) {
+        k = k.simplify();
+        lambda = lambda.simplify();
+
+        if (k instanceof Num && lambda instanceof Num) {
+            const kv = k.value;
+            const lv = lambda.value;
+            if (!Number.isInteger(kv) || kv < 0) return new Num(0);
+            if (lv < 0) return new Num(0);
+
+            // e^-lambda * lambda^k / k!
+            const prob = Math.exp(-lv) * Math.pow(lv, kv) / this._factorial(kv);
+            return new Num(prob);
+        }
+        // Symbolic: e^-L * L^k / k!
+        return new Div(
+            new Mul(new Call('exp', [new Mul(new Num(-1), lambda)]), new Pow(lambda, k)),
+            new Call('factorial', [k])
+        ).simplify();
+    }
+
+    _poissonCDF(k, lambda) {
+        k = k.simplify();
+        lambda = lambda.simplify();
+
+        if (k instanceof Num) {
+            const limit = Math.floor(k.value);
+            if (limit < 0) return new Num(0);
+
+            if (lambda instanceof Num) {
+                let sum = new Num(0);
+                for(let i=0; i<=limit; i++) {
+                    sum = new Add(sum, this._poissonPDF(new Num(i), lambda)).simplify();
+                }
+                return sum;
+            }
+        }
+
+        const i = new Sym('__i_pcdf__');
+        return new Call('sum', [
+            new Call('poissonPDF', [i, lambda]),
+            i,
+            new Num(0),
+            new Call('floor', [k])
+        ]);
+    }
+
+    _compound(P, r, n, t) {
+        // A = P * (1 + r/n)^(n*t)
+        P = P.simplify();
+        r = r.simplify();
+        n = n.simplify();
+        t = t.simplify();
+
+        const base = new Add(new Num(1), new Div(r, n));
+        const exponent = new Mul(n, t);
+        return new Mul(P, new Pow(base, exponent)).simplify();
+    }
+
+    _loan(P, r, n) {
+        // Monthly payment PMT = (P * r/12) / (1 - (1 + r/12)^(-n))
+        // Assuming r is annual rate (e.g. 0.05), n is total months
+        // If args are just P, r, n, we follow standard formula
+
+        P = P.simplify();
+        r = r.simplify();
+        n = n.simplify();
+
+        const monthlyRate = new Div(r, new Num(12));
+        const num = new Mul(P, monthlyRate);
+        const base = new Add(new Num(1), monthlyRate);
+        const denom = new Sub(new Num(1), new Pow(base, new Mul(new Num(-1), n)));
+
+        return new Div(num, denom).simplify();
     }
 
     _nCr(n, k) {
