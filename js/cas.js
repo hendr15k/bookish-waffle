@@ -757,6 +757,21 @@ class CAS {
                 return new Num(args[0].evaluateNumeric());
             }
 
+            if (node.funcName === 'euler' || node.funcName === 'phi') {
+                if (args.length !== 1) throw new Error("euler requires 1 argument");
+                return this._euler(args[0]);
+            }
+
+            if (node.funcName === 'mode') {
+                if (args.length !== 1) throw new Error("mode requires 1 argument (list)");
+                return this._mode(args[0]);
+            }
+
+            if (node.funcName === 'arcLen') {
+                if (args.length !== 4) throw new Error("arcLen requires 4 arguments: expr, var, start, end");
+                return this._arcLen(args[0], args[1], args[2], args[3]);
+            }
+
             if (node.funcName === 'arg') {
                 if (args.length !== 1) throw new Error("arg requires 1 argument");
                 return this._arg(args[0]);
@@ -3109,6 +3124,69 @@ and, or, not, xor, int, evalf`;
              return new Num(Math.PI);
         }
         return new Call('arg', [z]);
+    }
+
+    _euler(n) {
+        n = n.simplify();
+        if (n instanceof Num && Number.isInteger(n.value) && n.value > 0) {
+            let val = n.value;
+            let result = val;
+            let p = 2;
+            while (p * p <= val) {
+                if (val % p === 0) {
+                    while (val % p === 0) val /= p;
+                    result -= result / p;
+                }
+                p++;
+            }
+            if (val > 1) result -= result / val;
+            return new Num(result);
+        }
+        return new Call('euler', [n]);
+    }
+
+    _mode(list) {
+        if (list instanceof Vec) {
+            if (list.elements.length === 0) return new Vec([]); // Or null?
+
+            const counts = {};
+            let maxCount = 0;
+
+            for(const el of list.elements) {
+                const s = el.toString(); // Use string representation for counting
+                counts[s] = (counts[s] || 0) + 1;
+                if (counts[s] > maxCount) maxCount = counts[s];
+            }
+
+            if (maxCount === 1) return list; // No mode (or all are modes)
+
+            const modes = [];
+            // Find elements with maxCount
+            // We need to map back to Expr. Since we keyed by toString(), we need original mapping or re-parse.
+            // But we can iterate original list.
+            const seen = new Set();
+            for(const el of list.elements) {
+                const s = el.toString();
+                if (counts[s] === maxCount && !seen.has(s)) {
+                    modes.push(el);
+                    seen.add(s);
+                }
+            }
+
+            if (modes.length === 1) return modes[0];
+            return new Vec(modes);
+        }
+        return new Call('mode', [list]);
+    }
+
+    _arcLen(expr, varNode, start, end) {
+        if (!(varNode instanceof Sym)) throw new Error("Variable must be a symbol");
+
+        // integrate(sqrt(1 + f'(x)^2), x, a, b)
+        const deriv = expr.diff(varNode).simplify();
+        const integrand = new Call('sqrt', [new Add(new Num(1), new Pow(deriv, new Num(2)))]).simplify();
+
+        return this.evaluate(new Call('integrate', [integrand, varNode, start, end]));
     }
 
     _kernel(matrix) {

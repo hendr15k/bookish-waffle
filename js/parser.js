@@ -24,6 +24,8 @@ const TOKEN_AND = 'AND';
 const TOKEN_OR = 'OR';
 const TOKEN_NOT = 'NOT';
 const TOKEN_XOR = 'XOR';
+const TOKEN_IMPLIES = 'IMPLIES';
+const TOKEN_IFF = 'IFF';
 const TOKEN_MOD = 'MOD';
 const TOKEN_RANGE = 'RANGE';
 const TOKEN_SEMI = 'SEMI';
@@ -240,7 +242,20 @@ class Lexer {
                 if (this.peek() === '=') {
                     this.advance();
                     this.advance();
+                    if (this.currentChar === '>') { // <=>
+                        this.advance();
+                        return new Token(TOKEN_IFF, '<=>');
+                    }
                     return new Token(TOKEN_LE, '<=');
+                }
+                if (this.peek() === '-') {
+                    const next = this.text[this.pos + 2];
+                    if (next === '>') { // <->
+                        this.advance();
+                        this.advance();
+                        this.advance();
+                        return new Token(TOKEN_IFF, '<->');
+                    }
                 }
                 this.advance();
                 return new Token(TOKEN_LT, '<');
@@ -260,11 +275,24 @@ class Lexer {
                     this.advance();
                     return new Token(TOKEN_BOOL_EQ, '==');
                 }
+                if (this.peek() === '>') {
+                    this.advance();
+                    this.advance();
+                    return new Token(TOKEN_IMPLIES, '=>');
+                }
                 this.advance();
                 return new Token(TOKEN_EQ, '=');
             }
             if (this.currentChar === '+') { this.advance(); return new Token(TOKEN_PLUS, '+'); }
-            if (this.currentChar === '-') { this.advance(); return new Token(TOKEN_MINUS, '-'); }
+            if (this.currentChar === '-') {
+                if (this.peek() === '>') {
+                    this.advance();
+                    this.advance();
+                    return new Token(TOKEN_IMPLIES, '->');
+                }
+                this.advance();
+                return new Token(TOKEN_MINUS, '-');
+            }
             if (this.currentChar === '*') { this.advance(); return new Token(TOKEN_STAR, '*'); }
             if (this.currentChar === '/') {
                 if (this.peek() === '/') {
@@ -803,8 +831,26 @@ class Parser {
         return node;
     }
 
+    impliesExpr() {
+        let node = this.logicExpr();
+        if (this.currentToken.type === TOKEN_IMPLIES) {
+            this.eat(TOKEN_IMPLIES);
+            node = new Implies(node, this.impliesExpr());
+        }
+        return node;
+    }
+
+    iffExpr() {
+        let node = this.impliesExpr();
+        while (this.currentToken.type === TOKEN_IFF) {
+            this.eat(TOKEN_IFF);
+            node = new Iff(node, this.impliesExpr());
+        }
+        return node;
+    }
+
     equation() {
-        return this.logicExpr();
+        return this.iffExpr();
     }
 
     statement() {
