@@ -757,6 +757,21 @@ class CAS {
                 return new Num(args[0].evaluateNumeric());
             }
 
+            if (node.funcName === 'distance') {
+                if (args.length !== 2) throw new Error("distance requires 2 arguments");
+                return this._distance(args[0], args[1]);
+            }
+
+            if (node.funcName === 'midpoint') {
+                if (args.length !== 2) throw new Error("midpoint requires 2 arguments");
+                return this._midpoint(args[0], args[1]);
+            }
+
+            if (node.funcName === 'zTest') {
+                if (args.length !== 3) throw new Error("zTest requires 3 arguments: data, mu0, sigma");
+                return this._zTest(args[0], args[1], args[2]);
+            }
+
             if (node.funcName === 'euler' || node.funcName === 'phi') {
                 if (args.length !== 1) throw new Error("euler requires 1 argument");
                 return this._euler(args[0]);
@@ -3088,6 +3103,58 @@ and, or, not, xor, int, evalf`;
         return new Call('mod', [a, b]);
     }
 
+    _distance(p1, p2) {
+        if (!(p1 instanceof Vec) || !(p2 instanceof Vec)) throw new Error("distance requires two points (vectors)");
+        if (p1.elements.length !== p2.elements.length) throw new Error("Dimension mismatch");
+        let sum = new Num(0);
+        for(let i=0; i<p1.elements.length; i++) {
+            const diff = new Sub(p1.elements[i], p2.elements[i]);
+            sum = new Add(sum, new Pow(diff, new Num(2)));
+        }
+        return new Call('sqrt', [sum.simplify()]).simplify();
+    }
+
+    _midpoint(p1, p2) {
+        if (!(p1 instanceof Vec) || !(p2 instanceof Vec)) throw new Error("midpoint requires two points (vectors)");
+        if (p1.elements.length !== p2.elements.length) throw new Error("Dimension mismatch");
+        const elements = [];
+        for(let i=0; i<p1.elements.length; i++) {
+            const sum = new Add(p1.elements[i], p2.elements[i]);
+            elements.push(new Div(sum, new Num(2)).simplify());
+        }
+        return new Vec(elements);
+    }
+
+    _zTest(data, mu0, sigma) {
+        // One-sample Z-test
+        // H0: mu = mu0
+        // z = (x_bar - mu0) / (sigma / sqrt(n))
+
+        let x_bar, n;
+
+        if (data instanceof Vec) {
+            n = new Num(data.elements.length);
+            x_bar = this._mean(data);
+        } else {
+             throw new Error("zTest requires a data list as first argument");
+        }
+
+        mu0 = mu0.simplify();
+        sigma = sigma.simplify();
+
+        const num = new Sub(x_bar, mu0);
+        const den = new Div(sigma, new Call('sqrt', [n]));
+        const z = new Div(num, den).simplify();
+
+        // p-value (two-tailed): 2 * (1 - CDF(|z|))
+        // CDF(z) for standard normal is normalCDF(z, 0, 1)
+        const absZ = new Call('abs', [z]).simplify();
+        const cdf = this._normalCDF(absZ, new Num(0), new Num(1));
+        const pValue = new Mul(new Num(2), new Sub(new Num(1), cdf)).simplify();
+
+        return new Vec([z, pValue]);
+    }
+
     _concat(args) {
         let elements = [];
         for(const arg of args) {
@@ -3330,8 +3397,11 @@ and, or, not, xor, int, evalf`;
                 u = new Sub(u, proj).simplify();
             }
 
-            const isZero = u.elements.every(e => e instanceof Num && e.value === 0);
-            if (!isZero) {
+            let isZero = false;
+            if (u instanceof Num && u.value === 0) isZero = true;
+            else if (u instanceof Vec) isZero = u.elements.every(e => e instanceof Num && e.value === 0);
+
+            if (!isZero && u instanceof Vec) {
                  const n = new Call('norm', [u]).simplify();
                  const e = new Div(u, n).simplify();
                  basis.push(e);

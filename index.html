@@ -827,7 +827,12 @@
                     <button class="action-btn" onclick="runTool('inv', ['lin-expr'])">Inverse</button>
                     <button class="action-btn" onclick="runTool('det', ['lin-expr'])">Determinant</button>
                     <button class="action-btn" onclick="runTool('trace', ['lin-expr'])">Trace</button>
-                     <button class="action-btn" onclick="runTool('trans', ['lin-expr'])">Transpose</button>
+                    <button class="action-btn" onclick="runTool('trans', ['lin-expr'])">Transpose</button>
+                    <button class="action-btn" onclick="runTool('eigenvals', ['lin-expr'])">Eigenvalues</button>
+                    <button class="action-btn" onclick="runTool('eigenvects', ['lin-expr'])">Eigenvectors</button>
+                    <button class="action-btn" onclick="runTool('lu', ['lin-expr'])">LU Decomp</button>
+                    <button class="action-btn" onclick="runTool('qr', ['lin-expr'])">QR Decomp</button>
+                    <button class="action-btn" onclick="runTool('cholesky', ['lin-expr'])" style="grid-column: span 2;">Cholesky</button>
                 </div>
             </div>
         </div>
@@ -879,6 +884,7 @@
              <button class="tab-btn active" onclick="openTab(event, 'tab-stat-desc')">Descriptive</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-stat-reg')">Regression</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-stat-dist')">Distributions</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-stat-test')">Hypothesis Test</button>
         </div>
 
         <div id="tab-stat-desc" class="tab-content active">
@@ -939,6 +945,25 @@
                      </div>
                  </div>
              </div>
+        </div>
+        <div id="tab-stat-test" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="test-data">Data List</label>
+                    <input type="text" class="form-input" id="test-data" placeholder="e.g. [1, 2, 3, 4, 5]">
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="test-mu">Hyp. Mean (μ0)</label>
+                        <input type="number" class="form-input" id="test-mu" placeholder="0">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="test-sigma">Pop. Std Dev (σ)</label>
+                        <input type="number" class="form-input" id="test-sigma" placeholder="1">
+                    </div>
+                </div>
+                <button class="action-btn" onclick="runTool('zTest', ['test-data', 'test-mu', 'test-sigma'])">Run Z-Test</button>
+            </div>
         </div>
         <div class="tool-result"></div>
     </div>
@@ -1029,6 +1054,7 @@
         <div class="tab-header">
              <button class="tab-btn active" onclick="openTab(event, 'tab-geo-2d')">2D Shapes</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-geo-3d')">3D Objects</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-geo-analytic')">Analytic</button>
         </div>
 
         <div id="tab-geo-2d" class="tab-content active">
@@ -1059,6 +1085,25 @@
                  <div id="geo-3d-inputs"></div>
                  <button class="action-btn" onclick="runGeometry('3d')">Calculate</button>
              </div>
+        </div>
+
+        <div id="tab-geo-analytic" class="tab-content">
+            <div class="tool-form">
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="geo-p1">Point A [x, y]</label>
+                        <input type="text" class="form-input" id="geo-p1" placeholder="[1, 2]">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="geo-p2">Point B [x, y]</label>
+                        <input type="text" class="form-input" id="geo-p2" placeholder="[4, 6]">
+                    </div>
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('distance', ['geo-p1', 'geo-p2'])">Distance</button>
+                    <button class="action-btn" onclick="runTool('midpoint', ['geo-p1', 'geo-p2'])">Midpoint</button>
+                </div>
+            </div>
         </div>
 
         <div class="tool-result"></div>
@@ -2993,8 +3038,21 @@
                 zoomOut.style.cssText = btnStyle + "bottom: 10px;";
                 zoomOut.onclick = (e) => { e.stopPropagation(); manualZoom(canvas, 1.25); };
 
+                const saveBtn = document.createElement('button');
+                saveBtn.innerText = "💾";
+                saveBtn.title = "Save as PNG";
+                saveBtn.style.cssText = btnStyle + "bottom: 80px;";
+                saveBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    const link = document.createElement('a');
+                    link.download = 'plot.png';
+                    link.href = canvas.toDataURL();
+                    link.click();
+                };
+
                 container.appendChild(zoomIn);
                 container.appendChild(zoomOut);
+                container.appendChild(saveBtn);
 
                 resultDiv.appendChild(container);
 

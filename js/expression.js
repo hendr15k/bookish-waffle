@@ -712,8 +712,8 @@ class Div extends BinaryOp {
 
             return new Div(l, r);
         }
-        // Vector division by scalar: Vec / Num
-        if (l instanceof Vec && r instanceof Num) {
+        // Vector division by scalar: Vec / Scalar
+        if (l instanceof Vec && !(r instanceof Vec)) {
             return new Vec(l.elements.map(e => new Div(e, r).simplify()));
         }
 
