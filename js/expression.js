@@ -1823,6 +1823,67 @@ class Xor extends BinaryOp {
     toLatex() { return `${this.left.toLatex()} \\oplus ${this.right.toLatex()}`; }
 }
 
+class Implies extends BinaryOp {
+    toString() { return `(${this.left} -> ${this.right})`; }
+    simplify() {
+        const l = this.left.simplify();
+        const r = this.right.simplify();
+        if (l instanceof Num && r instanceof Num) {
+            // !l || r
+            const lv = l.value !== 0;
+            const rv = r.value !== 0;
+            return new Num((!lv || rv) ? 1 : 0);
+        }
+        // false -> x  => true
+        if (l instanceof Num && l.value === 0) return new Num(1);
+        // true -> x   => x
+        if (l instanceof Num && l.value !== 0) return r;
+        // x -> true   => true
+        if (r instanceof Num && r.value !== 0) return new Num(1);
+        // x -> false  => not x
+        if (r instanceof Num && r.value === 0) return new Not(l).simplify();
+        // x -> x      => true
+        if (l.toString() === r.toString()) return new Num(1);
+
+        return new Implies(l, r);
+    }
+    evaluateNumeric() {
+        const lv = this.left.evaluateNumeric();
+        const rv = this.right.evaluateNumeric();
+        return (!lv || rv) ? 1 : 0;
+    }
+    toLatex() { return `${this.left.toLatex()} \\implies ${this.right.toLatex()}`; }
+}
+
+class Iff extends BinaryOp {
+    toString() { return `(${this.left} <-> ${this.right})`; }
+    simplify() {
+        const l = this.left.simplify();
+        const r = this.right.simplify();
+        if (l instanceof Num && r instanceof Num) {
+            const lv = !!l.value;
+            const rv = !!r.value;
+            return new Num((lv === rv) ? 1 : 0);
+        }
+        // true <-> x  => x
+        if (l instanceof Num && l.value !== 0) return r;
+        if (r instanceof Num && r.value !== 0) return l;
+        // false <-> x => not x
+        if (l instanceof Num && l.value === 0) return new Not(r).simplify();
+        if (r instanceof Num && r.value === 0) return new Not(l).simplify();
+        // x <-> x     => true
+        if (l.toString() === r.toString()) return new Num(1);
+
+        return new Iff(l, r);
+    }
+    evaluateNumeric() {
+        const lv = !!this.left.evaluateNumeric();
+        const rv = !!this.right.evaluateNumeric();
+        return (lv === rv) ? 1 : 0;
+    }
+    toLatex() { return `${this.left.toLatex()} \\iff ${this.right.toLatex()}`; }
+}
+
 class Not extends Expr {
     constructor(arg) {
         super();
@@ -2075,7 +2136,7 @@ class Continue extends Expr {
 (function() {
     const exports = {
         Expr, Num, Sym, BinaryOp, Add, Sub, Mul, Div, Pow, Call, Assignment, Eq, Vec, FunctionDef, Block, toExpr,
-        And, Or, Xor, Not, Mod, Neq, Lt, Gt, Le, Ge, At, BooleanEq,
+        And, Or, Xor, Implies, Iff, Not, Mod, Neq, Lt, Gt, Le, Ge, At, BooleanEq,
         If, While, For, Return, Break, Continue
     };
     if (typeof globalThis !== 'undefined') {
