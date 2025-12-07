@@ -436,6 +436,34 @@ class CAS {
                 return this._limit(expr, varNode, point);
             }
 
+            if (node.funcName === 'tangent') {
+                // tangent(expr, var, point)
+                if (args.length < 3) throw new Error("tangent requires 3 arguments: expression, variable, point");
+                const expr = args[0];
+                const varNode = args[1];
+                const point = args[2];
+                if (!(varNode instanceof Sym)) throw new Error("Second argument to tangent must be a variable");
+
+                // f(a) + f'(a)(x-a)
+                const f_a = expr.substitute(varNode, point).simplify();
+                const deriv = expr.diff(varNode).simplify();
+                const f_prime_a = deriv.substitute(varNode, point).simplify();
+
+                // y = f(a) + f'(a)*(x - a)
+                const term = new Mul(f_prime_a, new Sub(varNode, point)).simplify();
+                return new Add(f_a, term).simplify();
+            }
+
+            if (node.funcName === 'trigReduce') {
+                if (args.length !== 1) throw new Error("trigReduce requires 1 argument");
+                return this._linearizeTrig(args[0]);
+            }
+
+            if (node.funcName === 'trigExpand') {
+                if (args.length !== 1) throw new Error("trigExpand requires 1 argument");
+                return args[0].expand().simplify();
+            }
+
             if (node.funcName === 'det') {
                 if (args.length !== 1) throw new Error("det requires 1 argument");
                 return this._det(args[0]);

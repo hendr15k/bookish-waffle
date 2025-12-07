@@ -446,6 +446,14 @@
             <span class="app-icon" style="color: #dc3545;">⚛️</span>
             <span class="app-name">Physics</span>
         </div>
+        <div class="app-card" onclick="openTool('logic')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('logic')">
+            <span class="app-icon" style="color: #6610f2;">💡</span>
+            <span class="app-name">Logic</span>
+        </div>
+        <div class="app-card" onclick="openTool('trig')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('trig')">
+            <span class="app-icon" style="color: #fd7e14;">📐</span>
+            <span class="app-name">Trig</span>
+        </div>
         <div class="app-card" onclick="openTool('settings')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('settings')">
             <span class="app-icon" style="color: #007bff;">⚙️</span>
             <span class="app-name">Settings</span>
@@ -559,6 +567,7 @@
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-series')">Taylor Series</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-riemann')">Riemann</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-fourier')">Fourier</button>
+            <button class="tab-btn" onclick="openTab(event, 'tab-calc-tangent')">Tangent</button>
         </div>
 
         <!-- Diff & Limit Tab -->
@@ -730,6 +739,30 @@
                 <div class="action-grid">
                     <button class="action-btn" onclick="runTool('fourier', ['fourier-expr', 'fourier-var', 'fourier-n', 'fourier-l'])">Calculate</button>
                     <button class="action-btn" onclick="runAndPlot('fourier', ['fourier-expr', 'fourier-var', 'fourier-n', 'fourier-l'])" style="background-color: #28a745;">Plot</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tangent Tab -->
+        <div id="tab-calc-tangent" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="tangent-expr">Function</label>
+                    <input type="text" class="form-input" id="tangent-expr" placeholder="e.g. x^2">
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="tangent-var">Var</label>
+                        <input type="text" class="form-input" id="tangent-var" placeholder="x" value="x">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="tangent-pt">Point</label>
+                        <input type="text" class="form-input" id="tangent-pt" placeholder="1" value="1">
+                    </div>
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('tangent', ['tangent-expr', 'tangent-var', 'tangent-pt'])">Equation</button>
+                    <button class="action-btn" onclick="runTangentPlot()" style="background-color: #28a745;">Plot</button>
                 </div>
             </div>
         </div>
@@ -1166,6 +1199,45 @@
         </div>
 
         <div class="tool-result"></div>
+    </div>
+
+    <!-- LOGIC TOOL -->
+    <div id="tool-logic" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Logic Truth Table</span>
+        </div>
+        <div class="tool-form">
+            <div class="form-group">
+                <label class="form-label" for="logic-expr">Expression</label>
+                <input type="text" class="form-input" id="logic-expr" placeholder="e.g. (A or B) and not C">
+                <small style="color:#666;">Use: and, or, not, xor, (, )</small>
+            </div>
+            <button class="action-btn" onclick="runTruthTable()">Generate Table</button>
+        </div>
+        <div class="tool-result" style="overflow-x: auto; text-align: left;"></div>
+    </div>
+
+    <!-- TRIGONOMETRY TOOL -->
+    <div id="tool-trig" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Unit Circle</span>
+        </div>
+        <div style="text-align: center;">
+            <canvas id="trig-circle-canvas" width="300" height="300" style="border-radius: 50%; border: 1px solid #ddd;"></canvas>
+            <div style="margin-top: 15px;">
+                <input type="range" id="trig-angle-slider" min="0" max="360" value="45" style="width: 80%;" oninput="updateTrigCircle(this.value)">
+                <div style="font-size: 1.2em; font-weight: bold; margin-top: 10px;">
+                    <span id="trig-angle-val">45</span>°
+                </div>
+                <div style="display: flex; justify-content: space-around; margin-top: 10px;">
+                    <div style="color: #dc3545;">sin: <span id="trig-sin-val">0.707</span></div>
+                    <div style="color: #007bff;">cos: <span id="trig-cos-val">0.707</span></div>
+                    <div style="color: #28a745;">tan: <span id="trig-tan-val">1.000</span></div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- VARIABLES APP -->
@@ -3869,6 +3941,203 @@
                  resBox.innerText = result;
                  resBox.style.display = 'block';
              }
+        };
+
+        // Logic Truth Table
+        window.runTruthTable = function() {
+            const exprStr = document.getElementById('logic-expr').value;
+            if(!exprStr) return;
+
+            // Extract variables
+            const vars = new Set();
+            // Basic regex to find potential variables (A-Z words, excluding keywords)
+            const keywords = ['and', 'or', 'not', 'xor', 'true', 'false'];
+            const tokens = exprStr.match(/[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
+            tokens.forEach(t => {
+                if(!keywords.includes(t.toLowerCase())) vars.add(t);
+            });
+            const varList = Array.from(vars).sort();
+
+            if (varList.length === 0) {
+                // Just evaluate constant
+                runTool('simplify', ['logic-expr']);
+                return;
+            }
+
+            // Generate table header
+            let tableHTML = '<table style="width:100%; border-collapse: collapse;"><thead><tr style="background:#f0f0f0;">';
+            varList.forEach(v => tableHTML += `<th style="border:1px solid #ddd; padding:8px;">${v}</th>`);
+            tableHTML += `<th style="border:1px solid #ddd; padding:8px;">Result</th></tr></thead><tbody>`;
+
+            // Generate rows (2^n)
+            const n = varList.length;
+            const rows = Math.pow(2, n);
+
+            try {
+                for(let i=0; i<rows; i++) {
+                    let rowHTML = '<tr>';
+                    // Current assignment
+                    const assignment = {};
+                    // Iterate backwards for binary string order (00, 01, 10, 11)
+                    // Or forwards. i=0 -> 000.
+                    for(let j=0; j<n; j++) {
+                        // Var j gets bit (n-1-j) of i? Or simple masking.
+                        // Let's use simple bit shift.
+                        // var[0] is MSB usually in tables? Or LSB?
+                        // A B C
+                        // 0 0 0
+                        // 0 0 1
+                        // So last var changes fastest.
+                        const bit = (i >> (n - 1 - j)) & 1;
+                        assignment[varList[j]] = bit;
+                        rowHTML += `<td style="border:1px solid #ddd; padding:8px; text-align:center;">${bit}</td>`;
+                    }
+
+                    // Evaluate expression with assignment
+                    // We substitute variables with 0 or 1
+                    let evalExpr = exprStr;
+                    // Naive replace might break "A and AA". Use parser/CAS substitution.
+                    const lexer = new Lexer(exprStr);
+                    const parser = new Parser(lexer);
+                    let tree = parser.parse();
+
+                    varList.forEach(v => {
+                        tree = tree.substitute(new Sym(v), new Num(assignment[v]));
+                    });
+
+                    const res = cas.evaluate(tree);
+                    const val = (res instanceof Num) ? res.value : NaN;
+                    const displayVal = (val === 1 || val === true) ? '1' : '0'; // Normalize
+
+                    rowHTML += `<td style="border:1px solid #ddd; padding:8px; text-align:center; font-weight:bold;">${displayVal}</td></tr>`;
+                    tableHTML += rowHTML;
+                }
+                tableHTML += '</tbody></table>';
+
+                // Display
+                const visibleTool = document.querySelector('.tool-view[style*="block"]');
+                if(visibleTool) {
+                    const resBox = visibleTool.querySelector('.tool-result');
+                    resBox.innerHTML = tableHTML;
+                    resBox.style.display = 'block';
+                }
+                addToHistory(`Truth Table: ${exprStr}`, { type:'info', text:'[Table Generated]' }, false);
+
+            } catch(e) {
+                addToHistory("Logic Error", e.message, true);
+            }
+        };
+
+        // Trigonometry Unit Circle
+        window.updateTrigCircle = function(deg) {
+            document.getElementById('trig-angle-val').textContent = deg;
+            const rad = deg * Math.PI / 180;
+            document.getElementById('trig-sin-val').textContent = Math.sin(rad).toFixed(3);
+            document.getElementById('trig-cos-val').textContent = Math.cos(rad).toFixed(3);
+            let tanVal = Math.tan(rad).toFixed(3);
+            if (Math.abs(Math.tan(rad)) > 100) tanVal = "∞";
+            document.getElementById('trig-tan-val').textContent = tanVal;
+
+            const canvas = document.getElementById('trig-circle-canvas');
+            if(!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+            const cx = width/2;
+            const cy = height/2;
+            const r = width/2 - 20;
+
+            ctx.clearRect(0,0,width,height);
+
+            // Axes
+            ctx.beginPath();
+            ctx.strokeStyle = "#ccc";
+            ctx.moveTo(cx, 0); ctx.lineTo(cx, height);
+            ctx.moveTo(0, cy); ctx.lineTo(width, cy);
+            ctx.stroke();
+
+            // Circle
+            ctx.beginPath();
+            ctx.strokeStyle = "#333";
+            ctx.lineWidth = 2;
+            ctx.arc(cx, cy, r, 0, 2*Math.PI);
+            ctx.stroke();
+
+            // Angle Line
+            const px = cx + r * Math.cos(rad);
+            const py = cy - r * Math.sin(rad); // Y inverted
+
+            ctx.beginPath();
+            ctx.strokeStyle = "#333";
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(px, py);
+            ctx.stroke();
+
+            // Sin Line (Vertical) - Red
+            ctx.beginPath();
+            ctx.strokeStyle = "#dc3545";
+            ctx.lineWidth = 3;
+            ctx.moveTo(px, py);
+            ctx.lineTo(px, cy);
+            ctx.stroke();
+
+            // Cos Line (Horizontal) - Blue
+            ctx.beginPath();
+            ctx.strokeStyle = "#007bff";
+            ctx.lineWidth = 3;
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(px, cy);
+            ctx.stroke();
+
+            // Tan Line? (Tangent at 0)
+            // Or just visual triangle components is better for unit circle intuition.
+
+            // Point
+            ctx.beginPath();
+            ctx.fillStyle = "#000";
+            ctx.arc(px, py, 4, 0, 2*Math.PI);
+            ctx.fill();
+
+            // Arc for angle
+            ctx.beginPath();
+            ctx.strokeStyle = "#fd7e14";
+            ctx.lineWidth = 2;
+            ctx.arc(cx, cy, 20, 0, -rad, true); // Counter clockwise visually from 3 o'clock (0 rad)
+            ctx.stroke();
+        };
+
+        window.addEventListener('load', () => {
+             // Init Trig
+             if(document.getElementById('trig-circle-canvas')) window.updateTrigCircle(45);
+        });
+
+        window.runTangentPlot = function() {
+            const exprStr = document.getElementById('tangent-expr').value;
+            const varStr = document.getElementById('tangent-var').value;
+            const ptStr = document.getElementById('tangent-pt').value;
+
+            if(!exprStr || !varStr || !ptStr) return;
+
+            // 1. Get Tangent Equation
+            const cmd = `tangent(${exprStr}, ${varStr}, ${ptStr})`;
+            let tangentRes;
+            try {
+                const l = new Lexer(cmd);
+                const p = new Parser(l);
+                const t = p.parse();
+                tangentRes = cas.evaluate(t);
+            } catch(e) {
+                addToHistory(cmd, e.message, true);
+                return;
+            }
+
+            // 2. Plot Both Function and Tangent
+            const plotCmd = `plot(${exprStr}, ${varStr}); plot(${tangentRes.toString()}, ${varStr})`;
+            // Evaluate block
+            input.value = plotCmd;
+            evaluate();
+
+            addToHistory(cmd, tangentRes.toString(), false, tangentRes.toLatex());
         };
 
         // Physics Logic
