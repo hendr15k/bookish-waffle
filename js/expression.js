@@ -1019,6 +1019,18 @@ class Pow extends BinaryOp {
                 return new Div(new Pow(this.left, new Num(n + 1)), new Num(n + 1));
             }
         }
+        // a^x -> a^x / ln(a)
+        if (this.right instanceof Sym && this.right.name === varName.name) {
+             const isSimpleConst = (node) => {
+                 if (node instanceof Num) return true;
+                 if (node instanceof Sym && node.name !== varName.name) return true;
+                 return false;
+             };
+             if (isSimpleConst(this.left)) {
+                 if (this.left instanceof Sym && this.left.name === 'e') return this;
+                 return new Div(this, new Call('ln', [this.left]));
+             }
+        }
         return new Call("integrate", [this, varName]);
     }
     expand() {

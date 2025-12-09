@@ -1895,18 +1895,22 @@ and, or, not, xor, int, evalf`;
     }
 
     _integrateByParts(expr, varNode) {
-        if (!(expr instanceof Mul)) return new Call("integrate", [expr, varNode]);
+        let factors = [];
 
-        const factors = [];
-        const flattenMul = (node) => {
-            if (node instanceof Mul) {
-                flattenMul(node.left);
-                flattenMul(node.right);
-            } else {
-                factors.push(node);
-            }
-        };
-        flattenMul(expr);
+        if (expr instanceof Mul) {
+            const flattenMul = (node) => {
+                if (node instanceof Mul) {
+                    flattenMul(node.left);
+                    flattenMul(node.right);
+                } else {
+                    factors.push(node);
+                }
+            };
+            flattenMul(expr);
+        } else {
+            // Single term logic (treat as 1 * expr)
+            factors = [expr];
+        }
 
         // LIATE Rule for choosing u
         // Log, Inverse, Alg, Trig, Exp
@@ -1927,11 +1931,21 @@ and, or, not, xor, int, evalf`;
         };
 
         // Create candidates for u
-        const candidates = factors.map((f, i) => ({
+        let candidates = factors.map((f, i) => ({
             idx: i,
             node: f,
             score: typeScore(f)
         })).filter(c => this._dependsOn(c.node, varNode)); // Only variable parts matter for u choice
+
+        // If single term, we force u=expr, dv=1 IF score is high (Log/InvTrig)
+        if (factors.length === 1) {
+             const s = typeScore(expr);
+             if (s >= 4) {
+                 candidates = [{idx: 0, node: expr, score: s}];
+             } else {
+                 return new Call("integrate", [expr, varNode]);
+             }
+        }
 
         // Sort by score descending (Log first)
         candidates.sort((a, b) => b.score - a.score);
@@ -1941,10 +1955,14 @@ and, or, not, xor, int, evalf`;
 
             // dv is the product of all other factors
             let dv = null;
-            for(let j=0; j<factors.length; j++) {
-                if (cand.idx === j) continue;
-                if (dv === null) dv = factors[j];
-                else dv = new Mul(dv, factors[j]);
+            if (factors.length === 1) {
+                dv = new Num(1);
+            } else {
+                for(let j=0; j<factors.length; j++) {
+                    if (cand.idx === j) continue;
+                    if (dv === null) dv = factors[j];
+                    else dv = new Mul(dv, factors[j]);
+                }
             }
 
             if (dv === null) continue;
@@ -1971,7 +1989,14 @@ and, or, not, xor, int, evalf`;
             // For cyclic cases, it will expand indefinitely until max depth or stack overflow unless we catch it.
             // But for standard x*e^x, it terminates.
 
-            return new Sub(uv, new Call("integrate", [vdu, varNode])).simplify();
+            const intVdu = this.evaluate(new Call("integrate", [vdu, varNode]));
+
+            // Check if we made progress or just got back a Call('integrate')
+            // If intVdu is exactly Call('integrate', [vdu]), then we failed to solve the sub-problem.
+            // But we should still return the partial result `uv - int(vdu)` because the user might prefer that form
+            // over the original integral.
+
+            return new Sub(uv, intVdu).simplify();
         }
 
         return new Call("integrate", [expr, varNode]);
@@ -5099,99 +5124,6 @@ and, or, not, xor, int, evalf`;
         return new Call('ilaplace', [expr, s, t]);
     }
 
-    _integrateByParts(expr, varNode) {
-        // Heuristic Integration by Parts
-        // Formula: int(u dv) = u*v - int(v du)
-        // Selection Strategy (LIATE):
-        // L: Logarithmic
-        // I: Inverse Trig
-        // A: Algebraic
-        // T: Trig
-        // E: Exponential
-        // We pick 'u' as the type that comes first in LIATE.
-
-        // Helper to score expression type
-        const getScore = (e) => {
-            if (e instanceof Call) {
-                if (['ln', 'log', 'log2'].includes(e.funcName)) return 5; // Log
-                if (['asin', 'acos', 'atan', 'asinh', 'acosh', 'atanh'].includes(e.funcName)) return 4; // Inverse Trig
-                if (['sin', 'cos', 'tan', 'sinh', 'cosh', 'tanh', 'sec', 'csc', 'cot'].includes(e.funcName)) return 2; // Trig
-                if (['exp'].includes(e.funcName)) return 1; // Exponential
-            }
-            if (e instanceof Pow && e.left instanceof Sym && e.left.name === 'e') return 1; // e^x
-            if (this._getPolyCoeffs(e, varNode)) return 3; // Algebraic
-            return 0;
-        };
-
-        let u, dv;
-
-        if (expr instanceof Mul) {
-             const a = expr.left;
-             const b = expr.right;
-             const sA = getScore(a);
-             const sB = getScore(b);
-
-             // Pick u with higher score
-             if (sA >= sB) {
-                 u = a; dv = b;
-             } else {
-                 u = b; dv = a;
-             }
-        } else {
-             // Single term (e.g. ln(x), atan(x))
-             // Treat as 1 * expr
-             // u = expr, dv = 1
-             // Only if expr score is high (Log or InvTrig)
-             const s = getScore(expr);
-             if (s >= 4) {
-                 u = expr;
-                 dv = new Num(1);
-             } else {
-                 return new Call("integrate", [expr, varNode]);
-             }
-        }
-
-        try {
-            // v = integrate(dv)
-            let v = dv.integrate(varNode).simplify();
-            if (v instanceof Call && v.funcName === 'integrate') return null; // Can't integrate dv
-
-            // du = diff(u)
-            let du = u.diff(varNode).simplify();
-
-            // Check if integral v*du is simpler or solvable
-            // We just attempt it recursively (but prevent infinite loops if it returns same form)
-            // Ideally we should have a depth check or complexity check.
-            // For now, let's just call integrate recursively.
-
-            // Term: u*v
-            const uv = new Mul(u, v).simplify();
-
-            // Integral: int(v * du)
-            const vdu = new Mul(v, du).simplify();
-
-            // Avoid infinite recursion: if vdu looks like original expr (up to constant), we might be cycling (like e^x sin x)
-            // For now, let's just try to integrate vdu.
-            // But we must NOT use _integrateByParts immediately if it's the same complexity?
-            // Actually, CAS.evaluate -> integrate -> _integrateByParts.
-            // If we call vdu.integrate(varNode), it calls recursiveEval -> integrate.
-            // So recursion is handled. We just need to stop if it returns symbolic.
-
-            let intVdu = vdu.integrate(varNode).simplify();
-
-            if (intVdu instanceof Call && intVdu.funcName === 'integrate') {
-                 // Second attempt? e.g. x^2 * e^x needs 2 steps.
-                 // The recursive call inside vdu.integrate should have tried parts again.
-                 // If it returned symbolic, it failed.
-                 return null;
-            }
-
-            return new Sub(uv, intVdu).simplify();
-
-        } catch (e) {
-            return null;
-        }
-    }
 }
 
 // Export classes for Global/CommonJS environments
