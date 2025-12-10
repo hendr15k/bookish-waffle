@@ -1,61 +1,70 @@
-import os
 from playwright.sync_api import sync_playwright
+import os
+import time
 
-def run(playwright):
-    browser = playwright.chromium.launch()
-    page = browser.new_page()
+def run():
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
 
-    cwd = os.getcwd()
-    url = f"file://{cwd}/index.html"
-    page.goto(url)
+        page.on("console", lambda msg: print(f"Console: {msg.text}"))
+        page.on("pageerror", lambda exc: print(f"Page Error: {exc}"))
 
-    page.click("#mode-toggle")
+        cwd = os.getcwd()
+        file_path = f"file://{cwd}/index.html"
+        page.goto(file_path)
 
-    print("Testing Stats...")
-    page.click(".app-card:has-text('Statistics')")
-    page.click("button:has-text('Hypothesis Test')")
-    page.fill("#test-data", "[10, 10, 10, 10]")
-    page.fill("#test-mu", "9")
-    page.fill("#test-sigma", "2")
-    page.click("#tool-statistics button:has-text('Run Z-Test')")
+        # Check if CAS is defined (main class from js/cas.js)
+        try:
+            page.evaluate("new CAS()")
+            print("CAS initialized")
+        except Exception as e:
+            print(f"CAS init failed: {e}")
 
-    page.wait_for_function("document.querySelector('#tool-statistics .tool-result').innerText.length > 5")
-    page.screenshot(path="verification/stats_ztest.png")
+        # Check if openTool is defined
+        is_defined = page.evaluate("typeof window.openTool === 'function'")
+        print(f"openTool defined: {is_defined}")
 
-    page.click(".tool-view:visible .back-btn")
+        if not is_defined:
+            # Maybe scripts are module type? They are not in index.html
+            # <script src="js/expression.js"></script> ...
+            # Wait a bit?
+            time.sleep(1)
+            is_defined = page.evaluate("typeof window.openTool === 'function'")
+            print(f"openTool defined after wait: {is_defined}")
 
-    print("Testing Geometry...")
-    page.click(".app-card:has-text('Geometry')")
-    page.click("button:has-text('Analytic')")
-    page.fill("#geo-p1", "[0, 0]")
-    page.fill("#geo-p2", "[3, 4]")
-    page.click("#tool-geometry button:has-text('Distance')")
+        if is_defined:
+            # Force App Mode
+            page.evaluate("document.body.classList.add('mobile-mode')")
 
-    page.wait_for_selector("#tool-geometry .tool-result", state="visible")
-    page.wait_for_function("document.querySelector('#tool-geometry .tool-result').innerText.includes('5')")
-    page.screenshot(path="verification/geo_analytic.png")
+            # 2. Verify Plotting
+            page.evaluate("window.openTool('plotting')")
+            page.wait_for_selector("#plot-mode", state="visible")
+            page.select_option("#plot-mode", "parametric")
+            page.screenshot(path="verification/plotting_tool.png")
+            page.evaluate("window.closeTool()")
 
-    page.click(".tool-view:visible .back-btn")
+            # 3. Verify Geometry
+            page.evaluate("window.openTool('geometry')")
+            page.click("text=3D Objects")
+            page.select_option("#geo-3d-shape", "cone")
+            page.screenshot(path="verification/geometry_tool.png")
+            page.evaluate("window.closeTool()")
 
-    print("Testing Linear...")
-    page.click(".app-card:has-text('Linear')")
-    page.screenshot(path="verification/linear_buttons.png")
+            # 4. Statistics
+            page.evaluate("window.openTool('statistics')")
+            page.click("text=Distributions")
+            page.select_option("#stat-dist-type", "poisson")
+            page.screenshot(path="verification/statistics_tool.png")
+            page.evaluate("window.closeTool()")
 
-    print("Testing Plot...")
-    page.click(".tool-view:visible .back-btn")
-    page.click(".app-card:has-text('Plotting')")
-    page.fill("#plot-expr", "sin(x)")
-    page.click("#tool-plotting button:has-text('Plot')")
+            # 5. Converter
+            page.evaluate("window.openTool('converter')")
+            page.select_option("#conv-category", "time")
+            page.screenshot(path="verification/converter_tool.png")
+            page.evaluate("window.closeTool()")
 
-    # Wait for result in the plotting tool
-    page.wait_for_selector("#tool-plotting .tool-result canvas", state="visible")
+        browser.close()
 
-    # The button is inside the tool-result (copied from history)
-    # The text is "💾".
-    page.wait_for_selector("#tool-plotting .tool-result button:has-text('💾')", state="visible")
-    page.screenshot(path="verification/plot_save.png")
-
-    browser.close()
-
-with sync_playwright() as playwright:
-    run(playwright)
+if __name__ == "__main__":
+    run()

@@ -779,25 +779,80 @@
         </div>
         <div class="tool-form">
             <div class="form-group">
-                <label class="form-label" for="plot-expr">Function y=</label>
-                <input type="text" class="form-input" id="plot-expr" placeholder="e.g. sin(x)">
+                <label class="form-label">Mode</label>
+                <select id="plot-mode" class="form-input" onchange="updatePlotInputs()">
+                    <option value="function">Function y=f(x)</option>
+                    <option value="parametric">Parametric (x(t), y(t))</option>
+                    <option value="polar">Polar r(t)</option>
+                    <option value="implicit">Implicit Eq</option>
+                </select>
             </div>
+
+            <div id="plot-inputs-function" class="plot-mode-group">
+                <div class="form-group">
+                    <label class="form-label" for="plot-expr">Function y=</label>
+                    <input type="text" class="form-input" id="plot-expr" placeholder="e.g. sin(x)">
+                </div>
+            </div>
+
+            <div id="plot-inputs-parametric" class="plot-mode-group" style="display:none;">
+                <div class="form-group">
+                    <label class="form-label" for="plot-param-x">x(t)=</label>
+                    <input type="text" class="form-input" id="plot-param-x" placeholder="e.g. sin(t)">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="plot-param-y">y(t)=</label>
+                    <input type="text" class="form-input" id="plot-param-y" placeholder="e.g. cos(t)">
+                </div>
+            </div>
+
+            <div id="plot-inputs-polar" class="plot-mode-group" style="display:none;">
+                <div class="form-group">
+                    <label class="form-label" for="plot-polar-r">r(t)=</label>
+                    <input type="text" class="form-input" id="plot-polar-r" placeholder="e.g. 1 + cos(t)">
+                </div>
+            </div>
+
+            <div id="plot-inputs-implicit" class="plot-mode-group" style="display:none;">
+                 <div class="form-group">
+                    <label class="form-label" for="plot-implicit-eq">Equation</label>
+                    <input type="text" class="form-input" id="plot-implicit-eq" placeholder="e.g. x^2 + y^2 = 1">
+                </div>
+                 <div class="form-group">
+                    <label class="form-label" for="plot-implicit-yvar">Var 2 (y)</label>
+                    <input type="text" class="form-input" id="plot-implicit-yvar" value="y">
+                </div>
+            </div>
+
             <div class="form-group">
-                <label class="form-label" for="plot-var">Variable</label>
+                <label class="form-label" for="plot-var">Variable (x/t)</label>
                 <input type="text" class="form-input" id="plot-var" placeholder="e.g. x" value="x">
             </div>
+
             <div class="form-row">
                  <div class="form-group" style="flex:1">
-                    <label class="form-label" for="plot-min">Min X</label>
+                    <label class="form-label" id="lbl-plot-min">Min X</label>
                     <input type="number" class="form-input" id="plot-min" value="-10">
                 </div>
                  <div class="form-group" style="flex:1">
-                    <label class="form-label" for="plot-max">Max X</label>
+                    <label class="form-label" id="lbl-plot-max">Max X</label>
                     <input type="number" class="form-input" id="plot-max" value="10">
                 </div>
             </div>
+
+            <div class="form-row" id="plot-y-range" style="display:none;">
+                 <div class="form-group" style="flex:1">
+                    <label class="form-label">Min Y</label>
+                    <input type="number" class="form-input" id="plot-ymin" value="-10">
+                </div>
+                 <div class="form-group" style="flex:1">
+                    <label class="form-label">Max Y</label>
+                    <input type="number" class="form-input" id="plot-ymax" value="10">
+                </div>
+            </div>
+
              <div class="action-grid">
-                <button class="action-btn" onclick="runTool('plot', ['plot-expr', 'plot-var', 'plot-min', 'plot-max'])">Plot</button>
+                <button class="action-btn" onclick="runPlotTool()">Plot</button>
             </div>
         </div>
         <div id="palette-plotting"></div>
@@ -919,6 +974,7 @@
                      <select id="stat-dist-type" class="form-input" onchange="updateDistType()">
                          <option value="normal">Normal</option>
                          <option value="binomial">Binomial</option>
+                         <option value="poisson">Poisson</option>
                      </select>
                  </div>
                  <div style="text-align: center; margin-bottom: 10px;">
@@ -942,6 +998,12 @@
                      <div class="form-group">
                          <label class="form-label" for="stat-p" style="display:flex; justify-content:space-between;"><span>Probability (p)</span> <span id="val-p" style="font-weight:normal;">0.5</span></label>
                          <input type="range" id="stat-p" min="0" max="1" step="0.01" value="0.5" style="width:100%;" oninput="updateDistPlot()">
+                     </div>
+                 </div>
+                 <div id="dist-inputs-poisson" style="display:none;">
+                     <div class="form-group">
+                         <label class="form-label" for="stat-lambda" style="display:flex; justify-content:space-between;"><span>Lambda (λ)</span> <span id="val-lambda" style="font-weight:normal;">5</span></label>
+                         <input type="range" id="stat-lambda" min="0.1" max="20" step="0.1" value="5" style="width:100%;" oninput="updateDistPlot()">
                      </div>
                  </div>
              </div>
@@ -1027,6 +1089,10 @@
                     <option value="length">Length</option>
                     <option value="mass">Mass</option>
                     <option value="temp">Temperature</option>
+                    <option value="time">Time</option>
+                    <option value="speed">Speed</option>
+                    <option value="area">Area</option>
+                    <option value="volume">Volume</option>
                 </select>
             </div>
             <div class="form-row">
@@ -1080,6 +1146,8 @@
                          <option value="sphere">Sphere</option>
                          <option value="cylinder">Cylinder</option>
                          <option value="cube">Cube</option>
+                         <option value="cone">Cone</option>
+                         <option value="pyramid">Square Pyramid</option>
                      </select>
                  </div>
                  <div id="geo-3d-inputs"></div>
@@ -3501,6 +3569,18 @@
             },
             temp: {
                 'C': 'c', 'F': 'f', 'K': 'k' // Special handling
+            },
+            time: {
+                's': 1, 'min': 60, 'h': 3600, 'day': 86400, 'week': 604800, 'year': 31536000
+            },
+            speed: {
+                'm/s': 1, 'km/h': 0.277778, 'mph': 0.44704, 'knot': 0.514444
+            },
+            area: {
+                'm2': 1, 'km2': 1000000, 'ft2': 0.092903, 'ac': 4046.86, 'ha': 10000
+            },
+            volume: {
+                'm3': 1, 'l': 0.001, 'ml': 0.000001, 'gal': 0.00378541, 'fl oz': 0.0000295735
             }
         };
 
@@ -3522,6 +3602,10 @@
             if (category === 'length') { fromSel.value = 'm'; toSel.value = 'ft'; }
             if (category === 'mass') { fromSel.value = 'kg'; toSel.value = 'lb'; }
             if (category === 'temp') { fromSel.value = 'C'; toSel.value = 'F'; }
+            if (category === 'time') { fromSel.value = 's'; toSel.value = 'min'; }
+            if (category === 'speed') { fromSel.value = 'm/s'; toSel.value = 'km/h'; }
+            if (category === 'area') { fromSel.value = 'm2'; toSel.value = 'ft2'; }
+            if (category === 'volume') { fromSel.value = 'l'; toSel.value = 'gal'; }
 
             runConverter('from');
         };
@@ -3633,6 +3717,24 @@
                       container.appendChild(row);
                  }
                  if (shape === 'cube') container.appendChild(createInput('geo-s', 'Side (s)'));
+                 if (shape === 'cone') {
+                      const row = document.createElement('div'); row.className = 'form-row';
+                      const g1 = document.createElement('div'); g1.className='form-group'; g1.style.flex='1';
+                      g1.innerHTML = `<label class="form-label">Radius (r)</label><input type="number" class="form-input" id="geo-r3">`;
+                      const g2 = document.createElement('div'); g2.className='form-group'; g2.style.flex='1';
+                      g2.innerHTML = `<label class="form-label">Height (h)</label><input type="number" class="form-input" id="geo-h3">`;
+                      row.appendChild(g1); row.appendChild(g2);
+                      container.appendChild(row);
+                 }
+                 if (shape === 'pyramid') {
+                      const row = document.createElement('div'); row.className = 'form-row';
+                      const g1 = document.createElement('div'); g1.className='form-group'; g1.style.flex='1';
+                      g1.innerHTML = `<label class="form-label">Base Side (s)</label><input type="number" class="form-input" id="geo-s">`;
+                      const g2 = document.createElement('div'); g2.className='form-group'; g2.style.flex='1';
+                      g2.innerHTML = `<label class="form-label">Height (h)</label><input type="number" class="form-input" id="geo-h3">`;
+                      row.appendChild(g1); row.appendChild(g2);
+                      container.appendChild(row);
+                 }
              }
         };
 
@@ -3684,6 +3786,25 @@
                      if (isNaN(s)) return;
                      const vol = Math.pow(s, 3);
                      const surf = 6 * s * s;
+                     result = `Volume = ${vol.toFixed(4)}\nSurface Area = ${surf.toFixed(4)}`;
+                 }
+                 if (shape === 'cone') {
+                     const r = parseFloat(document.getElementById('geo-r3').value);
+                     const h = parseFloat(document.getElementById('geo-h3').value);
+                     if (isNaN(r) || isNaN(h)) return;
+                     const vol = (1/3) * Math.PI * r * r * h;
+                     const slant = Math.sqrt(h*h + r*r);
+                     const surf = Math.PI * r * (r + slant);
+                     result = `Volume = ${vol.toFixed(4)}\nSurface Area = ${surf.toFixed(4)}`;
+                 }
+                 if (shape === 'pyramid') {
+                     const s = parseFloat(document.getElementById('geo-s').value);
+                     const h = parseFloat(document.getElementById('geo-h3').value);
+                     if (isNaN(s) || isNaN(h)) return;
+                     const vol = (s * s * h) / 3;
+                     const slant = Math.sqrt(h*h + (s/2)*(s/2));
+                     const lateral = 2 * s * slant;
+                     const surf = s*s + lateral;
                      result = `Volume = ${vol.toFixed(4)}\nSurface Area = ${surf.toFixed(4)}`;
                  }
              }
@@ -3803,12 +3924,18 @@
             const type = document.getElementById('stat-dist-type').value;
             const normInputs = document.getElementById('dist-inputs-normal');
             const binInputs = document.getElementById('dist-inputs-binomial');
+            const poissonInputs = document.getElementById('dist-inputs-poisson');
+
+            normInputs.style.display = 'none';
+            binInputs.style.display = 'none';
+            if(poissonInputs) poissonInputs.style.display = 'none';
+
             if (type === 'normal') {
                 normInputs.style.display = 'block';
-                binInputs.style.display = 'none';
-            } else {
-                normInputs.style.display = 'none';
+            } else if (type === 'binomial') {
                 binInputs.style.display = 'block';
+            } else if (type === 'poisson') {
+                if(poissonInputs) poissonInputs.style.display = 'block';
             }
             updateDistPlot();
         };
@@ -3884,7 +4011,7 @@
                  ctx.stroke();
                  ctx.setLineDash([]);
 
-             } else {
+             } else if (type === 'binomial') {
                  // Binomial
                  const nInput = document.getElementById('stat-n');
                  const pInput = document.getElementById('stat-p');
@@ -3948,7 +4075,173 @@
                       ctx.fillRect(x, y, barWidth, h);
                       ctx.strokeRect(x, y, barWidth, h);
                  }
+             } else if (type === 'poisson') {
+                 // Poisson
+                 const lambdaInput = document.getElementById('stat-lambda');
+                 const lambda = parseFloat(lambdaInput.value);
+                 document.getElementById('val-lambda').textContent = lambda;
+
+                 // Range: 0 to roughly lambda + 4*sqrt(lambda)
+                 const maxK = Math.ceil(lambda + 4 * Math.sqrt(lambda)) + 2;
+                 const rangeMin = -1;
+                 const rangeMax = maxK;
+
+                 // Max prob is around k=floor(lambda)
+                 // P(k) = e^-L * L^k / k!
+                 // Approx Stirling: 1/sqrt(2*pi*L)
+                 // Let's just find max by checking k=floor(lambda)
+                 const fact = (num) => {
+                     if (num <= 1) return 1;
+                     let r = 1;
+                     for (let i = 2; i <= num; i++) r *= i;
+                     return r;
+                 };
+                 const poisson = (k) => {
+                     if (k < 0) return 0;
+                     return Math.exp(-lambda) * Math.pow(lambda, k) / fact(k);
+                 };
+
+                 const maxProb = Math.max(poisson(Math.floor(lambda)), poisson(Math.ceil(lambda)));
+                 const rangeYMin = 0;
+                 const rangeYMax = maxProb * 1.2;
+
+                 const mapX = (x) => ((x - rangeMin) / (rangeMax - rangeMin)) * width;
+                 const mapY = (y) => height - ((y - rangeYMin) / (rangeYMax - rangeYMin)) * height;
+
+                 // Draw Axes
+                 ctx.strokeStyle = "#ccc";
+                 ctx.beginPath();
+                 const yZero = mapY(0);
+                 ctx.moveTo(0, yZero);
+                 ctx.lineTo(width, yZero);
+                 const xZero = mapX(0);
+                 ctx.moveTo(xZero, 0);
+                 ctx.lineTo(xZero, height);
+                 ctx.stroke();
+
+                 // Bars
+                 ctx.fillStyle = "rgba(40, 167, 69, 0.5)"; // Greenish for Poisson
+                 ctx.strokeStyle = "#28a745";
+
+                 const barWidth = (width / (rangeMax - rangeMin)) * 0.8;
+
+                 for (let k = 0; k < maxK; k++) {
+                      const prob = poisson(k);
+                      const x = mapX(k) - barWidth / 2;
+                      const y = mapY(prob);
+                      const h = mapY(0) - y;
+
+                      ctx.fillRect(x, y, barWidth, h);
+                      ctx.strokeRect(x, y, barWidth, h);
+                 }
              }
+        };
+
+        window.updatePlotInputs = function() {
+            const mode = document.getElementById('plot-mode').value;
+            document.querySelectorAll('.plot-mode-group').forEach(el => el.style.display = 'none');
+            document.getElementById(`plot-inputs-${mode}`).style.display = 'block';
+
+            const yRange = document.getElementById('plot-y-range');
+            const xLabel = document.getElementById('lbl-plot-min');
+            const xMaxLabel = document.getElementById('lbl-plot-max');
+
+            if (mode === 'implicit' || mode === 'parametric' || mode === 'polar') {
+                yRange.style.display = 'flex';
+            } else {
+                yRange.style.display = 'none';
+            }
+
+            if (mode === 'parametric') {
+                xLabel.textContent = 'Min t';
+                xMaxLabel.textContent = 'Max t';
+            } else if (mode === 'polar') {
+                xLabel.textContent = 'Min θ';
+                xMaxLabel.textContent = 'Max θ';
+            } else {
+                xLabel.textContent = 'Min X';
+                xMaxLabel.textContent = 'Max X';
+            }
+        };
+
+        window.runPlotTool = function() {
+            const mode = document.getElementById('plot-mode').value;
+            const minX = document.getElementById('plot-min').value;
+            const maxX = document.getElementById('plot-max').value;
+            const minY = document.getElementById('plot-ymin').value;
+            const maxY = document.getElementById('plot-ymax').value;
+            const variable = document.getElementById('plot-var').value;
+
+            let args = [];
+            let action = 'plot';
+
+            if (mode === 'function') {
+                action = 'plot';
+                const expr = document.getElementById('plot-expr').value;
+                if(!expr) return;
+                args = [expr, variable, minX, maxX];
+                runTool(action, ['plot-expr', 'plot-var', 'plot-min', 'plot-max']); // reuse existing runner logic for simple plot
+                return;
+            } else if (mode === 'parametric') {
+                action = 'plotparam';
+                const xExpr = document.getElementById('plot-param-x').value;
+                const yExpr = document.getElementById('plot-param-y').value;
+                if(!xExpr || !yExpr) return;
+                // Construct args manually for specialized call
+                // plotparam([x,y], t, min, max)
+                const vecStr = `[${xExpr}, ${yExpr}]`;
+                // We need to inject this into main input
+                const cmd = `plotparam(${vecStr}, ${variable}, ${minX}, ${maxX})`;
+                input.value = cmd;
+                evaluate();
+            } else if (mode === 'polar') {
+                action = 'plotpolar';
+                const rExpr = document.getElementById('plot-polar-r').value;
+                if(!rExpr) return;
+                const cmd = `plotpolar(${rExpr}, ${variable}, ${minX}, ${maxX})`;
+                input.value = cmd;
+                evaluate();
+            } else if (mode === 'implicit') {
+                action = 'plotimplicit';
+                const eq = document.getElementById('plot-implicit-eq').value;
+                const yVar = document.getElementById('plot-implicit-yvar').value;
+                if(!eq) return;
+                const cmd = `plotimplicit(${eq}, ${variable}, ${yVar}, ${minX}, ${maxX}, ${minY}, ${maxY})`;
+                input.value = cmd;
+                evaluate();
+            }
+
+            // Trigger result display update
+            setTimeout(() => {
+                const entries = document.querySelectorAll('.entry');
+                if (entries.length > 0) {
+                    const lastEntry = entries[entries.length - 1];
+                    const resultDiv = lastEntry.querySelector('.result');
+                    const visibleTool = document.querySelector('.tool-view[style*="block"]');
+                    if (visibleTool && resultDiv) {
+                        const resultBox = visibleTool.querySelector('.tool-result');
+                        if (resultBox) {
+                            resultBox.innerHTML = '';
+                            const clone = resultDiv.cloneNode(true);
+                            resultBox.appendChild(clone);
+                            resultBox.style.display = 'block';
+
+                            const origCanvas = resultDiv.querySelector('canvas');
+                            if (origCanvas && origCanvas.plotResult) {
+                                const newCanvas = clone.querySelector('canvas');
+                                if (newCanvas) {
+                                    if (origCanvas.plotResult.subtype === 'implicit') {
+                                        drawImplicit(newCanvas, origCanvas.plotResult);
+                                    } else {
+                                        drawPlot(newCanvas, origCanvas.plotResult);
+                                    }
+                                    setupInteractivePlot(newCanvas);
+                                }
+                            }
+                        }
+                    }
+                }
+            }, 50);
         };
 
         // Initialize Plot on load
