@@ -454,6 +454,10 @@
             <span class="app-icon" style="color: #fd7e14;">📐</span>
             <span class="app-name">Trig</span>
         </div>
+        <div class="app-card" onclick="openTool('editor')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('editor')">
+            <span class="app-icon" style="color: #6f42c1;">📝</span>
+            <span class="app-name">Editor</span>
+        </div>
         <div class="app-card" onclick="openTool('settings')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('settings')">
             <span class="app-icon" style="color: #007bff;">⚙️</span>
             <span class="app-name">Settings</span>
@@ -919,6 +923,7 @@
                      <select id="stat-dist-type" class="form-input" onchange="updateDistType()">
                          <option value="normal">Normal</option>
                          <option value="binomial">Binomial</option>
+                         <option value="poisson">Poisson</option>
                      </select>
                  </div>
                  <div style="text-align: center; margin-bottom: 10px;">
@@ -942,6 +947,12 @@
                      <div class="form-group">
                          <label class="form-label" for="stat-p" style="display:flex; justify-content:space-between;"><span>Probability (p)</span> <span id="val-p" style="font-weight:normal;">0.5</span></label>
                          <input type="range" id="stat-p" min="0" max="1" step="0.01" value="0.5" style="width:100%;" oninput="updateDistPlot()">
+                     </div>
+                 </div>
+                 <div id="dist-inputs-poisson" style="display:none;">
+                     <div class="form-group">
+                         <label class="form-label" for="stat-lambda" style="display:flex; justify-content:space-between;"><span>Lambda (λ)</span> <span id="val-lambda" style="font-weight:normal;">5</span></label>
+                         <input type="range" id="stat-lambda" min="0.1" max="50" step="0.1" value="5" style="width:100%;" oninput="updateDistPlot()">
                      </div>
                  </div>
              </div>
@@ -1283,6 +1294,24 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- EDITOR APP -->
+    <div id="tool-editor" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Script Editor</span>
+        </div>
+        <div class="tool-form">
+            <div class="form-group">
+                <label class="form-label" for="editor-code">Script (use ; to separate statements)</label>
+                <textarea class="form-input" id="editor-code" rows="10" placeholder="a := 1;
+b := 2;
+plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
+            </div>
+            <button class="action-btn" onclick="runScript()">Run Script</button>
+        </div>
+        <div class="tool-result"></div>
     </div>
 
     <!-- VARIABLES APP -->
@@ -2627,12 +2656,6 @@
             const height = canvas.height;
             ctx.clearRect(0, 0, width, height);
 
-            // Simple Isometric Projection
-            // x, y, z -> 2D
-            // Using a rotation matrix logic simplified
-            // We rotate around Z then X.
-            // Or simpler: Project (x, y, z) to (u, v)
-
             const scale = (canvas.scaleFactor3D || 1) * Math.min(width, height) / (plot.xMax - plot.xMin) * 0.4;
             const rotationX = canvas.rotX || -0.5; // radians
             const rotationZ = canvas.rotZ || 0.5;
@@ -2647,7 +2670,8 @@
 
                 return {
                     x: width / 2 + x1 * scale,
-                    y: height / 2 - y2 * scale // Invert Y
+                    y: height / 2 - y2 * scale, // Invert Y
+                    depth: z2 // For Painter's Algorithm
                 };
             };
 
@@ -2656,7 +2680,8 @@
             const dx = (plot.xMax - plot.xMin) / steps;
             const dy = (plot.yMax - plot.yMin) / steps;
 
-            const points = []; // grid[i][j] = {x, y, z, px, py}
+            const points = []; // grid[i][j] = {x, y, z, px, py, depth}
+            let minZ = Infinity, maxZ = -Infinity;
 
             for(let i=0; i<=steps; i++) {
                 const row = [];
@@ -2666,17 +2691,25 @@
 
                     try {
                         // Evaluate z = f(x, y)
-                        // Need substitute X then Y
+                        // Use evaluateNumeric directly if simpler, but substitute is safer for arbitrary expr
                         const exprX = plot.expr.substitute(plot.varX, new Num(valX)).simplify();
                         const exprY = exprX.substitute(plot.varY, new Num(valY)).simplify();
 
                         let z = (exprY instanceof Num) ? exprY.value : exprY.evaluateNumeric();
-                        if (isNaN(z) || !isFinite(z)) z = 0;
-                        if (z > 50) z = 50; // Clamp
-                        if (z < -50) z = -50;
+                        if (isNaN(z) || !isFinite(z)) z = NaN;
+                        else {
+                            if (z > 50) z = 50; // Clamp
+                            if (z < -50) z = -50;
+                            if (z < minZ) minZ = z;
+                            if (z > maxZ) maxZ = z;
+                        }
 
-                        const proj = project(valX, valY, z);
-                        row.push({x: valX, y: valY, z: z, px: proj.x, py: proj.y});
+                        if (!isNaN(z)) {
+                            const proj = project(valX, valY, z);
+                            row.push({x: valX, y: valY, z: z, px: proj.x, py: proj.y, depth: proj.depth});
+                        } else {
+                            row.push(null);
+                        }
                     } catch(e) {
                         row.push(null);
                     }
@@ -2684,47 +2717,69 @@
                 points.push(row);
             }
 
-            // Draw Wireframe
-            ctx.strokeStyle = "#007bff";
-            ctx.lineWidth = 1;
+            // Generate Polygons (Quads)
+            const polys = [];
+            for(let i=0; i<steps; i++) {
+                for(let j=0; j<steps; j++) {
+                    const p1 = points[i][j];
+                    const p2 = points[i+1][j];
+                    const p3 = points[i+1][j+1];
+                    const p4 = points[i][j+1];
 
-            // Lines along X
-            for(let i=0; i<=steps; i++) {
-                ctx.beginPath();
-                let first = true;
-                for(let j=0; j<=steps; j++) {
-                    const p = points[i][j];
-                    if (p) {
-                        if (first) { ctx.moveTo(p.px, p.py); first=false; }
-                        else ctx.lineTo(p.px, p.py);
-                    } else {
-                        first = true;
+                    if (p1 && p2 && p3 && p4) {
+                        // Calculate average depth
+                        const avgDepth = (p1.depth + p2.depth + p3.depth + p4.depth) / 4;
+                        // Calculate color based on Z
+                        const avgZ = (p1.z + p2.z + p3.z + p4.z) / 4;
+                        // Normalize Z to 0..1
+                        let t = (avgZ - minZ) / (maxZ - minZ || 1);
+                        if(t<0) t=0; if(t>1) t=1;
+
+                        // Color map: Blue (low) -> Green -> Red (high)
+                        // Hue: 240 (blue) -> 0 (red). So (1-t)*240
+                        const hue = (1 - t) * 240;
+                        const color = `hsla(${hue}, 80%, 50%, 0.8)`;
+                        const stroke = `hsla(${hue}, 80%, 30%, 0.5)`;
+
+                        polys.push({
+                            pts: [p1, p2, p3, p4],
+                            depth: avgDepth,
+                            color: color,
+                            stroke: stroke
+                        });
                     }
                 }
+            }
+
+            // Sort by depth (Painter's Algorithm) - draw furthest first
+            // Smaller depth (more negative) is further away in standard camera frame?
+            // z2 is depth. +z2 comes towards viewer? Or away?
+            // In rotation: z2 = y1*sin(X) + z*cos(X).
+            // Usually +Z is towards viewer in right-hand rule but canvas y is down.
+            // Let's assume sort ascending depth draws back-to-front.
+            polys.sort((a, b) => a.depth - b.depth);
+
+            // Draw Polygons
+            ctx.lineWidth = 0.5;
+            for(const poly of polys) {
+                ctx.fillStyle = poly.color;
+                ctx.strokeStyle = poly.stroke;
+                ctx.beginPath();
+                ctx.moveTo(poly.pts[0].px, poly.pts[0].py);
+                ctx.lineTo(poly.pts[1].px, poly.pts[1].py);
+                ctx.lineTo(poly.pts[2].px, poly.pts[2].py);
+                ctx.lineTo(poly.pts[3].px, poly.pts[3].py);
+                ctx.closePath();
+                ctx.fill();
                 ctx.stroke();
             }
 
-            // Lines along Y
-            for(let j=0; j<=steps; j++) {
-                ctx.beginPath();
-                let first = true;
-                for(let i=0; i<=steps; i++) {
-                    const p = points[i][j];
-                    if (p) {
-                        if (first) { ctx.moveTo(p.px, p.py); first=false; }
-                        else ctx.lineTo(p.px, p.py);
-                    } else {
-                        first = true;
-                    }
-                }
-                ctx.stroke();
-            }
-
-            // Draw Axes
+            // Draw Axes (on top if desired, or depth sorted?)
+            // Axes lines are just lines.
             const origin = project(0, 0, 0);
             const xAxis = project(plot.xMax, 0, 0);
             const yAxis = project(0, plot.yMax, 0);
-            const zAxis = project(0, 0, 10); // arbitrary Z height
+            const zAxis = project(0, 0, 10);
 
             ctx.lineWidth = 2;
 
@@ -3803,12 +3858,18 @@
             const type = document.getElementById('stat-dist-type').value;
             const normInputs = document.getElementById('dist-inputs-normal');
             const binInputs = document.getElementById('dist-inputs-binomial');
+            const poisInputs = document.getElementById('dist-inputs-poisson');
+
+            normInputs.style.display = 'none';
+            binInputs.style.display = 'none';
+            poisInputs.style.display = 'none';
+
             if (type === 'normal') {
                 normInputs.style.display = 'block';
-                binInputs.style.display = 'none';
-            } else {
-                normInputs.style.display = 'none';
+            } else if (type === 'binomial') {
                 binInputs.style.display = 'block';
+            } else {
+                poisInputs.style.display = 'block';
             }
             updateDistPlot();
         };
@@ -3941,6 +4002,65 @@
 
                  for (let k = 0; k <= n; k++) {
                       const prob = binom(k);
+                      const x = mapX(k) - barWidth / 2;
+                      const y = mapY(prob);
+                      const h = mapY(0) - y;
+
+                      ctx.fillRect(x, y, barWidth, h);
+                      ctx.strokeRect(x, y, barWidth, h);
+                 }
+             } else if (type === 'poisson') {
+                 // Poisson
+                 const lambdaInput = document.getElementById('stat-lambda');
+                 const lambda = parseFloat(lambdaInput.value);
+                 document.getElementById('val-lambda').textContent = lambda;
+
+                 // Range X: 0 to lambda + 4*sqrt(lambda) (approx)
+                 const maxK = Math.ceil(lambda + 4 * Math.sqrt(lambda));
+                 const rangeMin = -1;
+                 const rangeMax = maxK + 1;
+                 const rangeYMin = 0;
+                 // Max prob is at floor(lambda)
+                 const maxProb = (Math.exp(-lambda) * Math.pow(lambda, Math.floor(lambda))) / (() => {
+                     let r = 1; for(let i=2; i<=Math.floor(lambda); i++) r*=i; return r;
+                 })();
+                 // Scale Y to be nice, usually maxProb is small for large lambda.
+                 const rangeYMax = maxProb * 1.2 || 1.0;
+
+                 const mapX = (x) => ((x - rangeMin) / (rangeMax - rangeMin)) * width;
+                 const mapY = (y) => height - ((y - rangeYMin) / (rangeYMax - rangeYMin)) * height;
+
+                 // Draw Axes
+                 ctx.strokeStyle = "#ccc";
+                 ctx.beginPath();
+                 const yZero = mapY(0);
+                 ctx.moveTo(0, yZero);
+                 ctx.lineTo(width, yZero);
+                 const xZero = mapX(0);
+                 ctx.moveTo(xZero, 0);
+                 ctx.lineTo(xZero, height);
+                 ctx.stroke();
+
+                 // Bars
+                 ctx.fillStyle = "rgba(40, 167, 69, 0.5)"; // Green for Poisson
+                 ctx.strokeStyle = "#28a745";
+
+                 const fact = (num) => {
+                     if (num <= 1) return 1;
+                     let r = 1;
+                     for (let i = 2; i <= num; i++) r *= i;
+                     return r;
+                 };
+
+                 const poisson = (k) => {
+                      if (k < 0) return 0;
+                      return (Math.exp(-lambda) * Math.pow(lambda, k)) / fact(k);
+                 };
+
+                 const barWidth = (width / (rangeMax - rangeMin)) * 0.8;
+
+                 for (let k = 0; k <= maxK; k++) {
+                      const prob = poisson(k);
                       const x = mapX(k) - barWidth / 2;
                       const y = mapY(prob);
                       const h = mapY(0) - y;
@@ -4196,6 +4316,60 @@
             evaluate();
 
             addToHistory(cmd, tangentRes.toString(), false, tangentRes.toLatex());
+        };
+
+        window.runScript = function() {
+            let code = document.getElementById('editor-code').value;
+            if(!code) return;
+
+            // Convenience: replace newlines with ; to allow line-based scripting without explicit ;
+            code = code.replace(/\n/g, ';');
+
+            try {
+                const lexer = new Lexer(code);
+                const parser = new Parser(lexer);
+                const tree = parser.parse();
+                const result = cas.evaluate(tree);
+
+                // Show result
+                const visibleTool = document.querySelector('.tool-view[style*="block"]');
+                if(visibleTool) {
+                    const resultBox = visibleTool.querySelector('.tool-result');
+                    resultBox.innerHTML = ''; // Clear
+
+                    if (result && (result.type === 'plot' || result.type === 'info')) {
+                         if (result.type === 'plot') {
+                             const canvas = document.createElement('canvas');
+                             canvas.width = 400;
+                             canvas.height = 300;
+                             resultBox.appendChild(canvas);
+                             drawPlot(canvas, result);
+                             setupInteractivePlot(canvas);
+                         } else {
+                             resultBox.innerText = result.text;
+                         }
+                    } else {
+                         const latex = (result && result.toLatex) ? result.toLatex() : (result ? result.toString() : 'Done');
+                         resultBox.innerHTML = `\\[${latex}\\]`;
+                         if(window.MathJax && typeof MathJax.typesetPromise === 'function') {
+                             MathJax.typesetPromise([resultBox]).catch(()=>{});
+                         }
+                    }
+                    resultBox.style.display = 'block';
+                }
+
+                const latex = (result && result.toLatex) ? result.toLatex() : null;
+                addToHistory("Script Run", result || "Done", false, latex);
+
+            } catch(e) {
+                addToHistory("Script Error", e.message, true);
+                const visibleTool = document.querySelector('.tool-view[style*="block"]');
+                if(visibleTool) {
+                    const resultBox = visibleTool.querySelector('.tool-result');
+                    resultBox.innerHTML = `<span style="color:red">Error: ${e.message}</span>`;
+                    resultBox.style.display = 'block';
+                }
+            }
         };
 
         // Physics Logic
