@@ -519,7 +519,7 @@ class Mul extends BinaryOp {
             return new Num(-1);
         }
 
-        // Fix i * 1 -> i
+        // Complex identity: i * 1 -> i
         if (l instanceof Sym && l.name === 'i' && r instanceof Num && r.value === 1) return l;
         if (r instanceof Sym && r.name === 'i' && l instanceof Num && l.value === 1) return r;
 
