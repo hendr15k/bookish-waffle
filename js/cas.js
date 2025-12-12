@@ -1008,10 +1008,34 @@ diag, identity,
 laplace, ilaplace,
 rem, quo, mod, arg, approx, erf,
 size, concat, clear, N,
+molarMass, atomicWeight,
 and, or, not, xor, int, evalf`;
 
                 const latexHelp = `\\text{Available commands: see documentation}`;
                 return { type: 'info', text: helpText, toString: () => helpText, toLatex: () => latexHelp };
+            }
+
+            if (node.funcName === 'molarMass') {
+                if (args.length !== 1) throw new Error("molarMass requires 1 argument (string formula)");
+                // Argument comes as a symbol (e.g. H2O) or string if we support string literals?
+                // The parser parses identifiers as Sym. So H2O is a Sym.
+                // Or "H2O" if we have string support? Current Lexer doesn't seem to support strings.
+                // So user types molarMass(H2O).
+
+                let formula = "";
+                if (args[0] instanceof Sym) formula = args[0].name;
+                // If we want to support molarMass(C6H12O6), that parses as Call(C6H12O6)? No, C6H12O6 is valid identifier.
+
+                if (!formula) throw new Error("Invalid formula");
+                return this._molarMass(formula);
+            }
+
+            if (node.funcName === 'atomicWeight') {
+                if (args.length !== 1) throw new Error("atomicWeight requires 1 argument (symbol)");
+                let sym = "";
+                if (args[0] instanceof Sym) sym = args[0].name;
+                if (!sym) throw new Error("Invalid element symbol");
+                return this._atomicWeight(sym);
             }
 
             return new Call(node.funcName, args);
@@ -5122,6 +5146,27 @@ and, or, not, xor, int, evalf`;
         }
 
         return new Call('ilaplace', [expr, s, t]);
+    }
+
+    _molarMass(formula) {
+        if (typeof globalThis.Chemistry !== 'undefined') {
+            try {
+                const mass = globalThis.Chemistry.calculateMolarMass(formula);
+                return new Num(mass);
+            } catch(e) {
+                throw new Error("Chemistry Error: " + e.message);
+            }
+        }
+        throw new Error("Chemistry module not loaded");
+    }
+
+    _atomicWeight(sym) {
+        if (typeof globalThis.Chemistry !== 'undefined') {
+            const el = globalThis.Chemistry.getElement(sym);
+            if (el) return new Num(el.mass);
+            throw new Error("Unknown element");
+        }
+        throw new Error("Chemistry module not loaded");
     }
 
 }
