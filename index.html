@@ -917,6 +917,15 @@
                     <label class="form-label" for="reg-data">Points [[x1,y1], [x2,y2]...]</label>
                     <input type="text" class="form-input" id="reg-data" placeholder="[[1,1], [2,3], [3,2]]">
                 </div>
+                <div class="form-group">
+                    <label class="form-label" for="reg-type">Regression Type</label>
+                    <select id="reg-type" class="form-input">
+                        <option value="linear">Linear (mx+b)</option>
+                        <option value="quadratic">Quadratic (ax²+bx+c)</option>
+                        <option value="cubic">Cubic (ax³+...)</option>
+                        <option value="exponential">Exponential (Ae^Bx)</option>
+                    </select>
+                </div>
                 <button class="action-btn" onclick="runRegression()">Calculate & Plot</button>
             </div>
         </div>
@@ -1193,6 +1202,23 @@
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-dyn')">Dynamics</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-nrg')">Energy</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-elec')">Electricity</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-phys-const')">Constants</button>
+        </div>
+
+        <!-- Constants Tab -->
+        <div id="tab-phys-const" class="tab-content">
+             <div class="function-grid">
+                 <button class="function-btn" onclick="insertToken('299792458')" title="Speed of Light (m/s)">c</button>
+                 <button class="function-btn" onclick="insertToken('6.674e-11')" title="Gravitational Constant (m^3/kg/s^2)">G</button>
+                 <button class="function-btn" onclick="insertToken('6.626e-34')" title="Planck Constant (J s)">h</button>
+                 <button class="function-btn" onclick="insertToken('1.38e-23')" title="Boltzmann Constant (J/K)">k_B</button>
+                 <button class="function-btn" onclick="insertToken('6.022e23')" title="Avogadro Constant (1/mol)">N_A</button>
+                 <button class="function-btn" onclick="insertToken('1.602e-19')" title="Elementary Charge (C)">e</button>
+                 <button class="function-btn" onclick="insertToken('9.109e-31')" title="Electron Mass (kg)">m_e</button>
+                 <button class="function-btn" onclick="insertToken('1.672e-27')" title="Proton Mass (kg)">m_p</button>
+                 <button class="function-btn" onclick="insertToken('9.81')" title="Standard Gravity (m/s^2)">g</button>
+             </div>
+             <p style="text-align: center; color: #666; font-size: 0.9em;">Click to insert value</p>
         </div>
 
         <!-- Kinematics Tab -->
@@ -3475,12 +3501,24 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         // Linear Regression Logic
         window.runRegression = function() {
             const dataStr = document.getElementById('reg-data').value;
+            const type = document.getElementById('reg-type').value;
             if (!dataStr) return;
 
             // 1. Calculate Regression Line
             let lineExpr;
+            let cmd = '';
+
             try {
-                 const cmd = `linearRegression(${dataStr})`;
+                 if (type === 'linear') {
+                     cmd = `linearRegression(${dataStr})`;
+                 } else if (type === 'quadratic') {
+                     cmd = `polyRegression(${dataStr}, 2)`;
+                 } else if (type === 'cubic') {
+                     cmd = `polyRegression(${dataStr}, 3)`;
+                 } else if (type === 'exponential') {
+                     cmd = `expRegression(${dataStr})`;
+                 }
+
                  const lex = new Lexer(cmd);
                  const par = new Parser(lex);
                  const tree = par.parse();
@@ -3532,10 +3570,10 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 min: minX,
                 max: maxX,
                 scatter: points,
-                toLatex: () => `\\text{Regression: } ${lineExpr.toLatex()}`
+                toLatex: () => `\\text{${type.charAt(0).toUpperCase() + type.slice(1)} Regression: } ${lineExpr.toLatex()}`
             };
 
-            addToHistory(`linearRegression(${dataStr})`, plotObj, false, null);
+            addToHistory(cmd, plotObj, false, null);
 
             // Manually update the tool result since we bypassed runTool
              setTimeout(() => {
