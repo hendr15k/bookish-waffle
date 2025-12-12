@@ -1038,6 +1038,33 @@ and, or, not, xor, int, evalf`;
                 return this._atomicWeight(sym);
             }
 
+            if (node.funcName === 'balance') {
+                if (args.length !== 1) throw new Error("balance requires 1 argument (equation string)");
+                // Try to extract string from Sym or just use toString
+                let eq = args[0].toString();
+                // If it was parsed as subtraction (A-B), reconstruct?
+                // The parser might parse "H2 + O2 -> H2O" weirdly if -> is not operator.
+                // Lexer has -> as IMPLIES. So it becomes Implies(Add(H2, O2), H2O).
+                // Or if user passes string "H2+O2->H2O".
+                // Our parser doesn't support string literals yet?
+                // Actually, Lexer doesn't support quotes.
+                // So users must type: balance(H2 + O2 -> H2O)
+                // This parses as Implies(Add(H2, O2), H2O)
+                // We need to reconstruct the string or handle the AST.
+                // Let's reconstruct string from AST for now, or traverse AST.
+                return this._balanceChem(node.args[0]);
+            }
+
+            if (node.funcName === 'diagonalize') {
+                if (args.length !== 1) throw new Error("diagonalize requires 1 argument (matrix)");
+                return this._diagonalize(args[0]);
+            }
+
+            if (node.funcName === 'tTest') {
+                if (args.length !== 2) throw new Error("tTest requires 2 arguments: data, mu0");
+                return this._tTest(args[0], args[1]);
+            }
+
             return new Call(node.funcName, args);
         }
 
@@ -3104,21 +3131,9 @@ and, or, not, xor, int, evalf`;
         a = a.simplify();
         b = b.simplify();
 
-        a = a.simplify(); b = b.simplify(); if (a instanceof Num && b instanceof Num) {
+        if (a instanceof Num && b instanceof Num) {
              return new Num(a.value % b.value);
         }
-        // Polynomial remainder
-        // rem(P, Q)
-        // Check if b is linear (x-c) handled in Div.simplify via polyDiv
-        // But we want explicit rem.
-        // We can use division: rem = a - b * quo(a, b)
-        // But we need quo first.
-
-        // Simple case: b is a Number. rem(P, c)
-        // If coefficients are integers, rem(P, c) might mean rem of coeffs?
-        // Usually rem(P, Q) is polynomial remainder.
-
-        // For cleanroom, if we don't have full poly div, we return symbolic Call.
         return new Call('rem', [a, b]);
     }
 
@@ -3126,17 +3141,9 @@ and, or, not, xor, int, evalf`;
         a = a.simplify();
         b = b.simplify();
 
-        a = a.simplify(); b = b.simplify(); if (a instanceof Num && b instanceof Num) {
+        if (a instanceof Num && b instanceof Num) {
              return new Num(Math.trunc(a.value / b.value));
         }
-        // Polynomial quotient
-        // If b divides a exactly, Div(a, b).simplify() returns it.
-        // But quo(a, b) should return quotient even if remainder != 0.
-
-        // If b is linear (x-c), we can use synthetic division logic from expression.js
-        // But that is internal to Div.simplify.
-        // We might want to expose polyDiv or reimplement it here.
-
         return new Call('quo', [a, b]);
     }
 
@@ -3144,7 +3151,7 @@ and, or, not, xor, int, evalf`;
         a = a.simplify();
         b = b.simplify();
 
-        a = a.simplify(); b = b.simplify(); if (a instanceof Num && b instanceof Num) {
+        if (a instanceof Num && b instanceof Num) {
              // Mathematical modulo (always positive for positive modulus)
              const m = b.value;
              return new Num(((a.value % m) + m) % m);
@@ -5167,6 +5174,309 @@ and, or, not, xor, int, evalf`;
             throw new Error("Unknown element");
         }
         throw new Error("Chemistry module not loaded");
+    }
+
+    _balanceChem(expr) {
+        if (typeof globalThis.Chemistry === 'undefined') throw new Error("Chemistry module not loaded");
+
+        // Convert AST back to string to parse as chemical equation
+        // Or handle AST directly.
+        // H2 + O2 -> H2O
+        // AST: Implies(Add(H2, O2), H2O)
+        // Note: H2 is a Sym "H2".
+        // 2H2O might be Mul(2, H2O) or Sym "2H2O"? Lexer splits number. Mul(2, H2O).
+        // But for balancing, we input raw formulas without coefficients usually.
+        // User types: H2 + O2 -> H2O.
+        // AST: Implies( Add(Sym(H2), Sym(O2)), Sym(H2O) )
+
+        let lhsNodes = [];
+        let rhsNodes = [];
+
+        // Helper to flatten Add
+        const flatten = (node, list) => {
+            if (node instanceof Add) {
+                flatten(node.left, list);
+                flatten(node.right, list);
+            } else {
+                list.push(node);
+            }
+        };
+
+        if (expr instanceof Implies) { // ->
+            flatten(expr.left, lhsNodes);
+            flatten(expr.right, rhsNodes);
+        } else if (expr instanceof Eq) { // =
+            flatten(expr.left, lhsNodes);
+            flatten(expr.right, rhsNodes);
+        } else {
+            // Maybe just one side or error
+            throw new Error("Invalid chemical equation format. Use -> or =");
+        }
+
+        const compounds = []; // { name: "H2O", side: -1 (LHS) or 1 (RHS), counts: {} }
+        const allElements = new Set();
+
+        lhsNodes.forEach(node => {
+            const name = node.toString();
+            const counts = globalThis.Chemistry.parseMolecule(name);
+            Object.keys(counts).forEach(e => allElements.add(e));
+            compounds.push({ name, side: -1, counts });
+        });
+
+        rhsNodes.forEach(node => {
+            const name = node.toString();
+            const counts = globalThis.Chemistry.parseMolecule(name);
+            Object.keys(counts).forEach(e => allElements.add(e));
+            compounds.push({ name, side: 1, counts });
+        });
+
+        const elementList = Array.from(allElements).sort();
+        const m = elementList.length; // rows (equations)
+        const n = compounds.length;   // cols (variables)
+
+        // Build Matrix A for Ax = 0
+        // col j is compound j.
+        // row i is element i.
+        // A[i][j] = side * count
+        // We want sum(coef * side * count) = 0.
+        // Let coef vector be x.
+        // A[i][j] = compounds[j].side * compounds[j].counts[element[i]]
+
+        const mat = [];
+        for(let i=0; i<m; i++) {
+            const row = [];
+            const el = elementList[i];
+            for(let j=0; j<n; j++) {
+                const c = compounds[j];
+                const count = c.counts[el] || 0;
+                // LHS should use positive coeffs in reaction, RHS positive.
+                // sum(lhs) = sum(rhs) => sum(lhs) - sum(rhs) = 0.
+                // LHS coeffs * count = RHS coeffs * count
+                // LHS * count - RHS * count = 0
+                // So LHS side factor +1, RHS side factor -1?
+                // Wait, if reaction is aA + bB -> cC
+                // element H: a*H_A + b*H_B = c*H_C
+                // a*H_A + b*H_B - c*H_C = 0
+                // So if we solve for vector [a, b, c],
+                // LHS cols should be positive count, RHS cols negative count.
+                const val = (c.side === -1 ? 1 : -1) * count;
+                row.push(new Num(val));
+            }
+            mat.push(new Vec(row));
+        }
+
+        // Solve nullspace
+        const A = new Vec(mat);
+        const kernel = this._kernel(A); // Returns basis vectors
+
+        if (kernel.elements.length === 0) throw new Error("Cannot balance equation (no solution)");
+
+        // Pick the first basis vector
+        // It might have fractions or zeros.
+        let sol = kernel.elements[0]; // Vec
+
+        // Normalize to smallest integers
+        // 1. Make all positive (coeffs must be positive)
+        // If first non-zero is negative, negate all?
+        // Physical coeffs are positive.
+        // Check if we need to negate.
+        // Usually kernel returns canonical basis.
+        // Let's assume we can scale.
+
+        let vec = sol.elements.map(e => e.evaluateNumeric());
+
+        // Check for any negative values
+        // If mixed signs, it might be impossible or we picked wrong basis combo?
+        // For simple reactions, kernel dim is 1.
+        // If dim > 1, multiple independent reactions. We just pick one valid set?
+        // Let's try to ensure all positive.
+        const hasNeg = vec.some(v => v < -1e-9);
+        const hasPos = vec.some(v => v > 1e-9);
+        if (hasNeg && !hasPos) {
+            vec = vec.map(v => -v);
+        } else if (hasNeg && hasPos) {
+            // Mixed signs in a single basis vector implies mechanism issue or structure?
+            // Or maybe A -> B + C where A is LHS (+), B,C are RHS (-).
+            // My matrix construction: LHS (+), RHS (-).
+            // Sol is [a, b, c].
+            // a(LHS) - c(RHS) = 0.
+            // If a, b, c are all positive, then signs are correct.
+            // If kernel gives mixed signs, it means we might have a valid mathematical sol that isn't physical?
+            // But kernel of [1, -2] is [2, 1]. All pos.
+            // Kernel of [1, 1, -2] is [-1, 1, 0] and [2, 0, 1]?
+            // Usually we want positive integers.
+            // Let's rely on _kernel giving rational numbers.
+        }
+
+        // Convert to fractions to find LCM
+        // Simple approach: find max denominator approx
+        const denoms = [];
+        const nums = [];
+        for(let v of vec) {
+            // approximate fraction
+            const tolerance = 1.0E-6;
+            let h1=1, h2=0, k1=0, k2=1;
+            let b = v;
+            do {
+                let a = Math.floor(b);
+                let aux = h1; h1 = a*h1+h2; h2 = aux;
+                aux = k1; k1 = a*k1+k2; k2 = aux;
+                b = 1/(b-a);
+            } while (Math.abs(v - h1/k1) > v*tolerance);
+            nums.push(h1);
+            denoms.push(k1);
+        }
+
+        // LCM of denominators
+        const gcd = (a, b) => !b ? a : gcd(b, a % b);
+        const lcm = (a, b) => (a * b) / gcd(a, b);
+        const globalLcm = denoms.reduce((acc, val) => lcm(acc, val), 1);
+
+        // Scale
+        const integers = vec.map((v, i) => Math.round(v * globalLcm));
+
+        // Format result string
+        let lhsStr = "";
+        let rhsStr = "";
+
+        let idx = 0;
+        for(let i=0; i<lhsNodes.length; i++) {
+            const coef = integers[idx++];
+            if (coef !== 0) {
+                if (lhsStr) lhsStr += " + ";
+                lhsStr += (coef === 1 ? "" : coef + " ") + lhsNodes[i].toString();
+            }
+        }
+        for(let i=0; i<rhsNodes.length; i++) {
+            const coef = integers[idx++];
+            if (coef !== 0) {
+                if (rhsStr) rhsStr += " + ";
+                rhsStr += (coef === 1 ? "" : coef + " ") + rhsNodes[i].toString();
+            }
+        }
+
+        const resStr = `${lhsStr} -> ${rhsStr}`;
+        return {
+            type: 'info',
+            text: resStr,
+            toLatex: () => `\\text{${resStr.replace(/->/g, '\\rightarrow ')}}`
+        };
+    }
+
+    _diagonalize(matrix) {
+        if (!(matrix instanceof Vec)) throw new Error("diagonalize requires a matrix");
+        // P^-1 A P = D => A = P D P^-1
+        // P contains eigenvectors
+        // D contains eigenvalues
+
+        const evals = this._eigenvals(matrix); // Vec of eigenvalues
+        const evects = this._eigenvects(matrix); // Vec of eigenvectors
+
+        // Check dimensions
+        const n = matrix.elements.length;
+        if (evects.elements.length < n) {
+            throw new Error("Matrix is not diagonalizable (not enough eigenvectors)");
+        }
+
+        // Construct P from eigenvectors (columns)
+        const P = this._trans(new Vec(evects.elements.slice(0, n))); // evects are rows in list? No, eigenvects returns list of vectors.
+        // Vectors are usually column vectors, but represented as Vec (list).
+        // If we want them as columns of P, we put them as rows then transpose.
+        // Yes.
+
+        // Construct D from eigenvalues
+        // We need to match order. _eigenvects iterates _eigenvals.
+        // But _eigenvects might return multiple vectors for one eigenvalue.
+        // We need to reconstruct the correct D diagonal.
+        // The simple implementation of _eigenvects iterates unique evals and pushes vectors.
+        // So we should reconstruct the full list of eigenvalues corresponding to the vectors.
+
+        const diagValues = [];
+        // Re-run logic to match:
+        const uniqueEvals = [];
+        // Flatten evals just in case
+        evals.elements.forEach(e => uniqueEvals.push(e)); // Assuming unique? No _eigenvals returns roots.
+        // Actually _eigenvals returns distinct roots if 'set' used, or all roots?
+        // My _eigenvals implementation uses 'solve' which might return a set of unique roots.
+        // But _eigenvects iterates them.
+        // If an eigenvalue has algebraic multiplicity > 1, solve returns it once in a set?
+        // _eigenvects finds kernel. Kernel dimension (geometric multiplicity) gives number of vectors.
+        // So for each vector in evects, we need to know which eigenvalue generated it.
+
+        // Refined Logic:
+        // Iterate unique eigenvalues, find kernel, add (val, vec) pairs.
+        const pairs = [];
+        // Get unique eigenvalues (solve returns set or single)
+        // Note: _eigenvals calls _solve. If multiple roots, returns set.
+        // Set contains unique values?
+        // Let's assume unique.
+
+        const distinctEvals = (evals instanceof Vec) ? evals.elements : [evals];
+        // Dedupe check
+        const seen = new Set();
+        const distinct = [];
+        distinctEvals.forEach(e => {
+            const s = e.toString();
+            if(!seen.has(s)) { seen.add(s); distinct.push(e); }
+        });
+
+        for(const lam of distinct) {
+             // kernel(A - lam*I)
+             const M_minus_lambdaI = [];
+             for(let r=0; r<n; r++) {
+                 const row = [];
+                 for(let c=0; c<n; c++) {
+                     let val = matrix.elements[r].elements[c];
+                     if (r === c) val = new Sub(val, lam).simplify();
+                     row.push(val);
+                 }
+                 M_minus_lambdaI.push(new Vec(row));
+             }
+             const kern = this._kernel(new Vec(M_minus_lambdaI));
+             for(const v of kern.elements) {
+                 pairs.push({ val: lam, vec: v });
+             }
+        }
+
+        if (pairs.length < n) throw new Error("Matrix is not diagonalizable");
+
+        const P_cols = [];
+        const D_diag = [];
+
+        for(let i=0; i<n; i++) {
+            P_cols.push(pairs[i].vec);
+            D_diag.push(pairs[i].val);
+        }
+
+        const P_mat = this._trans(new Vec(P_cols));
+        const D_mat = this._diag(new Vec(D_diag));
+
+        return new Vec([P_mat, D_mat]);
+    }
+
+    _tTest(data, mu0) {
+        // One-sample t-test
+        // t = (x_bar - mu0) / (s / sqrt(n))
+        if (!(data instanceof Vec)) throw new Error("Data must be a list");
+        const n = new Num(data.elements.length);
+        const mean = this._mean(data);
+        const std = this._std(data); // Sample std dev
+
+        const num = new Sub(mean, mu0).simplify();
+        const den = new Div(std, new Call('sqrt', [n])).simplify();
+        const t = new Div(num, den).simplify();
+
+        // Degrees of freedom
+        const df = new Sub(n, new Num(1)).simplify();
+
+        // P-value requires CDF of t-distribution (regularized incomplete beta)
+        // This is complex to implement fully symbolic/numeric without a library.
+        // We return { t, df } and maybe a note.
+        // Or we can approximate for large n > 30 using Normal?
+        // Let's return a result vector [t, df]
+        // Users can look up table or we add tCDF later.
+
+        return new Vec([t, df]);
     }
 
 }
