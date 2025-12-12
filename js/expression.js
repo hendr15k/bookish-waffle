@@ -774,6 +774,38 @@ class Div extends BinaryOp {
         // Recursive Reduction for Mul terms
         const isSameDiv = (res, n, d) => (res instanceof Div && res.left.toString() === n.toString() && res.right.toString() === d.toString());
 
+        // Distribute division over Add/Sub if it simplifies
+        if (l instanceof Add || l instanceof Sub) {
+            const d1 = new Div(l.left, r).simplify();
+            const d2 = new Div(l.right, r).simplify();
+
+            // Check for clean cancellation
+            if (r instanceof Num) {
+                const hasFraction = (e) => {
+                    if (e instanceof Div && e.right instanceof Num) return true;
+                    if (e instanceof Mul) return hasFraction(e.left) || hasFraction(e.right);
+                    if (e instanceof Add || e instanceof Sub) return hasFraction(e.left) || hasFraction(e.right);
+                    return false;
+                };
+
+                if (!hasFraction(d1) && !hasFraction(d2)) {
+                    if (l instanceof Add) return new Add(d1, d2).simplify();
+                    if (l instanceof Sub) return new Sub(d1, d2).simplify();
+                }
+            } else {
+                const effective = (res) => {
+                    if (isSameDiv(res, l.left, r)) return false;
+                    if (res instanceof Div && res.right.toString() === r.toString()) return false;
+                    return true;
+                };
+
+                if (effective(d1) && effective(d2)) {
+                    if (l instanceof Add) return new Add(d1, d2).simplify();
+                    if (l instanceof Sub) return new Sub(d1, d2).simplify();
+                }
+            }
+        }
+
         // (A * B) / C -> (A / C) * B or (B / C) * A
         if (l instanceof Mul) {
             const divLeft = new Div(l.left, r).simplify();
