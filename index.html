@@ -454,6 +454,10 @@
             <span class="app-icon" style="color: #fd7e14;">📐</span>
             <span class="app-name">Trig</span>
         </div>
+        <div class="app-card" onclick="openTool('chemistry')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('chemistry')">
+            <span class="app-icon" style="color: #28a745;">🧪</span>
+            <span class="app-name">Chemistry</span>
+        </div>
         <div class="app-card" onclick="openTool('editor')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('editor')">
             <span class="app-icon" style="color: #6f42c1;">📝</span>
             <span class="app-name">Editor</span>
@@ -1296,6 +1300,41 @@
         </div>
     </div>
 
+    <!-- CHEMISTRY TOOL -->
+    <div id="tool-chemistry" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Chemistry</span>
+        </div>
+
+        <div class="tab-header">
+             <button class="tab-btn active" onclick="openTab(event, 'tab-chem-mass')">Molar Mass</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-chem-elem')">Elements</button>
+        </div>
+
+        <div id="tab-chem-mass" class="tab-content active">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="chem-formula">Chemical Formula</label>
+                    <input type="text" class="form-input" id="chem-formula" placeholder="e.g. H2O, C6H12O6">
+                </div>
+                <button class="action-btn" onclick="runTool('molarMass', ['chem-formula'])">Calculate Molar Mass</button>
+            </div>
+        </div>
+
+        <div id="tab-chem-elem" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="chem-elem">Element Symbol</label>
+                    <input type="text" class="form-input" id="chem-elem" placeholder="e.g. Au, Fe">
+                </div>
+                <button class="action-btn" onclick="runTool('atomicWeight', ['chem-elem'])">Get Atomic Weight</button>
+            </div>
+        </div>
+
+        <div class="tool-result"></div>
+    </div>
+
     <!-- EDITOR APP -->
     <div id="tool-editor" class="tool-view">
         <div class="tool-header">
@@ -1391,6 +1430,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
     <!-- Load JS modules -->
     <script src="js/expression.js"></script>
     <script src="js/parser.js"></script>
+    <script src="js/chemistry.js"></script>
     <script src="js/cas.js"></script>
 
     <script>
