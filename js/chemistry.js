@@ -122,37 +122,27 @@ const PeriodicTable = {
 
 class Chemistry {
     static getElement(symbol) {
-        // Handle case sensitivity loosely
         let sym = symbol;
         if (PeriodicTable[sym]) return PeriodicTable[sym];
-
-        // Try strict case: First Upper, rest lower
         sym = sym.charAt(0).toUpperCase() + sym.slice(1).toLowerCase();
         if (PeriodicTable[sym]) return PeriodicTable[sym];
-
         return null;
     }
 
-    static calculateMolarMass(formula) {
-        // Simple parser for chemical formulas e.g. H2O, C6H12O6, Ca(OH)2
-        // Tokenize
-        // Groups: Element, Number, (, )
-
+    static parseMolecule(formula) {
         let tokens = [];
         let i = 0;
         const len = formula.length;
 
+        // Tokenizer
         while(i < len) {
             const char = formula[i];
-
             if (char === '(' || char === ')') {
                 tokens.push({ type: 'bracket', val: char });
                 i++;
                 continue;
             }
-
             if (/[A-Z]/.test(char)) {
-                // Element start
                 let elem = char;
                 i++;
                 while(i < len && /[a-z]/.test(formula[i])) {
@@ -162,7 +152,6 @@ class Chemistry {
                 tokens.push({ type: 'element', val: elem });
                 continue;
             }
-
             if (/[0-9]/.test(char)) {
                 let num = char;
                 i++;
@@ -173,52 +162,59 @@ class Chemistry {
                 tokens.push({ type: 'number', val: parseInt(num) });
                 continue;
             }
-
-            // Unknown char (ignore or throw?)
             i++;
         }
 
-        // Parse tokens
-        // Stack for handling brackets
-        // We accumulate mass in current scope
-
-        let stack = [{ mass: 0 }];
+        // Parser
+        // Returns count map: { 'H': 2, 'O': 1 }
+        let stack = [{}]; // Each frame is a count map
 
         for(let j=0; j<tokens.length; j++) {
             const token = tokens[j];
 
             if (token.type === 'element') {
-                const el = this.getElement(token.val);
-                if (!el) throw new Error("Unknown element: " + token.val);
-
                 let count = 1;
-                // Check if next is number
                 if (j+1 < tokens.length && tokens[j+1].type === 'number') {
                     count = tokens[j+1].val;
-                    j++; // Skip number
+                    j++;
                 }
+                const elem = token.val;
+                // Add to current scope
+                const current = stack[stack.length-1];
+                current[elem] = (current[elem] || 0) + count;
 
-                stack[stack.length-1].mass += el.mass * count;
             } else if (token.type === 'bracket') {
                 if (token.val === '(') {
-                    stack.push({ mass: 0 });
+                    stack.push({});
                 } else {
                     if (stack.length === 1) throw new Error("Unmatched bracket");
                     const group = stack.pop();
-
-                    let count = 1;
+                    let multiplier = 1;
                     if (j+1 < tokens.length && tokens[j+1].type === 'number') {
-                        count = tokens[j+1].val;
+                        multiplier = tokens[j+1].val;
                         j++;
                     }
-
-                    stack[stack.length-1].mass += group.mass * count;
+                    const current = stack[stack.length-1];
+                    for (const el in group) {
+                        current[el] = (current[el] || 0) + group[el] * multiplier;
+                    }
                 }
             }
         }
 
         if (stack.length !== 1) throw new Error("Unmatched bracket");
-        return stack[0].mass;
+        return stack[0];
+    }
+
+    static calculateMolarMass(formula) {
+        const counts = this.parseMolecule(formula);
+        let totalMass = 0;
+        for (const el in counts) {
+            const elementData = this.getElement(el);
+            if (!elementData) throw new Error("Unknown element: " + el);
+            totalMass += elementData.mass * counts[el];
+        }
+        return totalMass;
     }
 }
 
