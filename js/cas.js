@@ -524,13 +524,31 @@ class CAS {
             }
 
             if (node.funcName === 'gcd') {
-                if (args.length !== 2) throw new Error("gcd requires 2 arguments");
-                return this._gcd(args[0], args[1]);
+                if (args.length === 1 && args[0] instanceof Vec) {
+                    const list = args[0].elements;
+                    if (list.length === 0) return new Num(0);
+                    let res = list[0];
+                    for(let i=1; i<list.length; i++) res = this._gcd(res, list[i]);
+                    return res;
+                }
+                if (args.length < 2) throw new Error("gcd requires at least 2 arguments");
+                let res = args[0];
+                for(let i=1; i<args.length; i++) res = this._gcd(res, args[i]);
+                return res;
             }
 
             if (node.funcName === 'lcm') {
-                if (args.length !== 2) throw new Error("lcm requires 2 arguments");
-                return this._lcm(args[0], args[1]);
+                if (args.length === 1 && args[0] instanceof Vec) {
+                    const list = args[0].elements;
+                    if (list.length === 0) return new Num(1);
+                    let res = list[0];
+                    for(let i=1; i<list.length; i++) res = this._lcm(res, list[i]);
+                    return res;
+                }
+                if (args.length < 2) throw new Error("lcm requires at least 2 arguments");
+                let res = args[0];
+                for(let i=1; i<args.length; i++) res = this._lcm(res, args[i]);
+                return res;
             }
 
             if (node.funcName === 'factor') {
@@ -633,6 +651,16 @@ class CAS {
             if (node.funcName === 'linearRegression') {
                 if (args.length !== 1) throw new Error("linearRegression requires 1 argument (list of points)");
                 return this._linearRegression(args[0]);
+            }
+
+            if (node.funcName === 'polyRegression') {
+                if (args.length < 2) throw new Error("polyRegression requires 2 arguments: data, degree");
+                return this._polyRegression(args[0], args[1]);
+            }
+
+            if (node.funcName === 'expRegression') {
+                if (args.length !== 1) throw new Error("expRegression requires 1 argument: data");
+                return this._expRegression(args[0]);
             }
 
             if (node.funcName === 'normalPDF') {
@@ -5477,6 +5505,107 @@ and, or, not, xor, int, evalf`;
         // Users can look up table or we add tCDF later.
 
         return new Vec([t, df]);
+    }
+
+    _polyRegression(data, order) {
+        if (!(data instanceof Vec)) throw new Error("polyRegression data must be a list");
+        if (!(order instanceof Num)) order = new Num(2);
+        const d = order.value;
+        const n = data.elements.length;
+        if (n <= d) throw new Error(`Not enough points for degree ${d} regression`);
+
+        // Build X matrix and Y vector
+        const X_rows = [];
+        const Y_rows = [];
+
+        for(const pt of data.elements) {
+            // pt must be [x, y]
+            let x, y;
+            if (pt instanceof Vec && pt.elements.length >= 2) {
+                x = pt.elements[0].evaluateNumeric();
+                y = pt.elements[1].evaluateNumeric();
+            }
+
+            if (isNaN(x) || isNaN(y)) throw new Error("Regression data must be numeric");
+
+            const row = [];
+            for(let j=0; j<=d; j++) {
+                row.push(new Num(Math.pow(x, j)));
+            }
+            X_rows.push(new Vec(row));
+            Y_rows.push(new Num(y));
+        }
+
+        const X = new Vec(X_rows);
+
+        // Y needs to be column vector for matrix mult
+        const Y_col = new Vec(Y_rows.map(y => new Vec([y])));
+
+        // Beta = (X^T * X)^-1 * X^T * Y
+        const XT = this._trans(X);
+        const XTX = new Mul(XT, X).simplify();
+        const XTY = new Mul(XT, Y_col).simplify();
+
+        const invXTX = this._inv(XTX);
+        const beta = new Mul(invXTX, XTY).simplify();
+
+        // beta is column vector [b0, b1, ... bd]^T
+        // Poly: b0 + b1*x + ... + bd*x^d
+        let poly = new Num(0);
+        const xVar = new Sym('x');
+
+        if (beta instanceof Vec) {
+            for(let i=0; i<=d; i++) {
+                // beta elements are rows (Vec), each row has 1 element
+                const b = beta.elements[i].elements[0];
+                poly = new Add(poly, new Mul(b, new Pow(xVar, new Num(i)))).simplify();
+            }
+        }
+        return poly;
+    }
+
+    _expRegression(data) {
+        if (!(data instanceof Vec)) throw new Error("Data must be list");
+        // Transform y -> ln(y)
+        const logData = [];
+        for(const pt of data.elements) {
+             let x, y;
+             if (pt instanceof Vec && pt.elements.length >= 2) {
+                 x = pt.elements[0].evaluateNumeric();
+                 y = pt.elements[1].evaluateNumeric();
+             }
+
+             if (isNaN(x) || isNaN(y)) throw new Error("Regression data must be numeric");
+             if (y <= 0) throw new Error("Exponential regression requires positive y values");
+
+             const logYNum = new Num(Math.log(y));
+             logData.push(new Vec([new Num(x), logYNum]));
+        }
+
+        const linData = new Vec(logData);
+        // Reuse linearRegression manually to extract slope/intercept numeric values easily
+        // linearRegression returns A + Bx.
+        // We need A and B values.
+
+        let sumX=0, sumY=0, sumXY=0, sumXX=0, n=0;
+        for(const pt of logData) {
+             const x = pt.elements[0].value;
+             const y = pt.elements[1].value;
+             sumX += x; sumY += y; sumXY += x*y; sumXX += x*x;
+             n++;
+        }
+
+        const den = n*sumXX - sumX*sumX;
+        if(den===0) throw new Error("Vertical line");
+
+        const slope = (n*sumXY - sumX*sumY) / den; // b
+        const intercept = (sumY - slope*sumX) / n; // ln(a)
+
+        const a = Math.exp(intercept);
+        const b = slope;
+
+        // a * e^(b*x)
+        return new Mul(new Num(a), new Call('exp', [new Mul(new Num(b), new Sym('x'))])).simplify();
     }
 
 }
