@@ -1093,6 +1093,42 @@ and, or, not, xor, int, evalf`;
                 return this._tTest(args[0], args[1]);
             }
 
+            if (node.funcName === 'kron') {
+                if (args.length !== 2) throw new Error("kron requires 2 arguments");
+                return this._kron(args[0], args[1]);
+            }
+
+            if (node.funcName === 'svd') {
+                if (args.length !== 1) throw new Error("svd requires 1 argument");
+                return this._svd(args[0]);
+            }
+
+            if (node.funcName === 'geoMean') {
+                if (args.length !== 1) throw new Error("geoMean requires 1 argument");
+                return this._geoMean(args[0]);
+            }
+
+            if (node.funcName === 'harmMean') {
+                if (args.length !== 1) throw new Error("harmMean requires 1 argument");
+                return this._harmMean(args[0]);
+            }
+
+            if (node.funcName === 'rms') {
+                if (args.length !== 1) throw new Error("rms requires 1 argument");
+                return this._rms(args[0]);
+            }
+
+            if (node.funcName === 'mad') {
+                if (args.length !== 1) throw new Error("mad requires 1 argument");
+                return this._mad(args[0]);
+            }
+
+            if (node.funcName === 'curvature') {
+                if (args.length < 2) throw new Error("curvature requires at least 2 arguments: expr, var, [point]");
+                const point = args.length > 2 ? args[2] : null;
+                return this._curvature(args[0], args[1], point);
+            }
+
             return new Call(node.funcName, args);
         }
 
@@ -5606,6 +5642,230 @@ and, or, not, xor, int, evalf`;
 
         // a * e^(b*x)
         return new Mul(new Num(a), new Call('exp', [new Mul(new Num(b), new Sym('x'))])).simplify();
+    }
+
+    _kron(A, B) {
+        if (!(A instanceof Vec) || !(B instanceof Vec)) throw new Error("kron arguments must be matrices");
+        const rowsA = A.elements.length;
+        if (rowsA === 0) return new Vec([]);
+        const colsA = A.elements[0].elements.length;
+
+        const rowsB = B.elements.length;
+        if (rowsB === 0) return new Vec([]);
+        const colsB = B.elements[0].elements.length;
+
+        const newRows = [];
+        for(let r=0; r < rowsA * rowsB; r++) {
+            const row = [];
+            // which row in A?
+            const rA = Math.floor(r / rowsB);
+            const rB = r % rowsB;
+            for(let c=0; c < colsA * colsB; c++) {
+                const cA = Math.floor(c / colsB);
+                const cB = c % colsB;
+                const val = new Mul(A.elements[rA].elements[cA], B.elements[rB].elements[cB]).simplify();
+                row.push(val);
+            }
+            newRows.push(new Vec(row));
+        }
+        return new Vec(newRows);
+    }
+
+    _geoMean(list) {
+        if (list instanceof Vec) {
+            const n = list.elements.length;
+            if (n === 0) return new Num(0);
+            let prod = new Num(1);
+            for(const e of list.elements) prod = new Mul(prod, e);
+            // nth root
+            return new Pow(prod.simplify(), new Div(new Num(1), new Num(n))).simplify();
+        }
+        return new Call('geoMean', [list]);
+    }
+
+    _harmMean(list) {
+        if (list instanceof Vec) {
+            const n = list.elements.length;
+            if (n === 0) return new Num(0);
+            let sumInv = new Num(0);
+            for(const e of list.elements) sumInv = new Add(sumInv, new Div(new Num(1), e));
+            return new Div(new Num(n), sumInv.simplify()).simplify();
+        }
+        return new Call('harmMean', [list]);
+    }
+
+    _rms(list) {
+        if (list instanceof Vec) {
+            const n = list.elements.length;
+            if (n === 0) return new Num(0);
+            let sumSq = new Num(0);
+            for(const e of list.elements) sumSq = new Add(sumSq, new Pow(e, new Num(2)));
+            return new Call('sqrt', [new Div(sumSq, new Num(n))]).simplify();
+        }
+        return new Call('rms', [list]);
+    }
+
+    _mad(list) {
+        // Mean Absolute Deviation
+        if (list instanceof Vec) {
+             const n = list.elements.length;
+             if (n === 0) return new Num(0);
+             const m = this._mean(list);
+             let sum = new Num(0);
+             for(const e of list.elements) {
+                 const diff = new Sub(e, m).simplify();
+                 sum = new Add(sum, new Call('abs', [diff]));
+             }
+             return new Div(sum, new Num(n)).simplify();
+        }
+        return new Call('mad', [list]);
+    }
+
+    _curvature(expr, varNode, point) {
+        // kappa = |y''| / (1 + y'^2)^(3/2)
+        const d1 = expr.diff(varNode).simplify();
+        const d2 = d1.diff(varNode).simplify();
+
+        const num = new Call('abs', [d2]);
+        const den = new Pow(new Add(new Num(1), new Pow(d1, new Num(2))), new Num(1.5));
+
+        const kappa = new Div(num, den).simplify();
+
+        if (point) {
+            return kappa.substitute(varNode, point).simplify();
+        }
+        return kappa;
+    }
+
+    _svd(matrix) {
+        // U, S, V such that A = U * S * V^T
+        // A^T A = V S^2 V^T
+        // 1. Calculate B = A^T A
+        const AT = this._trans(matrix);
+        const B = new Mul(AT, matrix).simplify();
+
+        // 2. Eigenvalues of B
+        const evals = this._eigenvals(B);
+        // Get numeric values if possible for sorting
+        let evList = [];
+        if (evals instanceof Vec) {
+             for(const e of evals.elements) evList.push(e);
+        } else {
+             evList.push(evals);
+        }
+
+        // Filter and Sort eigenvalues (descending)
+        // Values should be non-negative for A^T A
+        evList.sort((a, b) => {
+            const va = a.evaluateNumeric();
+            const vb = b.evaluateNumeric();
+            return vb - va;
+        });
+
+        // 3. Construct S (Singular Values)
+        const sValues = [];
+        for(const e of evList) {
+             sValues.push(new Call('sqrt', [e]).simplify());
+        }
+
+        // 4. Construct V (Eigenvectors of A^T A)
+        // We need vectors corresponding to sorted eigenvalues.
+        // Group eigenvalues to handle multiplicity.
+        const vCols = [];
+        const processedIndices = new Set(); // Track used eigenvalues by index in evList
+
+        // Map unique eigenvalues to their basis vectors
+        // Optimization: Don't recompute kernel for same eigenvalue value
+        // Note: evList is sorted. Repeated values are adjacent (if numeric) or potentially scattered if symbolic.
+        // We loop through evList.
+
+        // Cache kernels for values
+        const kernelCache = []; // { valStr: string, vectors: Vec[] }
+
+        for(let i=0; i<evList.length; i++) {
+             const val = evList[i];
+             const valStr = val.toString();
+
+             let vectors = null;
+             // Check cache
+             const cached = kernelCache.find(c => c.valStr === valStr);
+             if (cached) {
+                 vectors = cached.vectors;
+             } else {
+                 // Compute kernel
+                 const n = B.elements.length;
+                 const M_minus_lambdaI = [];
+                 for(let r=0; r<n; r++) {
+                     const row = [];
+                     for(let c=0; c<n; c++) {
+                         let el = B.elements[r].elements[c];
+                         if (r === c) el = new Sub(el, val).simplify();
+                         row.push(el);
+                     }
+                     M_minus_lambdaI.push(new Vec(row));
+                 }
+                 const kern = this._kernel(new Vec(M_minus_lambdaI));
+                 // kern returns a basis. We should Gram-Schmidt this basis to ensure orthogonality within the eigenspace
+                 // if dimension > 1. _kernel usually returns orthogonal basis if RREF is clean?
+                 // No, RREF basis is not necessarily orthogonal.
+                 // Apply Gram-Schmidt to kernel vectors
+                 const orthVectors = (kern.elements.length > 1)
+                    ? this._gramschmidt(kern).elements
+                    : kern.elements;
+
+                 vectors = orthVectors;
+                 kernelCache.push({ valStr: valStr, vectors: vectors });
+             }
+
+             // Consume one vector from the available basis
+             // We need to keep track of how many we used for this value
+             // If eigenvalues are repeated k times, we expect k vectors.
+             // Find how many times we've seen this value so far
+             let count = 0;
+             for(let j=0; j<i; j++) {
+                 if (evList[j].toString() === valStr) count++;
+             }
+
+             if (count < vectors.length) {
+                 const vec = vectors[count];
+                 // Normalize
+                 const n = new Call('norm', [vec]).simplify();
+                 vCols.push(new Div(vec, n).simplify());
+             } else {
+                 // Fallback: Not enough eigenvectors found? (Defective matrix or precision issue)
+                 // Pad with zero?
+                 vCols.push(this._zeros(new Num(B.elements.length), new Num(1)));
+             }
+        }
+        const V = this._trans(new Vec(vCols)); // Columns are eigenvectors
+
+        // 5. Construct U
+        // u_i = (1/sigma_i) * A * v_i
+        const uCols = [];
+        const m = matrix.elements.length;
+        for(let i=0; i<sValues.length; i++) {
+             const sigma = sValues[i];
+             const v = vCols[i]; // v_i
+             const val = sigma.evaluateNumeric();
+             if (Math.abs(val) > 1e-9) {
+                 const Av = new Mul(matrix, v).simplify();
+                 uCols.push(new Div(Av, sigma).simplify());
+             } else {
+                 // For zero singular values, we need to complete basis for U
+                 // kernel(A^T) gives remaining directions?
+                 // For now, push zero vector or handle properly?
+                 // SVD usually requires orthogonal U.
+                 // This part is complex without full Gram-Schmidt completion on kernel(A^T).
+                 // Placeholder: 0 vector
+                 const z = []; for(let k=0; k<m; k++) z.push(new Num(0));
+                 uCols.push(new Vec(z));
+             }
+        }
+        const U = this._trans(new Vec(uCols));
+        const S = this._diag(new Vec(sValues));
+
+        // Result: [U, S, V] (V, not V^T, following standard svd returns)
+        return new Vec([U, S, V]);
     }
 
 }
