@@ -2427,17 +2427,23 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                     lastX = pos.x;
                     lastY = pos.y;
 
-                    const shiftX = -(dx / width) * xRange;
-                    const shiftY = (dy / height) * yRange; // Y is inverted
+                    if (canvas.plotResult && canvas.plotResult.subtype === '3d') {
+                        canvas.rotZ = (canvas.rotZ || 0.5) - dx * 0.01;
+                        canvas.rotX = (canvas.rotX || -0.5) + dy * 0.01;
+                        drawPlot3D(canvas, canvas.plotResult);
+                    } else {
+                        const shiftX = -(dx / width) * xRange;
+                        const shiftY = (dy / height) * yRange; // Y is inverted
 
-                    const newBounds = {
-                        minX: b.minX + shiftX,
-                        maxX: b.maxX + shiftX,
-                        minY: b.minY + shiftY,
-                        maxY: b.maxY + shiftY
-                    };
+                        const newBounds = {
+                            minX: b.minX + shiftX,
+                            maxX: b.maxX + shiftX,
+                            minY: b.minY + shiftY,
+                            maxY: b.maxY + shiftY
+                        };
 
-                    drawPlot(canvas, canvas.plotResult, newBounds);
+                        drawPlot(canvas, canvas.plotResult, newBounds);
+                    }
                 } else {
                     // Hover effect (Crosshair & Coords)
                     // Only if not touching
@@ -2482,6 +2488,15 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             const onWheel = (e) => {
                 e.preventDefault();
                 const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
+
+                // Handle 3D Zoom
+                if (canvas.plotResult && canvas.plotResult.subtype === '3d') {
+                    if (!canvas.scaleFactor3D) canvas.scaleFactor3D = 1;
+                    // deltaY > 0 (scroll down) -> zoomFactor 1.1 (zoom out) -> scale decreases
+                    canvas.scaleFactor3D *= (1/zoomFactor);
+                    drawPlot3D(canvas, canvas.plotResult);
+                    return;
+                }
 
                 const b = canvas.plotBounds;
                 const xRange = b.maxX - b.minX;
@@ -2880,7 +2895,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             };
 
             // Resolution
-            const steps = 30;
+            const steps = 50; // Increased resolution
             const dx = (plot.xMax - plot.xMin) / steps;
             const dy = (plot.yMax - plot.yMin) / steps;
 
@@ -2895,7 +2910,6 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
 
                     try {
                         // Evaluate z = f(x, y)
-                        // Use evaluateNumeric directly if simpler, but substitute is safer for arbitrary expr
                         const exprX = plot.expr.substitute(plot.varX, new Num(valX)).simplify();
                         const exprY = exprX.substitute(plot.varY, new Num(valY)).simplify();
 
@@ -2910,6 +2924,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
 
                         if (!isNaN(z)) {
                             const proj = project(valX, valY, z);
+                            // Store 3D coords for normal calc
                             row.push({x: valX, y: valY, z: z, px: proj.x, py: proj.y, depth: proj.depth});
                         } else {
                             row.push(null);
@@ -2921,29 +2936,59 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 points.push(row);
             }
 
-            // Generate Polygons (Quads)
+            // Generate Polygons (Quads) with Shading
             const polys = [];
             for(let i=0; i<steps; i++) {
                 for(let j=0; j<steps; j++) {
                     const p1 = points[i][j];
-                    const p2 = points[i+1][j];
+                    const p2 = points[i+1][j]; // x+1
                     const p3 = points[i+1][j+1];
-                    const p4 = points[i][j+1];
+                    const p4 = points[i][j+1]; // y+1
 
                     if (p1 && p2 && p3 && p4) {
                         // Calculate average depth
                         const avgDepth = (p1.depth + p2.depth + p3.depth + p4.depth) / 4;
-                        // Calculate color based on Z
                         const avgZ = (p1.z + p2.z + p3.z + p4.z) / 4;
-                        // Normalize Z to 0..1
+
+                        // Calculate Normal Vector
+                        // v1 = p2 - p1 (along x)
+                        // v2 = p4 - p1 (along y)
+                        const v1 = {x: p2.x - p1.x, y: p2.y - p1.y, z: p2.z - p1.z};
+                        const v2 = {x: p4.x - p1.x, y: p4.y - p1.y, z: p4.z - p1.z};
+
+                        // Cross product v1 x v2
+                        let nx = v1.y * v2.z - v1.z * v2.y;
+                        let ny = v1.z * v2.x - v1.x * v2.z;
+                        let nz = v1.x * v2.y - v1.y * v2.x;
+
+                        // Normalize
+                        const len = Math.sqrt(nx*nx + ny*ny + nz*nz);
+                        if (len > 0) { nx /= len; ny /= len; nz /= len; }
+
+                        // Rotate normal to view space (same rotation as points)
+                        // Rotate Z
+                        let nx1 = nx * Math.cos(rotationZ) - ny * Math.sin(rotationZ);
+                        let ny1 = nx * Math.sin(rotationZ) + ny * Math.cos(rotationZ);
+                        // Rotate X
+                        let ny2 = ny1 * Math.cos(rotationX) - nz * Math.sin(rotationX);
+                        let nz2 = ny1 * Math.sin(rotationX) + nz * Math.cos(rotationX);
+
+                        // Light source from viewer (0,0,1)
+                        // Dot product: (nx2, ny2, nz2) . (0, 0, 1) = nz2
+                        let intensity = Math.abs(nz2); // Two-sided lighting
+                        // Basic ambient + diffuse
+                        intensity = 0.3 + 0.7 * intensity;
+
+                        // Color map based on Z height
                         let t = (avgZ - minZ) / (maxZ - minZ || 1);
                         if(t<0) t=0; if(t>1) t=1;
+                        const hue = (1 - t) * 240; // Blue to Red
 
-                        // Color map: Blue (low) -> Green -> Red (high)
-                        // Hue: 240 (blue) -> 0 (red). So (1-t)*240
-                        const hue = (1 - t) * 240;
-                        const color = `hsla(${hue}, 80%, 50%, 0.8)`;
-                        const stroke = `hsla(${hue}, 80%, 30%, 0.5)`;
+                        // Adjust lightness by intensity
+                        const lightness = 30 + 40 * intensity; // 30% to 70%
+
+                        const color = `hsla(${hue}, 80%, ${lightness}%, 0.9)`;
+                        const stroke = `hsla(${hue}, 80%, ${Math.max(20, lightness-20)}%, 0.5)`;
 
                         polys.push({
                             pts: [p1, p2, p3, p4],
@@ -2955,12 +3000,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 }
             }
 
-            // Sort by depth (Painter's Algorithm) - draw furthest first
-            // Smaller depth (more negative) is further away in standard camera frame?
-            // z2 is depth. +z2 comes towards viewer? Or away?
-            // In rotation: z2 = y1*sin(X) + z*cos(X).
-            // Usually +Z is towards viewer in right-hand rule but canvas y is down.
-            // Let's assume sort ascending depth draws back-to-front.
+            // Sort by depth (Painter's Algorithm)
             polys.sort((a, b) => a.depth - b.depth);
 
             // Draw Polygons
@@ -2978,8 +3018,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 ctx.stroke();
             }
 
-            // Draw Axes (on top if desired, or depth sorted?)
-            // Axes lines are just lines.
+            // Draw Axes
             const origin = project(0, 0, 0);
             const xAxis = project(plot.xMax, 0, 0);
             const yAxis = project(0, plot.yMax, 0);
@@ -2998,48 +3037,6 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             ctx.strokeStyle = "blue";
             ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(zAxis.x, zAxis.y); ctx.stroke();
             ctx.fillStyle = "blue"; ctx.fillText("z", zAxis.x, zAxis.y);
-
-            // Interactive handlers need to update rotX and rotZ on canvas
-            if (!canvas.has3DHandlers) {
-                canvas.has3DHandlers = true;
-                let isDragging = false;
-                let lastX=0, lastY=0;
-
-                const onStart = (e) => {
-                    isDragging = true;
-                    lastX = e.touches ? e.touches[0].clientX : e.clientX;
-                    lastY = e.touches ? e.touches[0].clientY : e.clientY;
-                    e.preventDefault();
-                };
-
-                const onMove = (e) => {
-                    if (!isDragging) return;
-                    e.preventDefault();
-                    const x = e.touches ? e.touches[0].clientX : e.clientX;
-                    const y = e.touches ? e.touches[0].clientY : e.clientY;
-                    const dx = x - lastX;
-                    const dy = y - lastY;
-                    lastX = x;
-                    lastY = y;
-
-                    canvas.rotZ = (canvas.rotZ || 0.5) - dx * 0.01;
-                    canvas.rotX = (canvas.rotX || -0.5) + dy * 0.01;
-
-                    if (canvas.plotResult && canvas.plotResult.subtype === '3d') {
-                        drawPlot3D(canvas, canvas.plotResult);
-                    }
-                };
-
-                const onEnd = () => isDragging = false;
-
-                canvas.addEventListener('mousedown', onStart);
-                canvas.addEventListener('mousemove', onMove);
-                canvas.addEventListener('mouseup', onEnd);
-                canvas.addEventListener('mouseleave', onEnd);
-                canvas.addEventListener('touchstart', onStart, {passive: false});
-                canvas.addEventListener('touchmove', onMove, {passive: false});
-                canvas.addEventListener('touchend', onEnd);
-            }
         }
 
         let calcDebounce;
