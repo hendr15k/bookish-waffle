@@ -1091,8 +1091,38 @@ molarMass, atomicWeight,
 and, or, not, xor, int, evalf, purge,
 perm, tran, irem, ifactor`;
 
+                // Check for argument help("cmd") or help(cmd)
+                if (args.length === 1) {
+                    // Extract command name
+                    let cmd = "";
+                    if (args[0] instanceof Sym) cmd = args[0].name;
+                    // If it's a string literal (not supported in parser yet)
+                    // If we support help("plot"), it might be parsed differently if strings supported.
+
+                    if (cmd) {
+                        const data = (typeof globalThis.HELP_DATA !== 'undefined') ? globalThis.HELP_DATA[cmd] : null;
+                        if (data) {
+                            return {
+                                type: 'help',
+                                command: cmd,
+                                data: data,
+                                toString: () => `${cmd}: ${data.description}\nUsage: ${data.syntax}`,
+                                toLatex: () => `\\text{${cmd}: ${data.description}}`
+                            };
+                        } else {
+                            return {
+                                type: 'info',
+                                text: `No specific help found for '${cmd}'.\n` + helpText,
+                                toLatex: () => `\\text{No help found for ${cmd}}`
+                            };
+                        }
+                    }
+                }
+
+                // Default Help
                 const latexHelp = `\\text{Available commands: see documentation}`;
-                return { type: 'info', text: helpText, toString: () => helpText, toLatex: () => latexHelp };
+                // Pass text for fallback, but type='help' triggers special UI
+                return { type: 'help', text: helpText, toString: () => helpText, toLatex: () => latexHelp };
             }
 
             if (node.funcName === 'molarMass') {
