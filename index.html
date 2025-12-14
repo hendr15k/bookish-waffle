@@ -1252,7 +1252,25 @@
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-nrg')">Energy</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-elec')">Electricity</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-waves')">Waves</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-phys-ac')">Wechselstrom (AC)</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-const')">Constants</button>
+        </div>
+
+        <!-- AC Circuits Tab -->
+        <div id="tab-phys-ac" class="tab-content">
+             <div class="tool-form">
+                 <div class="form-group">
+                     <label class="form-label">Calculation</label>
+                     <select id="phys-ac-type" class="form-input" onchange="updatePhysicsInputs('ac')">
+                         <option value="reactance">Reactance (XL, XC)</option>
+                         <option value="ohm_ac">Complex Ohm's Law (U=I*Z)</option>
+                         <option value="parallel">Parallel Impedance</option>
+                         <option value="phasor">Phasor Conversion</option>
+                     </select>
+                 </div>
+                 <div id="phys-ac-inputs"></div>
+                 <button class="action-btn" onclick="runPhysics('ac')">Calculate</button>
+             </div>
         </div>
 
         <!-- Constants Tab -->
@@ -1680,6 +1698,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 updatePhysicsInputs('nrg');
                 updatePhysicsInputs('elec');
                 updatePhysicsInputs('waves');
+                updatePhysicsInputs('ac');
             }
         };
 
@@ -4895,6 +4914,59 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                  } else if (type === 'T') {
                      container.appendChild(createInput('phys-f', 'Frequency (f)'));
                  }
+             } else if (tab === 'ac') {
+                 if (type === 'reactance') {
+                     container.appendChild(createInput('phys-f', 'Frequency (Hz)'));
+                     container.appendChild(createInput('phys-L', 'Inductance (H)'));
+                     container.appendChild(createInput('phys-C', 'Capacitance (F)'));
+                 } else if (type === 'ohm_ac') {
+                     const div = document.createElement('div');
+                     div.innerHTML = `<small style="color:#666; display:block; margin-bottom:10px;">Enter complex values as e.g. 230, 10+5j, phasor(10, 30)</small>`;
+                     container.appendChild(div);
+
+                     // Custom inputs allowing text for complex numbers
+                     const createTextInput = (id, label) => {
+                         const d = document.createElement('div');
+                         d.className = 'form-group';
+                         d.innerHTML = `<label class="form-label" for="${id}">${label}</label><input type="text" class="form-input" id="${id}">`;
+                         return d;
+                     };
+                     // Standard calculator style: show all 3 inputs, user leaves one empty to calculate.
+                     container.appendChild(createTextInput('phys-ac-U', 'Voltage (U)'));
+                     container.appendChild(createTextInput('phys-ac-I', 'Current (I)'));
+                     container.appendChild(createTextInput('phys-ac-Z', 'Impedance (Z)'));
+
+                     const hint = document.createElement('small');
+                     hint.style.color = '#666';
+                     hint.style.display = 'block';
+                     hint.style.marginTop = '5px';
+                     hint.textContent = "Leave one field empty to calculate its value.";
+                     container.appendChild(hint);
+
+                 } else if (type === 'parallel') {
+                     const d = document.createElement('div');
+                     d.className = 'form-group';
+                     d.innerHTML = `<label class="form-label" for="phys-ac-list">Impedances (comma separated)</label>
+                     <input type="text" class="form-input" id="phys-ac-list" placeholder="e.g. 100, 10+5j, 50j">`;
+                     container.appendChild(d);
+                 } else if (type === 'phasor') {
+                     const row = document.createElement('div'); row.className = 'form-row';
+                     const g1 = document.createElement('div'); g1.className='form-group'; g1.style.flex='1';
+                     g1.innerHTML = `<label class="form-label">Real / Mag</label><input type="number" class="form-input" id="phys-ac-p1">`;
+                     const g2 = document.createElement('div'); g2.className='form-group'; g2.style.flex='1';
+                     g2.innerHTML = `<label class="form-label">Imag / Angle°</label><input type="number" class="form-input" id="phys-ac-p2">`;
+                     row.appendChild(g1); row.appendChild(g2);
+                     container.appendChild(row);
+
+                     const sel = document.createElement('div');
+                     sel.className = 'form-group';
+                     sel.innerHTML = `<label class="form-label">Convert To</label>
+                     <select id="phys-ac-conv" class="form-input">
+                        <option value="polar">Rect -> Polar</option>
+                        <option value="rect">Polar -> Rect</option>
+                     </select>`;
+                     container.appendChild(sel);
+                 }
              }
         };
 
@@ -5252,6 +5324,134 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                      if (!isNaN(v) && !isNaN(f)) result = `Wavelength (λ) = ${(v/f).toFixed(4)} m`;
                  } else if (type === 'T') {
                      if (!isNaN(f)) result = `Period (T) = ${(1/f).toFixed(4)} s`;
+                 }
+             } else if (tab === 'ac') {
+                 // AC Calculations using CAS for complex numbers
+                 // We construct a command string and evaluate it
+                 let cmd = "";
+
+                 if (type === 'reactance') {
+                     const f = val('phys-f');
+                     const L = val('phys-L');
+                     const C = val('phys-C');
+
+                     if (isNaN(f)) return;
+                     const w = 2 * Math.PI * f;
+
+                     result = `Angular Freq (ω) = ${w.toFixed(2)} rad/s\n`;
+
+                     if (!isNaN(L)) {
+                         const XL = w * L;
+                         result += `Inductive Reactance (XL) = ${XL.toFixed(2)} Ω\n`;
+                         result += `Impedance (ZL) = ${XL.toFixed(2)}j Ω`;
+                     }
+                     if (!isNaN(C) && C !== 0) {
+                         const XC = 1 / (w * C);
+                         result += `\nCapacitive Reactance (XC) = ${XC.toFixed(2)} Ω\n`;
+                         result += `Impedance (ZC) = -${XC.toFixed(2)}j Ω`;
+                     }
+                 } else if (type === 'ohm_ac') {
+                     // Get raw strings to support "10+5j"
+                     const U_str = document.getElementById('phys-ac-U').value.trim();
+                     const I_str = document.getElementById('phys-ac-I').value.trim();
+                     const Z_str = document.getElementById('phys-ac-Z').value.trim();
+
+                     let solveFor = "";
+                     if (!U_str && I_str && Z_str) solveFor = "U";
+                     else if (U_str && !I_str && Z_str) solveFor = "I";
+                     else if (U_str && I_str && !Z_str) solveFor = "Z";
+                     else {
+                         result = "Please fill exactly two fields.";
+                     }
+
+                     if (solveFor) {
+                         let expr = "";
+                         if (solveFor === "U") expr = `(${I_str}) * (${Z_str})`;
+                         if (solveFor === "I") expr = `(${U_str}) / (${Z_str})`;
+                         if (solveFor === "Z") expr = `(${U_str}) / (${I_str})`;
+
+                         try {
+                             // Calculate Rectangular
+                             const l = new Lexer(expr);
+                             const p = new Parser(l);
+                             const t = p.parse();
+                             const res = cas.evaluate(t);
+
+                             // Calculate Polar
+                             const polarCmd = `toPolar(${res.toString()})`;
+                             const l2 = new Lexer(polarCmd);
+                             const p2 = new Parser(l2);
+                             const t2 = p2.parse();
+                             const resPolar = cas.evaluate(t2); // Vec([r, deg])
+
+                             let mag = "0", deg = "0";
+                             if (resPolar instanceof Vec && resPolar.elements.length === 2) {
+                                 mag = resPolar.elements[0].evaluateNumeric().toFixed(4);
+                                 deg = resPolar.elements[1].evaluateNumeric().toFixed(2);
+                             }
+
+                             const rectStr = res.toString();
+                             // Format polar: r ∠ phi°
+                             const polarStr = `${mag} ∠ ${deg}°`;
+
+                             result = `${solveFor} = ${rectStr}\n${solveFor} = ${polarStr}`;
+
+                         } catch(e) {
+                             result = "Error: " + e.message;
+                         }
+                     }
+                 } else if (type === 'parallel') {
+                     const listStr = document.getElementById('phys-ac-list').value;
+                     if (!listStr) return;
+                     const cmdStr = `par(${listStr})`; // par(z1, z2, ...)
+
+                     try {
+                         const l = new Lexer(cmdStr);
+                         const p = new Parser(l);
+                         const t = p.parse();
+                         const res = cas.evaluate(t);
+
+                         const polarCmd = `toPolar(${res.toString()})`;
+                         const l2 = new Lexer(polarCmd);
+                         const p2 = new Parser(l2);
+                         const t2 = p2.parse();
+                         const resPolar = cas.evaluate(t2);
+
+                         let mag = "0", deg = "0";
+                         if (resPolar instanceof Vec && resPolar.elements.length === 2) {
+                             mag = resPolar.elements[0].evaluateNumeric().toFixed(4);
+                             deg = resPolar.elements[1].evaluateNumeric().toFixed(2);
+                         }
+
+                         result = `Z_total = ${res.toString()}\nZ_total = ${mag} ∠ ${deg}°`;
+                     } catch(e) {
+                         result = "Error: " + e.message;
+                     }
+                 } else if (type === 'phasor') {
+                     const p1 = parseFloat(document.getElementById('phys-ac-p1').value);
+                     const p2 = parseFloat(document.getElementById('phys-ac-p2').value);
+                     const mode = document.getElementById('phys-ac-conv').value;
+
+                     if (isNaN(p1) || isNaN(p2)) return;
+
+                     if (mode === 'polar') {
+                         // Rect -> Polar (p1=real, p2=imag)
+                         // Magnitude
+                         const r = Math.sqrt(p1*p1 + p2*p2);
+                         // Angle
+                         let phi = Math.atan2(p2, p1) * 180 / Math.PI;
+                         result = `Polar: ${r.toFixed(4)} ∠ ${phi.toFixed(2)}°`;
+                         result += `\nExpr: phasor(${r.toFixed(4)}, ${phi.toFixed(2)})`;
+                     } else {
+                         // Polar -> Rect (p1=mag, p2=angle)
+                         const r = p1;
+                         const phi = p2 * Math.PI / 180;
+                         const real = r * Math.cos(phi);
+                         const imag = r * Math.sin(phi);
+
+                         const op = imag >= 0 ? '+' : '';
+                         result = `Rect: ${real.toFixed(4)} ${op} ${imag.toFixed(4)}j`;
+                     }
                  }
              }
 
