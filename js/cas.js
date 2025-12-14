@@ -698,6 +698,31 @@ class CAS {
                 return this._poissonCDF(args[0], args[1]);
             }
 
+            if (node.funcName === 'exponentialPDF') {
+                if (args.length !== 2) throw new Error("exponentialPDF requires 2 arguments: x, lambda");
+                return this._exponentialPDF(args[0], args[1]);
+            }
+
+            if (node.funcName === 'exponentialCDF') {
+                if (args.length !== 2) throw new Error("exponentialCDF requires 2 arguments: x, lambda");
+                return this._exponentialCDF(args[0], args[1]);
+            }
+
+            if (node.funcName === 'geometricPDF') {
+                if (args.length !== 2) throw new Error("geometricPDF requires 2 arguments: k, p");
+                return this._geometricPDF(args[0], args[1]);
+            }
+
+            if (node.funcName === 'geometricCDF') {
+                if (args.length !== 2) throw new Error("geometricCDF requires 2 arguments: k, p");
+                return this._geometricCDF(args[0], args[1]);
+            }
+
+            if (node.funcName === 'chisquarePDF') {
+                if (args.length !== 2) throw new Error("chisquarePDF requires 2 arguments: x, k");
+                return this._chisquarePDF(args[0], args[1]);
+            }
+
             if (node.funcName === 'compound') {
                 if (args.length !== 4) throw new Error("compound requires 4 arguments: P, r, n, t");
                 return this._compound(args[0], args[1], args[2], args[3]);
@@ -1028,7 +1053,8 @@ det, inv, trans, cross, dot, norm, grad, curl, divergence,
 gcd, lcm, factor, nCr, nPr, isPrime, factorial,
 mean, median, variance, linearRegression,
 normalPDF, normalCDF, invNorm, binomialPDF, binomialCDF,
-poissonPDF, poissonCDF,
+poissonPDF, poissonCDF, exponentialPDF, exponentialCDF,
+geometricPDF, geometricCDF, chisquarePDF,
 compound, loan,
 degree, coeff, symb2poly, poly2symb,
 seq, range, sort, reverse,
@@ -3007,6 +3033,97 @@ and, or, not, xor, int, evalf`;
             new Num(0),
             new Call('floor', [k])
         ]);
+    }
+
+    _exponentialPDF(x, lambda) {
+        x = x.simplify();
+        lambda = lambda.simplify();
+
+        if (x instanceof Num && lambda instanceof Num) {
+            const xv = x.value;
+            const lv = lambda.value;
+            if (xv < 0) return new Num(0);
+            if (lv <= 0) return new Num(0);
+            return new Num(lv * Math.exp(-lv * xv));
+        }
+        // lambda * e^(-lambda * x)
+        return new Mul(lambda, new Call('exp', [new Mul(new Num(-1), new Mul(lambda, x))])).simplify();
+    }
+
+    _exponentialCDF(x, lambda) {
+        x = x.simplify();
+        lambda = lambda.simplify();
+
+        if (x instanceof Num && lambda instanceof Num) {
+            const xv = x.value;
+            const lv = lambda.value;
+            if (xv < 0) return new Num(0);
+            if (lv <= 0) return new Num(0); // Undefined?
+            return new Num(1 - Math.exp(-lv * xv));
+        }
+        // 1 - e^(-lambda * x)
+        const expTerm = new Call('exp', [new Mul(new Num(-1), new Mul(lambda, x))]);
+        return new Sub(new Num(1), expTerm).simplify();
+    }
+
+    _geometricPDF(k, p) {
+        // P(X=k) = p(1-p)^(k-1) for k=1,2,3...
+        k = k.simplify();
+        p = p.simplify();
+
+        if (k instanceof Num && p instanceof Num) {
+            const kv = k.value;
+            const pv = p.value;
+            if (!Number.isInteger(kv) || kv < 1) return new Num(0);
+            if (pv <= 0 || pv > 1) return new Num(0); // p must be (0,1]
+            return new Num(pv * Math.pow(1 - pv, kv - 1));
+        }
+        // p * (1-p)^(k-1)
+        return new Mul(p, new Pow(new Sub(new Num(1), p), new Sub(k, new Num(1)))).simplify();
+    }
+
+    _geometricCDF(k, p) {
+        // P(X<=k) = 1 - (1-p)^k for k>=1
+        k = k.simplify();
+        p = p.simplify();
+
+        if (k instanceof Num && p instanceof Num) {
+            const kv = Math.floor(k.value); // Use floor for discrete CDF
+            const pv = p.value;
+            if (kv < 1) return new Num(0);
+            if (pv <= 0 || pv > 1) return new Num(0);
+            return new Num(1 - Math.pow(1 - pv, kv));
+        }
+        // 1 - (1-p)^k
+        return new Sub(new Num(1), new Pow(new Sub(new Num(1), p), k)).simplify();
+    }
+
+    _chisquarePDF(x, k) {
+        // f(x; k) = (1 / (2^(k/2) * Gamma(k/2))) * x^(k/2 - 1) * e^(-x/2)
+        // for x > 0
+        x = x.simplify();
+        k = k.simplify();
+
+        if (x instanceof Num && k instanceof Num) {
+            const xv = x.value;
+            const kv = k.value;
+            if (xv <= 0) return new Num(0);
+            if (kv <= 0) return new Num(0);
+
+            const num = Math.pow(xv, kv/2 - 1) * Math.exp(-xv/2);
+            const den = Math.pow(2, kv/2) * this._gamma(kv/2);
+            return new Num(num / den);
+        }
+
+        // Symbolic
+        const kOver2 = new Div(k, new Num(2));
+        const gammaTerm = new Call('gamma', [kOver2]);
+        const den = new Mul(new Pow(new Num(2), kOver2), gammaTerm);
+        const term1 = new Div(new Num(1), den);
+        const term2 = new Pow(x, new Sub(kOver2, new Num(1)));
+        const term3 = new Call('exp', [new Mul(new Num(-0.5), x)]);
+
+        return new Mul(term1, new Mul(term2, term3)).simplify();
     }
 
     _compound(P, r, n, t) {
