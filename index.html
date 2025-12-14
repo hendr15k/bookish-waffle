@@ -921,29 +921,80 @@
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Plotting</span>
         </div>
-        <div class="tool-form">
-            <div class="form-group">
-                <label class="form-label" for="plot-expr">Function y=</label>
-                <input type="text" class="form-input" id="plot-expr" placeholder="e.g. sin(x)">
-            </div>
-            <div class="form-group">
-                <label class="form-label" for="plot-var">Variable</label>
-                <input type="text" class="form-input" id="plot-var" placeholder="e.g. x" value="x">
-            </div>
-            <div class="form-row">
-                 <div class="form-group" style="flex:1">
-                    <label class="form-label" for="plot-min">Min X</label>
-                    <input type="number" class="form-input" id="plot-min" value="-10">
+
+        <div class="tab-header">
+             <button class="tab-btn active" onclick="openTab(event, 'tab-plot-2d')">2D Function</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-plot-3d')">3D Plot</button>
+        </div>
+
+        <div id="tab-plot-2d" class="tab-content active">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="plot-expr">Function y=</label>
+                    <input type="text" class="form-input" id="plot-expr" placeholder="e.g. sin(x)">
                 </div>
-                 <div class="form-group" style="flex:1">
-                    <label class="form-label" for="plot-max">Max X</label>
-                    <input type="number" class="form-input" id="plot-max" value="10">
+                <div class="form-group">
+                    <label class="form-label" for="plot-var">Variable</label>
+                    <input type="text" class="form-input" id="plot-var" placeholder="e.g. x" value="x">
                 </div>
-            </div>
-             <div class="action-grid">
-                <button class="action-btn" onclick="runTool('plot', ['plot-expr', 'plot-var', 'plot-min', 'plot-max'])">Plot</button>
+                <div class="form-row">
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-min">Min X</label>
+                        <input type="number" class="form-input" id="plot-min" value="-10">
+                    </div>
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-max">Max X</label>
+                        <input type="number" class="form-input" id="plot-max" value="10">
+                    </div>
+                </div>
+                 <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('plot', ['plot-expr', 'plot-var', 'plot-min', 'plot-max'])">Plot</button>
+                </div>
             </div>
         </div>
+
+        <div id="tab-plot-3d" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="plot-3d-expr">Function z=f(x,y)</label>
+                    <input type="text" class="form-input" id="plot-3d-expr" placeholder="e.g. sin(sqrt(x^2+y^2))">
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-3d-x">Var X</label>
+                        <input type="text" class="form-input" id="plot-3d-x" value="x">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-3d-y">Var Y</label>
+                        <input type="text" class="form-input" id="plot-3d-y" value="y">
+                    </div>
+                </div>
+                <div class="form-row">
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-3d-xmin">Min X</label>
+                        <input type="number" class="form-input" id="plot-3d-xmin" value="-10">
+                    </div>
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-3d-xmax">Max X</label>
+                        <input type="number" class="form-input" id="plot-3d-xmax" value="10">
+                    </div>
+                </div>
+                <div class="form-row">
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-3d-ymin">Min Y</label>
+                        <input type="number" class="form-input" id="plot-3d-ymin" value="-10">
+                    </div>
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-3d-ymax">Max Y</label>
+                        <input type="number" class="form-input" id="plot-3d-ymax" value="10">
+                    </div>
+                </div>
+                 <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('plot3d', ['plot-3d-expr', 'plot-3d-x', 'plot-3d-y', 'plot-3d-xmin', 'plot-3d-xmax', 'plot-3d-ymin', 'plot-3d-ymax'])">Plot 3D</button>
+                </div>
+            </div>
+        </div>
+
         <div id="palette-plotting"></div>
         <div class="tool-result"></div>
     </div>
@@ -1065,6 +1116,8 @@
                         <option value="quadratic">Quadratic (ax²+bx+c)</option>
                         <option value="cubic">Cubic (ax³+...)</option>
                         <option value="exponential">Exponential (Ae^Bx)</option>
+                        <option value="power">Power (Ax^B)</option>
+                        <option value="logarithmic">Logarithmic (A+B*ln(x))</option>
                     </select>
                 </div>
                 <button class="action-btn" onclick="runRegression()">Calculate & Plot</button>
@@ -1082,6 +1135,7 @@
                          <option value="exponential">Exponential</option>
                          <option value="geometric">Geometric</option>
                          <option value="chisquare">Chi-Squared</option>
+                         <option value="studentt">Student-t</option>
                      </select>
                  </div>
                  <div style="text-align: center; margin-bottom: 10px;">
@@ -1129,6 +1183,12 @@
                          <div class="form-group">
                              <label class="form-label" for="stat-chi-k" style="display:flex; justify-content:space-between;"><span>Degrees of Freedom (k)</span> <span id="val-chi-k" style="font-weight:normal;">3</span></label>
                              <input type="range" id="stat-chi-k" min="1" max="20" step="1" value="3" style="width:100%;" oninput="updateDistPlot()">
+                         </div>
+                     </div>
+                     <div id="dist-inputs-studentt" style="display:none;">
+                         <div class="form-group">
+                             <label class="form-label" for="stat-t-df" style="display:flex; justify-content:space-between;"><span>Degrees of Freedom (df)</span> <span id="val-t-df" style="font-weight:normal;">5</span></label>
+                             <input type="range" id="stat-t-df" min="1" max="50" step="1" value="5" style="width:100%;" oninput="updateDistPlot()">
                          </div>
                      </div>
              </div>
@@ -4680,6 +4740,8 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 geoInputs.style.display = 'block';
             } else if (type === 'chisquare') {
                 chiInputs.style.display = 'block';
+            } else if (type === 'studentt') {
+                document.getElementById('dist-inputs-studentt').style.display = 'block';
             }
             updateDistPlot();
         };
@@ -5030,6 +5092,62 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                  ctx.fillStyle = "rgba(111, 66, 193, 0.1)";
                  ctx.lineTo(width, mapY(0));
                  ctx.lineTo(mapX(0), mapY(0));
+                 ctx.fill();
+             } else if (type === 'studentt') {
+                 const dfInput = document.getElementById('stat-t-df');
+                 const df = parseFloat(dfInput.value);
+                 document.getElementById('val-t-df').textContent = df;
+
+                 const rangeMin = -5;
+                 const rangeMax = 5;
+                 const rangeYMin = 0;
+                 const rangeYMax = 0.5;
+
+                 const mapX = (x) => ((x - rangeMin) / (rangeMax - rangeMin)) * width;
+                 const mapY = (y) => height - ((y - rangeYMin) / (rangeYMax - rangeYMin)) * height;
+
+                 // Draw Axes
+                 ctx.strokeStyle = "#ccc";
+                 ctx.beginPath();
+                 const yZero = mapY(0);
+                 ctx.moveTo(0, yZero);
+                 ctx.lineTo(width, yZero);
+                 const xZero = mapX(0);
+                 ctx.moveTo(xZero, 0);
+                 ctx.lineTo(xZero, height);
+                 ctx.stroke();
+
+                 // PDF from CAS or approx
+                 // We can use cas._studentTPDF if available, but accessing internal might be tricky or we can replicate formula
+                 // CAS _studentTPDF formula:
+                 // coeff * (1 + x^2/v)^(-(v+1)/2)
+                 // coeff using logGamma.
+                 // Let's implement directly for speed in visualization without full CAS overhead
+                 const tpdf = (x, v) => {
+                     const logNum = cas._logGamma((v + 1) / 2);
+                     const logDen = 0.5 * Math.log(v * Math.PI) + cas._logGamma(v / 2);
+                     const logCoeff = logNum - logDen;
+                     const base = 1 + (x * x) / v;
+                     const power = -(v + 1) / 2;
+                     return Math.exp(logCoeff + power * Math.log(base));
+                 };
+
+                 ctx.beginPath();
+                 ctx.strokeStyle = "#17a2b8"; // Cyan/Teal
+                 ctx.lineWidth = 2;
+
+                 let first = true;
+                 for (let px = 0; px <= width; px++) {
+                      const x = rangeMin + (px / width) * (rangeMax - rangeMin);
+                      const y = tpdf(x, df);
+                      const py = mapY(y);
+                      if (first) { ctx.moveTo(px, py); first = false; }
+                      else { ctx.lineTo(px, py); }
+                 }
+                 ctx.stroke();
+                 ctx.fillStyle = "rgba(23, 162, 184, 0.1)";
+                 ctx.lineTo(width, mapY(0));
+                 ctx.lineTo(0, mapY(0));
                  ctx.fill();
              }
         };
