@@ -1787,7 +1787,9 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         window.addEventListener('DOMContentLoaded', () => {
              // Inject palettes into tools
              injectMathPalette('palette-algebra');
-             injectMathPalette('palette-calculus');
+             injectMathPalette('palette-calculus', [
+                 {label: 'Curvature', val: 'curvature(', style: 'font-size: 0.8em;'}
+             ]);
              injectMathPalette('palette-plotting');
 
              // Linear Algebra special palette
@@ -1795,7 +1797,8 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
              if (linearContainer) {
                  const linearBtns = [
                      {label: '[', val: '['}, {label: ']', val: ']'}, {label: ',', val: ','},
-                     {label: '1', val: '1'}, {label: '0', val: '0'}, {label: 'x', val: 'x'}
+                     {label: '1', val: '1'}, {label: '0', val: '0'}, {label: 'x', val: 'x'},
+                     {label: 'Kron', val: 'kron('}, {label: 'SVD', val: 'svd('}
                  ];
                  // Create custom grid for linear
                   const grid = document.createElement('div');
