@@ -252,7 +252,15 @@ class CAS {
 
             if (node.funcName === 'simplify') {
                 if (args.length !== 1) throw new Error("simplify takes exactly 1 argument");
-                return args[0].simplify();
+                let simplified = args[0].simplify();
+                // If result is a complex Add/Sub expression, try expand().simplify() to see if it reduces
+                if (simplified instanceof Add || simplified instanceof Sub) {
+                    const expanded = simplified.expand().simplify();
+                    // Heuristic: prefer shorter string length or if it becomes 0
+                    if (expanded instanceof Num && expanded.value === 0) return expanded;
+                    if (expanded.toString().length < simplified.toString().length) return expanded;
+                }
+                return simplified;
             }
 
             if (node.funcName === 'solve' || node.funcName === 'fsolve') {
@@ -2624,6 +2632,32 @@ perm, tran, irem, ifactor`;
         }
 
         try {
+            // Check for 1^Infinity form: lim (base^exp)
+            if (expr instanceof Pow) {
+                const L_base = this._limit(expr.left, varNode, point, depth + 1);
+                const L_exp = this._limit(expr.right, varNode, point, depth + 1);
+
+                // Check if base -> 1 and exp -> Infinity
+                const isOne = (node) => node instanceof Num && Math.abs(node.value - 1) < 1e-9;
+                const isInf = (node) => node instanceof Sym && (node.name === 'Infinity' || node.name === 'infinity');
+
+                if (isOne(L_base) && isInf(L_exp)) {
+                    // L = exp( lim (base - 1) * exp )
+                    // For (1+1/x)^x -> base-1 = 1/x. exp = x. (1/x)*x = 1. lim=1. res=e.
+                    const baseMinusOne = new Sub(expr.left, new Num(1)).simplify();
+                    // Do NOT simplify Mul immediately if it collapses to constant 1 before limit?
+                    // Actually, if it simplifies to 1, limit(1) is 1. That is correct.
+                    // If it simplifies to 1, result is exp(1).
+                    const newExpr = new Mul(baseMinusOne, expr.right).simplify();
+                    const limNew = this._limit(newExpr, varNode, point, depth + 1);
+                    // Force return of exp(limNew)
+                    // If limNew is 1, Call('exp', [1]).simplify() might return Num(2.718) or Num(1) if logic is wrong?
+                    // Call.simplify for exp: if arg is 0 -> 1. If arg is 1 -> exp(1).
+                    // Evaluate numeric might turn exp(1) -> 2.718...
+                    return new Call('exp', [limNew]).simplify();
+                }
+            }
+
             const val = expr.substitute(varNode, point).simplify();
             if (val instanceof Num) return val;
             return val;

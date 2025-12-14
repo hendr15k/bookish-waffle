@@ -499,6 +499,25 @@ class Sub extends BinaryOp {
         }
 
         if (l.toString() === r.toString()) return new Num(0);
+
+        // Pythagorean Identities
+        // 1 - sin(x)^2 -> cos(x)^2
+        // 1 - cos(x)^2 -> sin(x)^2
+        if (l instanceof Num && l.value === 1 && r instanceof Pow && r.right instanceof Num && r.right.value === 2) {
+             if (r.left instanceof Call) {
+                 if (r.left.funcName === 'sin') return new Pow(new Call('cos', r.left.args), new Num(2));
+                 if (r.left.funcName === 'cos') return new Pow(new Call('sin', r.left.args), new Num(2));
+             }
+        }
+        // sec(x)^2 - 1 -> tan(x)^2
+        // csc(x)^2 - 1 -> cot(x)^2
+        if (l instanceof Pow && l.right instanceof Num && l.right.value === 2 && r instanceof Num && r.value === 1) {
+             if (l.left instanceof Call) {
+                 if (l.left.funcName === 'sec') return new Pow(new Call('tan', l.left.args), new Num(2));
+                 if (l.left.funcName === 'csc') return new Pow(new Call('cot', l.left.args), new Num(2));
+             }
+        }
+
         return new Sub(l, r);
     }
     evaluateNumeric() { return this.left.evaluateNumeric() - this.right.evaluateNumeric(); }
@@ -637,6 +656,20 @@ class Mul extends BinaryOp {
         }
         if (l instanceof Pow && l.left.toString() === r.toString() && l.right instanceof Num) {
             return new Pow(r, new Num(l.right.value + 1)).simplify();
+        }
+
+        // Trigonometric Simplifications
+        if (l instanceof Call && r instanceof Call) {
+             const is = (n, name) => n.funcName === name;
+             // Check argument equality
+             if (l.args.length === 1 && r.args.length === 1 && l.args[0].toString() === r.args[0].toString()) {
+                  const arg = l.args[0];
+                  if ((is(l, 'tan') && is(r, 'cos')) || (is(l, 'cos') && is(r, 'tan'))) return new Call('sin', [arg]);
+                  if ((is(l, 'cot') && is(r, 'sin')) || (is(l, 'sin') && is(r, 'cot'))) return new Call('cos', [arg]);
+                  if ((is(l, 'sec') && is(r, 'cos')) || (is(l, 'cos') && is(r, 'sec'))) return new Num(1);
+                  if ((is(l, 'csc') && is(r, 'sin')) || (is(l, 'sin') && is(r, 'csc'))) return new Num(1);
+                  if ((is(l, 'tan') && is(r, 'cot')) || (is(l, 'cot') && is(r, 'tan'))) return new Num(1);
+             }
         }
 
         return new Mul(l, r);
@@ -1415,6 +1448,7 @@ class Call extends Expr {
         if (this.funcName === 'exp') {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 0) return new Num(1);
+            if (arg instanceof Num && arg.value === 1) return new Sym('e');
         }
         if (this.funcName === 'sign') {
             const arg = simpleArgs[0];
