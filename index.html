@@ -2089,46 +2089,110 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                         } catch(e) {}
                     }
                 } else if (p.subtype === 'list') {
-                    // Scatter plot logic handled separately, but if we want lines connecting them:
                     if (p.scatter) {
                         for(const pt of p.scatter) {
                              if (pt.y < calcMinY) calcMinY = pt.y;
                              if (pt.y > calcMaxY) calcMaxY = pt.y;
                         }
-                        // If we want lines, push to points
-                        // points.push(...p.scatter);
-                        // Usually scatter is just dots. List plot might want lines?
-                        // Let's assume just dots for scatter property, lines if we push to allPoints.
-                        // For 'plotlist', let's behave like scatter + line.
-                        // But standard plotlist usually connects dots.
-                        // Xcas plotlist connects.
                         for(const pt of p.scatter) {
                             points.push(pt);
                         }
                     }
                 } else {
-                    // Standard Function Plot
-                    for (let i = 0; i <= steps; i++) {
-                        const x = minX + (maxX - minX) * (i / steps);
-
+                    // Standard Function Plot with Adaptive Sampling
+                    const sample = (x) => {
                         try {
                             const valExpr = p.expr.substitute(p.var, new Num(x));
                             const simplified = valExpr.simplify();
-                            let y = NaN;
-                            if (simplified instanceof Num) {
-                                y = simplified.value;
-                            } else {
-                                y = simplified.evaluateNumeric();
-                            }
+                            if (simplified instanceof Num) return simplified.value;
+                            return simplified.evaluateNumeric();
+                        } catch(e) { return NaN; }
+                    };
 
-                            if (!isNaN(y) && isFinite(y)) {
-                                points.push({x, y});
-                                if (y < calcMinY) calcMinY = y;
-                                if (y > calcMaxY) calcMaxY = y;
+                    const maxDepth = 5;
+                    // Recursive sampling
+                    const addPoints = (x1, y1, x2, y2, depth) => {
+                        const xm = (x1 + x2) / 2;
+                        const ym = sample(xm);
+
+                        // Check for validity
+                        const valid1 = !isNaN(y1) && isFinite(y1);
+                        const valid2 = !isNaN(y2) && isFinite(y2);
+                        const validM = !isNaN(ym) && isFinite(ym);
+
+                        if (!validM) {
+                            // If midpoint is invalid but endpoints valid, maybe asymptotes?
+                            // Just recurse a bit to find boundary
+                            if (depth < maxDepth && (valid1 || valid2)) {
+                                addPoints(x1, y1, xm, ym, depth + 1);
+                                points.push({x: xm, y: NaN}); // mark discontinuity
+                                addPoints(xm, ym, x2, y2, depth + 1);
+                            } else {
+                                points.push({x: xm, y: NaN});
                             }
-                        } catch(e) {
-                            // Ignore
+                            return;
                         }
+
+                        if (!valid1 || !valid2) {
+                             // Recovering from NaN
+                             if (depth < maxDepth) {
+                                 addPoints(x1, y1, xm, ym, depth + 1);
+                                 points.push({x: xm, y: ym});
+                                 addPoints(xm, ym, x2, y2, depth + 1);
+                             }
+                             return;
+                        }
+
+                        // Adaptive criteria: non-linearity
+                        // Check if midpoint deviates from line connecting endpoints
+                        // Since we don't have Y-scale yet, we use relative error or angle?
+                        // Simple absolute curvature approximation: |y_mid - (y1+y2)/2|
+                        const yLin = (y1 + y2) / 2;
+                        const diff = Math.abs(ym - yLin);
+
+                        // Heuristic threshold: if curvature is high relative to dx?
+                        // Or just if it looks "bumpy".
+                        // Threshold needs to be relative to Y values?
+                        // Let's use a small constant assuming normalized coordinates or just refine if change is significant
+                        // compared to the change in Y over the segment.
+                        const dy = Math.abs(y2 - y1);
+                        const threshold = (dy === 0) ? 0.01 : dy * 0.1;
+
+                        // Also check for discontinuity (large jump with sign change or huge slope)
+                        // If slope is extremely high, we might want to sample more to confirm asymptote
+
+                        if (depth < maxDepth && diff > Math.max(0.001, threshold)) {
+                            addPoints(x1, y1, xm, ym, depth + 1);
+                            points.push({x: xm, y: ym});
+                            addPoints(xm, ym, x2, y2, depth + 1);
+                        }
+                        // Else assume linear enough
+                    };
+
+                    // Initial coarse steps
+                    const initialSteps = Math.min(steps, 200); // Coarser than pixels
+                    const dx = (maxX - minX) / initialSteps;
+
+                    let prevX = minX;
+                    let prevY = sample(minX);
+                    points.push({x: prevX, y: prevY});
+                    if (prevY < calcMinY) calcMinY = prevY;
+                    if (prevY > calcMaxY) calcMaxY = prevY;
+
+                    for (let i = 1; i <= initialSteps; i++) {
+                        const x = minX + i * dx;
+                        const y = sample(x);
+
+                        addPoints(prevX, prevY, x, y, 0);
+                        points.push({x: x, y: y});
+
+                        if (!isNaN(y) && isFinite(y)) {
+                            if (y < calcMinY) calcMinY = y;
+                            if (y > calcMaxY) calcMaxY = y;
+                        }
+
+                        prevX = x;
+                        prevY = y;
                     }
                 }
                 allPoints.push(points);
@@ -2250,17 +2314,36 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 ctx.strokeStyle = colors[i % colors.length];
                 ctx.lineWidth = 2;
                 ctx.beginPath();
+
+                // Discontinuity Detection during drawing
+                // If dy is too large (e.g. > canvas height) and signs match asymptote behavior?
+                // Or simply if dy > height.
+                const jumpThreshold = height * 0.8;
+
                 let first = true;
-                for (const p of points) {
+                for (let k = 0; k < points.length; k++) {
+                    const p = points[k];
+                    if (isNaN(p.y) || !isFinite(p.y)) {
+                        first = true;
+                        continue;
+                    }
+
                     const px = mapX(p.x);
                     const py = mapY(p.y);
 
-                    // Simple line plot
                     if (first) {
                         ctx.moveTo(px, py);
                         first = false;
                     } else {
-                        ctx.lineTo(px, py);
+                        const prev = points[k-1];
+                        const prevPy = mapY(prev.y);
+
+                        // Check for vertical wrap-around or massive jump
+                        if (Math.abs(py - prevPy) > jumpThreshold) {
+                            ctx.moveTo(px, py); // Don't connect
+                        } else {
+                            ctx.lineTo(px, py);
+                        }
                     }
                 }
                 ctx.stroke();
@@ -2461,10 +2544,49 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                     ctx.stroke();
                     ctx.setLineDash([]);
 
-                    // Draw Coordinates
+                    // Draw Coordinates with Snap-to-Function
                     const b = canvas.plotBounds;
                     const valX = b.minX + (x / width) * (b.maxX - b.minX);
-                    const valY = b.minY + ((height - y) / height) * (b.maxY - b.minY);
+                    let valY = b.minY + ((height - y) / height) * (b.maxY - b.minY);
+
+                    let snapY = null;
+
+                    // Try to snap to the first function plot
+                    if (canvas.plotResult) {
+                        let plots = canvas.plotResult.isMulti ? canvas.plotResult.plots : [canvas.plotResult];
+                        // Find closest function value
+                        let minDist = Infinity;
+
+                        for(const p of plots) {
+                            if (p.subtype === undefined || p.subtype === 'function') {
+                                try {
+                                    // Evaluate exact Y at mouse X
+                                    const yExpr = p.expr.substitute(p.var, new Num(valX)).simplify();
+                                    let yExact = (yExpr instanceof Num) ? yExpr.value : yExpr.evaluateNumeric();
+
+                                    if (!isNaN(yExact) && isFinite(yExact)) {
+                                        // Convert to pixel
+                                        const pyExact = height - ((yExact - b.minY) / (b.maxY - b.minY)) * height;
+
+                                        // Check if on screen (approx)
+                                        // Dist to mouse cursor
+                                        const dist = Math.abs(pyExact - y);
+                                        if (dist < 50 && dist < minDist) { // Snap if within 50px vertical
+                                            minDist = dist;
+                                            snapY = yExact;
+                                            // Move crosshair Y to snapped point
+                                            // We draw a special marker for snapped point
+                                            ctx.beginPath();
+                                            ctx.fillStyle = "#dc3545";
+                                            ctx.arc(x, pyExact, 4, 0, 2*Math.PI);
+                                            ctx.fill();
+                                            valY = yExact;
+                                        }
+                                    }
+                                } catch(e) {}
+                            }
+                        }
+                    }
 
                     const text = `(${valX.toFixed(2)}, ${valY.toFixed(2)})`;
                     ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
