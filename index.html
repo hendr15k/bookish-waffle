@@ -710,6 +710,8 @@
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-series')">Taylor Series</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-riemann')">Riemann</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-fourier')">Fourier</button>
+            <button class="tab-btn" onclick="openTab(event, 'tab-calc-transform')">Transforms</button>
+            <button class="tab-btn" onclick="openTab(event, 'tab-calc-geom')">Geometry</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-tangent')">Tangent</button>
         </div>
 
@@ -911,6 +913,58 @@
             </div>
         </div>
 
+        <!-- Transforms Tab -->
+        <div id="tab-calc-transform" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="trans-expr">Expression</label>
+                    <input type="text" class="form-input" id="trans-expr" placeholder="e.g. sin(t)">
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="trans-t">Time Var (t)</label>
+                        <input type="text" class="form-input" id="trans-t" value="t">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="trans-s">Freq Var (s)</label>
+                        <input type="text" class="form-input" id="trans-s" value="s">
+                    </div>
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('laplace', ['trans-expr', 'trans-t', 'trans-s'])">Laplace L{f}</button>
+                    <button class="action-btn" onclick="runTool('ilaplace', ['trans-expr', 'trans-s', 'trans-t'])">Inv Laplace L⁻¹{F}</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Calc Geometry Tab -->
+        <div id="tab-calc-geom" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="cgeom-expr">Function</label>
+                    <input type="text" class="form-input" id="cgeom-expr" placeholder="e.g. x^2">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="cgeom-var">Variable</label>
+                    <input type="text" class="form-input" id="cgeom-var" placeholder="x" value="x">
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="cgeom-start">Start / Point</label>
+                        <input type="text" class="form-input" id="cgeom-start" placeholder="0">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="cgeom-end">End (ArcLen)</label>
+                        <input type="text" class="form-input" id="cgeom-end" placeholder="1">
+                    </div>
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('arcLen', ['cgeom-expr', 'cgeom-var', 'cgeom-start', 'cgeom-end'])">Arc Length</button>
+                    <button class="action-btn" onclick="runTool('curvature', ['cgeom-expr', 'cgeom-var', 'cgeom-start'])">Curvature at Pt</button>
+                </div>
+            </div>
+        </div>
+
         <div id="palette-calculus"></div>
         <div class="tool-result"></div>
     </div>
@@ -1009,7 +1063,7 @@
         <div class="tab-header">
              <button class="tab-btn active" onclick="openTab(event, 'tab-lin-ops')">Operations</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-lin-build')">Builder</button>
-             <button class="tab-btn" onclick="openTab(event, 'tab-lin-vec')">Vectors</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-lin-dual')">Binary</button>
         </div>
 
         <div id="tab-lin-ops" class="tab-content active">
@@ -1023,9 +1077,14 @@
                     <button class="action-btn" onclick="runTool('det', ['lin-expr'])">Determinant</button>
                     <button class="action-btn" onclick="runTool('trace', ['lin-expr'])">Trace</button>
                     <button class="action-btn" onclick="runTool('trans', ['lin-expr'])">Transpose</button>
+                    <button class="action-btn" onclick="runTool('rank', ['lin-expr'])">Rank</button>
+                    <button class="action-btn" onclick="runTool('kernel', ['lin-expr'])">Nullspace</button>
+                    <button class="action-btn" onclick="runTool('basis', ['lin-expr'])">Basis</button>
+                    <button class="action-btn" onclick="runTool('gramschmidt', ['lin-expr'])">Gram-Schmidt</button>
                     <button class="action-btn" onclick="runTool('eigenvals', ['lin-expr'])">Eigenvalues</button>
                     <button class="action-btn" onclick="runTool('eigenvects', ['lin-expr'])">Eigenvectors</button>
                     <button class="action-btn" onclick="runTool('diagonalize', ['lin-expr'])">Diagonalize</button>
+                    <button class="action-btn" onclick="runTool('svd', ['lin-expr'])">SVD</button>
                     <button class="action-btn" onclick="runTool('lu', ['lin-expr'])">LU Decomp</button>
                     <button class="action-btn" onclick="runTool('qr', ['lin-expr'])">QR Decomp</button>
                     <button class="action-btn" onclick="runTool('cholesky', ['lin-expr'])">Cholesky</button>
@@ -1056,17 +1115,21 @@
             </div>
         </div>
 
-        <div id="tab-lin-vec" class="tab-content">
+        <div id="tab-lin-dual" class="tab-content">
              <div class="tool-form">
                 <div class="form-group">
-                    <label class="form-label" for="vec-a">Vector A</label>
-                    <input type="text" class="form-input" id="vec-a" placeholder="[1, 0, 0]">
+                    <label class="form-label" for="vec-a">Input A (Vector/Matrix)</label>
+                    <input type="text" class="form-input" id="vec-a" placeholder="[1, 0, 0] or [[1,2],[3,4]]">
                 </div>
                  <div class="form-group">
-                    <label class="form-label" for="vec-b">Vector B</label>
+                    <label class="form-label" for="vec-b">Input B</label>
                     <input type="text" class="form-input" id="vec-b" placeholder="[0, 1, 0]">
                 </div>
-                <button class="action-btn" onclick="runTool('cross', ['vec-a', 'vec-b'])">Cross Product</button>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('cross', ['vec-a', 'vec-b'])">Cross Product</button>
+                    <button class="action-btn" onclick="runTool('dot', ['vec-a', 'vec-b'])">Dot Product</button>
+                    <button class="action-btn" onclick="runTool('kron', ['vec-a', 'vec-b'])">Kronecker Prod</button>
+                </div>
              </div>
         </div>
 
@@ -1083,6 +1146,7 @@
 
         <div class="tab-header">
              <button class="tab-btn active" onclick="openTab(event, 'tab-stat-desc')">Descriptive</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-stat-mult')">Multi-Var</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-stat-reg')">Regression</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-stat-dist')">Distributions</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-stat-test')">Hypothesis Test</button>
@@ -1099,6 +1163,24 @@
                     <button class="action-btn" onclick="runTool('variance', ['stat-list'])">Variance</button>
                     <button class="action-btn" onclick="runTool('median', ['stat-list'])">Median</button>
                     <button class="action-btn" onclick="runTool('std', ['stat-list'])">Std Dev</button>
+                    <button class="action-btn" onclick="runTool('mode', ['stat-list'])">Mode</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-stat-mult" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="stat-list1">List X</label>
+                    <input type="text" class="form-input" id="stat-list1" placeholder="e.g. [1, 2, 3]">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="stat-list2">List Y</label>
+                    <input type="text" class="form-input" id="stat-list2" placeholder="e.g. [2, 4, 6]">
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('cov', ['stat-list1', 'stat-list2'])">Covariance</button>
+                    <button class="action-btn" onclick="runTool('corr', ['stat-list1', 'stat-list2'])">Correlation</button>
                 </div>
             </div>
         </div>
