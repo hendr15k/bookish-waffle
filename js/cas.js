@@ -1134,37 +1134,48 @@ class CAS {
             }
 
             if (node.funcName === 'help') {
-                const helpText = `Available commands:
-diff, integrate, limit, taylor, sum, product,
-expand, simplify, solve, minimize, maximize,
-det, inv, trans, cross, dot, norm, grad, curl, divergence,
-gcd, lcm, factor, nCr, nPr, isPrime, factorial,
-mean, median, variance, linearRegression,
-nIntegrate, fsolve,
-normalPDF, normalCDF, invNorm, binomialPDF, binomialCDF,
-poissonPDF, poissonCDF, exponentialPDF, exponentialCDF,
-geometricPDF, geometricCDF, chisquarePDF, chisquareCDF, invChiSquare,
-studentTPDF, studentTCDF, invT,
-compound, loan,
-degree, coeff, symb2poly, poly2symb,
-seq, range, sort, reverse,
-diag, identity,
-laplace, ilaplace,
-rem, quo, mod, arg, approx, erf,
-size, concat, clear, N,
-molarMass, atomicWeight,
-and, or, not, xor, int, evalf, purge,
-perm, tran, irem, ifactor`;
+                const aliasMap = {
+                    'int': 'integrate',
+                    'derivative': 'diff',
+                    'differentiation': 'diff',
+                    'antiderivative': 'integrate',
+                    'comb': 'nCr',
+                    'perm': 'nPr',
+                    'evalf': 'approx',
+                    'approx': 'approx', // if not in help
+                    'tran': 'trans',
+                    'transpose': 'trans',
+                    'eye': 'identity',
+                    'idn': 'identity',
+                    'ker': 'kernel',
+                    'nullspace': 'kernel',
+                    'rem': 'mod', // roughly
+                    'binomial': 'nCr',
+                    'stddev': 'std',
+                    'var': 'variance',
+                    'roots': 'solve',
+                    'zeros': 'solve',
+                    'molar': 'molarMass'
+                };
+
+                const getHelpList = () => {
+                    if (typeof globalThis.HELP_DATA !== 'undefined') {
+                        const keys = Object.keys(globalThis.HELP_DATA).sort();
+                        return "Available commands:\n" + keys.join(', ');
+                    }
+                    return "Help data not loaded.";
+                };
 
                 // Check for argument help("cmd") or help(cmd)
                 if (args.length === 1) {
                     // Extract command name
                     let cmd = "";
                     if (args[0] instanceof Sym) cmd = args[0].name;
-                    // If it's a string literal (not supported in parser yet)
-                    // If we support help("plot"), it might be parsed differently if strings supported.
 
                     if (cmd) {
+                        // Resolve alias
+                        if (aliasMap[cmd]) cmd = aliasMap[cmd];
+
                         const data = (typeof globalThis.HELP_DATA !== 'undefined') ? globalThis.HELP_DATA[cmd] : null;
                         if (data) {
                             return {
@@ -1175,9 +1186,18 @@ perm, tran, irem, ifactor`;
                                 toLatex: () => `\\text{${cmd}: ${data.description}}`
                             };
                         } else {
+                            // Try to find partial matches
+                            let suggestions = "";
+                            if (typeof globalThis.HELP_DATA !== 'undefined') {
+                                const matches = Object.keys(globalThis.HELP_DATA).filter(k => k.includes(cmd));
+                                if (matches.length > 0) {
+                                    suggestions = "\nDid you mean: " + matches.join(', ');
+                                }
+                            }
+
                             return {
                                 type: 'info',
-                                text: `No specific help found for '${cmd}'.\n` + helpText,
+                                text: `No specific help found for '${cmd}'.${suggestions}`,
                                 toLatex: () => `\\text{No help found for ${cmd}}`
                             };
                         }
@@ -1185,8 +1205,8 @@ perm, tran, irem, ifactor`;
                 }
 
                 // Default Help
-                const latexHelp = `\\text{Available commands: see documentation}`;
-                // Pass text for fallback, but type='help' triggers special UI
+                const helpText = getHelpList();
+                const latexHelp = `\\text{Available commands: see list}`;
                 return { type: 'help', text: helpText, toString: () => helpText, toLatex: () => latexHelp };
             }
 
