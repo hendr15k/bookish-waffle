@@ -61,6 +61,20 @@ class CAS {
         }
 
         if (node instanceof Call) {
+            // Special handling for purge/del to prevent premature evaluation of the argument
+            if (node.funcName === 'purge' || node.funcName === 'del') {
+                if (node.args.length !== 1) throw new Error("purge requires 1 argument");
+                const target = node.args[0];
+                if (target instanceof Sym) {
+                    if (this.variables.hasOwnProperty(target.name)) {
+                        delete this.variables[target.name];
+                        return new Num(1); // Return 1 for success
+                    }
+                    return new Num(0); // Not found
+                }
+                throw new Error("purge argument must be a variable name");
+            }
+
             const args = node.args.map(arg => this._recursiveEval(arg));
 
             // Check for user-defined function
@@ -489,7 +503,7 @@ class CAS {
                 return this._cross(args[0], args[1]);
             }
 
-            if (node.funcName === 'trans' || node.funcName === 'transpose') {
+            if (node.funcName === 'trans' || node.funcName === 'transpose' || node.funcName === 'tran') {
                 if (args.length !== 1) throw new Error("trans requires 1 argument");
                 return this._trans(args[0]);
             }
@@ -551,7 +565,7 @@ class CAS {
                 return res;
             }
 
-            if (node.funcName === 'factor') {
+            if (node.funcName === 'factor' || node.funcName === 'ifactor') {
                 if (args.length !== 1) throw new Error("factor requires 1 argument");
                 return this._factor(args[0]);
             }
@@ -588,7 +602,7 @@ class CAS {
                 return this._nCr(args[0], args[1]);
             }
 
-            if (node.funcName === 'nPr') {
+            if (node.funcName === 'nPr' || node.funcName === 'perm') {
                 if (args.length !== 2) throw new Error("nPr requires 2 arguments");
                 return this._nPr(args[0], args[1]);
             }
@@ -772,7 +786,7 @@ class CAS {
                  return this._divergence(args[0], args[1]);
             }
 
-            if (node.funcName === 'rem') {
+            if (node.funcName === 'rem' || node.funcName === 'irem') {
                 if (args.length !== 2) throw new Error("rem requires 2 arguments");
                 return this._rem(args[0], args[1]);
             }
@@ -792,7 +806,7 @@ class CAS {
                 return this._partfrac(args[0], args[1]);
             }
 
-            if (node.funcName === 'size' || node.funcName === 'dim') {
+            if (node.funcName === 'size' || node.funcName === 'dim' || node.funcName === 'length') {
                 if (args.length !== 1) throw new Error("size/dim requires 1 argument");
                 if (args[0] instanceof Vec) {
                     return new Num(args[0].elements.length);
@@ -1073,7 +1087,8 @@ laplace, ilaplace,
 rem, quo, mod, arg, approx, erf,
 size, concat, clear, N,
 molarMass, atomicWeight,
-and, or, not, xor, int, evalf`;
+and, or, not, xor, int, evalf, purge,
+perm, tran, irem, ifactor`;
 
                 const latexHelp = `\\text{Available commands: see documentation}`;
                 return { type: 'info', text: helpText, toString: () => helpText, toLatex: () => latexHelp };
