@@ -1944,6 +1944,31 @@ class And extends BinaryOp {
         if (l instanceof Num && l.value !== 0) return r;
         if (r instanceof Num && r.value !== 0) return l;
 
+        // Idempotence: A and A -> A
+        if (l.toString() === r.toString()) return l;
+
+        // Complementarity: A and not(A) -> false
+        if (l instanceof Not && l.arg.toString() === r.toString()) return new Num(0);
+        if (r instanceof Not && r.arg.toString() === l.toString()) return new Num(0);
+
+        // Distributivity / Factoring for AND of ORs
+        // (A or B) and (A or C) -> A or (B and C)
+        if (l instanceof Or && r instanceof Or) {
+            let common = null;
+            let term1 = null;
+            let term2 = null;
+
+            if (l.left.toString() === r.left.toString()) { common = l.left; term1 = l.right; term2 = r.right; }
+            else if (l.left.toString() === r.right.toString()) { common = l.left; term1 = l.right; term2 = r.left; }
+            else if (l.right.toString() === r.left.toString()) { common = l.right; term1 = l.left; term2 = r.right; }
+            else if (l.right.toString() === r.right.toString()) { common = l.right; term1 = l.left; term2 = r.left; }
+
+            if (common) {
+                const combined = new And(term1, term2).simplify();
+                return new Or(common, combined).simplify();
+            }
+        }
+
         return new And(l, r);
     }
     evaluateNumeric() { return (this.left.evaluateNumeric() && this.right.evaluateNumeric()) ? 1 : 0; }
@@ -1964,6 +1989,32 @@ class Or extends BinaryOp {
         // false || x -> x
         if (l instanceof Num && l.value === 0) return r;
         if (r instanceof Num && r.value === 0) return l;
+
+        // Idempotence: A or A -> A
+        if (l.toString() === r.toString()) return l;
+
+        // Complementarity: A or not(A) -> true
+        if (l instanceof Not && l.arg.toString() === r.toString()) return new Num(1);
+        if (r instanceof Not && r.arg.toString() === l.toString()) return new Num(1);
+
+        // Distributivity / Factoring
+        // (A and B) or (A and C) -> A and (B or C)
+        // If (B or C) simplifies to true (e.g. B is not C), then result is A.
+        if (l instanceof And && r instanceof And) {
+            let common = null;
+            let term1 = null;
+            let term2 = null;
+
+            if (l.left.toString() === r.left.toString()) { common = l.left; term1 = l.right; term2 = r.right; }
+            else if (l.left.toString() === r.right.toString()) { common = l.left; term1 = l.right; term2 = r.left; }
+            else if (l.right.toString() === r.left.toString()) { common = l.right; term1 = l.left; term2 = r.right; }
+            else if (l.right.toString() === r.right.toString()) { common = l.right; term1 = l.left; term2 = r.left; }
+
+            if (common) {
+                const combined = new Or(term1, term2).simplify();
+                return new And(common, combined).simplify();
+            }
+        }
 
         return new Or(l, r);
     }
@@ -1988,6 +2039,11 @@ class Xor extends BinaryOp {
             if (r.value === 0) return l;
             if (r.value !== 0) return new Not(l).simplify();
         }
+
+        if (l.toString() === r.toString()) return new Num(0);
+        if (l instanceof Not && l.arg.toString() === r.toString()) return new Num(1);
+        if (r instanceof Not && r.arg.toString() === l.toString()) return new Num(1);
+
         return new Xor(l, r);
     }
     evaluateNumeric() { return (!!this.left.evaluateNumeric() !== !!this.right.evaluateNumeric()) ? 1 : 0; }
@@ -2071,6 +2127,17 @@ class Not extends Expr {
         if (a instanceof Not) {
             return a.arg;
         }
+
+        // De Morgan's Laws
+        // not(A or B) -> not A and not B
+        if (a instanceof Or) {
+            return new And(new Not(a.left), new Not(a.right)).simplify();
+        }
+        // not(A and B) -> not A or not B
+        if (a instanceof And) {
+            return new Or(new Not(a.left), new Not(a.right)).simplify();
+        }
+
         return new Not(a);
     }
     evaluateNumeric() { return (!this.arg.evaluateNumeric()) ? 1 : 0; }
