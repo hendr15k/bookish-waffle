@@ -2624,6 +2624,19 @@ perm, tran, irem, ifactor`;
         }
 
         try {
+            // Check for 1^Infinity form: Pow(base, exp)
+            if (expr instanceof Pow) {
+                const limitBase = this._limit(expr.left, varNode, point, depth + 1);
+                const limitExp = this._limit(expr.right, varNode, point, depth + 1);
+
+                if (limitBase instanceof Num && limitBase.value === 1 && limitExp instanceof Sym && (limitExp.name === 'Infinity' || limitExp.name === 'infinity')) {
+                    // limit(f(x)^g(x)) = exp(limit((f(x)-1)*g(x)))
+                    const inner = new Mul(new Sub(expr.left, new Num(1)), expr.right).simplify();
+                    const limInner = this._limit(inner, varNode, point, depth + 1);
+                    return new Call('exp', [limInner]).simplify();
+                }
+            }
+
             const val = expr.substitute(varNode, point).simplify();
             if (val instanceof Num) return val;
             return val;

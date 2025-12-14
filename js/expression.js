@@ -639,6 +639,20 @@ class Mul extends BinaryOp {
             return new Pow(r, new Num(l.right.value + 1)).simplify();
         }
 
+        // Trigonometric Simplifications
+        if (l instanceof Call && r instanceof Call) {
+             const is = (n, name) => n.funcName === name;
+             // Check argument equality
+             if (l.args.length === 1 && r.args.length === 1 && l.args[0].toString() === r.args[0].toString()) {
+                  const arg = l.args[0];
+                  if ((is(l, 'tan') && is(r, 'cos')) || (is(l, 'cos') && is(r, 'tan'))) return new Call('sin', [arg]);
+                  if ((is(l, 'cot') && is(r, 'sin')) || (is(l, 'sin') && is(r, 'cot'))) return new Call('cos', [arg]);
+                  if ((is(l, 'sec') && is(r, 'cos')) || (is(l, 'cos') && is(r, 'sec'))) return new Num(1);
+                  if ((is(l, 'csc') && is(r, 'sin')) || (is(l, 'sin') && is(r, 'csc'))) return new Num(1);
+                  if ((is(l, 'tan') && is(r, 'cot')) || (is(l, 'cot') && is(r, 'tan'))) return new Num(1);
+             }
+        }
+
         return new Mul(l, r);
     }
     evaluateNumeric() { return this.left.evaluateNumeric() * this.right.evaluateNumeric(); }
