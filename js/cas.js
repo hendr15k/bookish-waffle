@@ -4,7 +4,8 @@ class CAS {
         this.variables = {
             'pi': new Num(Math.PI),
             'true': new Num(1),
-            'false': new Num(0)
+            'false': new Num(0),
+            'j': new Sym('i') // Electrical Engineering imaginary unit
         };
 
         this.functions = {};
@@ -1178,6 +1179,25 @@ perm, tran, irem, ifactor`;
                 if (args.length < 2) throw new Error("curvature requires at least 2 arguments: expr, var, [point]");
                 const point = args.length > 2 ? args[2] : null;
                 return this._curvature(args[0], args[1], point);
+            }
+
+            if (node.funcName === 'par' || node.funcName === 'parallel') {
+                return this._parallel(args);
+            }
+
+            if (node.funcName === 'cis') {
+                if (args.length !== 1) throw new Error("cis requires 1 argument (angle in degrees)");
+                return this._cis(args[0]);
+            }
+
+            if (node.funcName === 'phasor') {
+                if (args.length !== 2) throw new Error("phasor requires 2 arguments: magnitude, angle(deg)");
+                return this._phasor(args[0], args[1]);
+            }
+
+            if (node.funcName === 'toPolar') {
+                if (args.length !== 1) throw new Error("toPolar requires 1 argument");
+                return this._toPolar(args[0]);
             }
 
             return new Call(node.funcName, args);
@@ -5946,6 +5966,132 @@ perm, tran, irem, ifactor`;
             return kappa.substitute(varNode, point).simplify();
         }
         return kappa;
+    }
+
+    _parallel(args) {
+        if (args.length === 0) return new Num(0);
+        let sumInv = new Num(0);
+        for(const arg of args) {
+            sumInv = new Add(sumInv, new Div(new Num(1), arg));
+        }
+        // Result = 1 / sum(1/Zn)
+        return new Div(new Num(1), sumInv.simplify()).simplify();
+    }
+
+    _cis(angleDeg) {
+        // e^(i * angle * pi / 180)
+        // = cos(rad) + i*sin(rad)
+        const rad = new Mul(angleDeg, new Div(new Sym('pi'), new Num(180))).simplify();
+        return new Add(
+            new Call('cos', [rad]),
+            new Mul(new Sym('i'), new Call('sin', [rad]))
+        ).simplify();
+    }
+
+    _phasor(mag, angleDeg) {
+        return new Mul(mag, this._cis(angleDeg)).simplify();
+    }
+
+    _getComplexParts(expr) {
+        expr = expr.simplify();
+        if (expr instanceof Num) return { re: expr, im: new Num(0) };
+        if (expr instanceof Sym) {
+            if (expr.name === 'i' || expr.name === 'j') return { re: new Num(0), im: new Num(1) };
+            return { re: expr, im: new Num(0) }; // Assume real parameter
+        }
+        if (expr instanceof Mul) {
+            // Check for i
+            if (expr.right instanceof Sym && (expr.right.name === 'i' || expr.right.name === 'j')) {
+                return { re: new Num(0), im: expr.left };
+            }
+            if (expr.left instanceof Sym && (expr.left.name === 'i' || expr.left.name === 'j')) {
+                return { re: new Num(0), im: expr.right };
+            }
+            // Recurse? If real * complex?
+            const l = this._getComplexParts(expr.left);
+            const r = this._getComplexParts(expr.right);
+            // (a+bi)(c+di) = (ac-bd) + (ad+bc)i
+            const ac = new Mul(l.re, r.re);
+            const bd = new Mul(l.im, r.im);
+            const ad = new Mul(l.re, r.im);
+            const bc = new Mul(l.im, r.re);
+            return {
+                re: new Sub(ac, bd).simplify(),
+                im: new Add(ad, bc).simplify()
+            };
+        }
+        if (expr instanceof Div) {
+            // (a+bi)/(c+di) = ((ac+bd) + (bc-ad)i) / (c^2+d^2)
+            const num = this._getComplexParts(expr.left);
+            const den = this._getComplexParts(expr.right);
+            const denSq = new Add(new Pow(den.re, new Num(2)), new Pow(den.im, new Num(2))).simplify();
+
+            const reNum = new Add(new Mul(num.re, den.re), new Mul(num.im, den.im));
+            const imNum = new Sub(new Mul(num.im, den.re), new Mul(num.re, den.im));
+
+            return {
+                re: new Div(reNum, denSq).simplify(),
+                im: new Div(imNum, denSq).simplify()
+            };
+        }
+        if (expr instanceof Add) {
+            const l = this._getComplexParts(expr.left);
+            const r = this._getComplexParts(expr.right);
+            return {
+                re: new Add(l.re, r.re).simplify(),
+                im: new Add(l.im, r.im).simplify()
+            };
+        }
+        if (expr instanceof Sub) {
+            const l = this._getComplexParts(expr.left);
+            const r = this._getComplexParts(expr.right);
+            return {
+                re: new Sub(l.re, r.re).simplify(),
+                im: new Sub(l.im, r.im).simplify()
+            };
+        }
+        if (expr instanceof Pow) {
+             // Handle simple cases
+             if (expr.right instanceof Num && expr.right.value === 2) {
+                 // (a+bi)^2 = a^2 - b^2 + 2abi
+                 const base = this._getComplexParts(expr.left);
+                 const re = new Sub(new Pow(base.re, new Num(2)), new Pow(base.im, new Num(2)));
+                 const im = new Mul(new Num(2), new Mul(base.re, base.im));
+                 return { re: re.simplify(), im: im.simplify() };
+             }
+        }
+
+        // Default fallback (treat as real)
+        return { re: expr, im: new Num(0) };
+    }
+
+    _toPolar(z) {
+        z = z.simplify();
+        const parts = this._getComplexParts(z);
+        const re = parts.re;
+        const im = parts.im;
+
+        // Magnitude r = sqrt(re^2 + im^2)
+        const rSq = new Add(new Pow(re, new Num(2)), new Pow(im, new Num(2))).simplify();
+        const r = new Call('sqrt', [rSq]).simplify();
+
+        // Angle (degrees)
+        // Try numeric
+        let deg;
+        const reVal = re.evaluateNumeric();
+        const imVal = im.evaluateNumeric();
+
+        if (!isNaN(reVal) && !isNaN(imVal)) {
+            const rad = Math.atan2(imVal, reVal);
+            const d = rad * 180 / Math.PI;
+            deg = new Num(d);
+        } else {
+            // Symbolic: 180/pi * arg(z)
+            // Or atan(im/re) logic but keeping quadrant is hard symbolically without atan2
+            deg = new Mul(new Div(new Num(180), new Sym('pi')), new Call('arg', [z])).simplify();
+        }
+
+        return new Vec([r, deg]);
     }
 
     _svd(matrix) {
