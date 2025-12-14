@@ -23,6 +23,34 @@
             --border-color: #ddd;
         }
 
+        body.dark-mode {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --text-color: #e0e0e0;
+            --border-color: #333;
+            --primary-color: #4da3ff;
+        }
+        body.dark-mode input, body.dark-mode textarea, body.dark-mode select {
+            background-color: #2d2d2d;
+            color: #fff;
+            border-color: #444;
+        }
+        body.dark-mode .app-card:active {
+            background-color: #333;
+        }
+        body.dark-mode .entry {
+             border-bottom-color: #333;
+        }
+        body.dark-mode .command {
+            color: #bbb;
+        }
+        body.dark-mode .result {
+            color: #4da3ff;
+        }
+        body.dark-mode canvas {
+             filter: invert(0.9) hue-rotate(180deg);
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             max-width: 1000px;
@@ -975,6 +1003,7 @@
                          <option value="poisson">Poisson</option>
                              <option value="exponential">Exponential</option>
                              <option value="geometric">Geometric</option>
+                             <option value="chisquare">Chi-Squared</option>
                      </select>
                  </div>
                  <div style="text-align: center; margin-bottom: 10px;">
@@ -1016,6 +1045,12 @@
                          <div class="form-group">
                              <label class="form-label" for="stat-geo-p" style="display:flex; justify-content:space-between;"><span>Probability (p)</span> <span id="val-geo-p" style="font-weight:normal;">0.5</span></label>
                              <input type="range" id="stat-geo-p" min="0.01" max="1" step="0.01" value="0.5" style="width:100%;" oninput="updateDistPlot()">
+                         </div>
+                     </div>
+                     <div id="dist-inputs-chisquare" style="display:none;">
+                         <div class="form-group">
+                             <label class="form-label" for="stat-chi-k" style="display:flex; justify-content:space-between;"><span>Degrees of Freedom (k)</span> <span id="val-chi-k" style="font-weight:normal;">2</span></label>
+                             <input type="range" id="stat-chi-k" min="1" max="20" step="1" value="2" style="width:100%;" oninput="updateDistPlot()">
                          </div>
                      </div>
              </div>
@@ -4476,12 +4511,14 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             const poisInputs = document.getElementById('dist-inputs-poisson');
             const expInputs = document.getElementById('dist-inputs-exponential');
             const geoInputs = document.getElementById('dist-inputs-geometric');
+            const chiInputs = document.getElementById('dist-inputs-chisquare');
 
             normInputs.style.display = 'none';
             binInputs.style.display = 'none';
             poisInputs.style.display = 'none';
             expInputs.style.display = 'none';
             geoInputs.style.display = 'none';
+            chiInputs.style.display = 'none';
 
             if (type === 'normal') {
                 normInputs.style.display = 'block';
@@ -4493,6 +4530,8 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 expInputs.style.display = 'block';
             } else if (type === 'geometric') {
                 geoInputs.style.display = 'block';
+            } else if (type === 'chisquare') {
+                chiInputs.style.display = 'block';
             }
             updateDistPlot();
         };
@@ -4776,6 +4815,78 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                       ctx.fillRect(x, y, barWidth, h);
                       ctx.strokeRect(x, y, barWidth, h);
                  }
+             } else if (type === 'chisquare') {
+                 const kInput = document.getElementById('stat-chi-k');
+                 const k = parseFloat(kInput.value);
+                 document.getElementById('val-chi-k').textContent = k;
+
+                 const rangeMin = 0;
+                 const rangeMax = k + 4 * Math.sqrt(2 * k); // Heuristic for visualization range
+                 const rangeYMin = 0;
+                 // Peak approx at max(k-2, 0).
+                 // if k=1, peak -> inf at x=0.
+                 // if k=2, peak at 0, f(0)=0.5
+                 // if k>2, peak at k-2
+                 // We need to estimate max Y.
+                 // Use a sample to find max or heuristic.
+                 // Gamma(1) = 1, Gamma(0.5) = sqrt(pi)
+                 let rangeYMax = 0.5; // Default safe bet
+                 if (k > 2) {
+                     // Evaluate at mode k-2
+                     const mode = k - 2;
+                     const num = Math.pow(mode, k/2 - 1) * Math.exp(-mode/2);
+                     // We need Gamma(k/2). Use cas._gamma if available.
+                     // The global cas object is available.
+                     const den = Math.pow(2, k/2) * cas._gamma(k/2);
+                     rangeYMax = (num/den) * 1.2;
+                 } else if (k === 2) {
+                     rangeYMax = 0.5 * 1.2;
+                 } else {
+                     rangeYMax = 1.0; // k=1 spikes
+                 }
+
+                 const mapX = (x) => ((x - rangeMin) / (rangeMax - rangeMin)) * width;
+                 const mapY = (y) => height - ((y - rangeYMin) / (rangeYMax - rangeYMin)) * height;
+
+                 // Draw Axes
+                 ctx.strokeStyle = "#ccc";
+                 ctx.beginPath();
+                 const yZero = mapY(0);
+                 ctx.moveTo(0, yZero);
+                 ctx.lineTo(width, yZero);
+                 const xZero = mapX(0);
+                 ctx.moveTo(xZero, 0);
+                 ctx.lineTo(xZero, height);
+                 ctx.stroke();
+
+                 // PDF
+                 const pdf = (x) => {
+                     if (x <= 0) return 0;
+                     const num = Math.pow(x, k/2 - 1) * Math.exp(-x/2);
+                     const den = Math.pow(2, k/2) * cas._gamma(k/2);
+                     return num / den;
+                 };
+
+                 ctx.beginPath();
+                 ctx.strokeStyle = "#6f42c1"; // Purple
+                 ctx.lineWidth = 2;
+
+                 let first = true;
+                 for (let px = mapX(0); px <= width; px++) {
+                      const x = rangeMin + (px / width) * (rangeMax - rangeMin);
+                      // Avoid x=0 singularity for k < 2
+                      if (x <= 0.01 && k < 2) continue;
+
+                      const y = pdf(x);
+                      const py = mapY(y);
+                      if (first) { ctx.moveTo(px, py); first = false; }
+                      else { ctx.lineTo(px, py); }
+                 }
+                 ctx.stroke();
+                 ctx.fillStyle = "rgba(111, 66, 193, 0.1)";
+                 ctx.lineTo(width, mapY(0));
+                 ctx.lineTo(mapX(0), mapY(0));
+                 ctx.fill();
              }
         };
 
