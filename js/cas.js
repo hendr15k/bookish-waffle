@@ -176,6 +176,15 @@ class CAS {
                     return new Sub(valUpper, valLower);
                 }
 
+                // Check for standard integrals that are not handled by Expr.integrate
+                // 1. ArcTan form: 1/(u^2 + a^2) * u' -> (1/a)*atan(u/a)
+                const atanRes = this._integrateAtan(func, varNode);
+                if (atanRes) return atanRes;
+
+                // 2. Standard Trig Integrals: tan(x), sec(x), etc.
+                const trigRes = this._integrateTrig(func, varNode);
+                if (trigRes) return trigRes;
+
                 let res = func.integrate(varNode);
                 if (res instanceof Call && res.funcName === 'integrate') {
                      // 1. Try Integration by Substitution (Logarithmic form f'/f and others)
@@ -2093,9 +2102,88 @@ perm, tran, irem, ifactor`;
         return Math.sqrt(2 * Math.PI) * Math.pow(t, z + 0.5) * Math.exp(-t) * x;
     }
 
+    _integrateTrig(expr, varNode) {
+        if (expr instanceof Call) {
+            // tan(x) -> -ln(cos(x))
+            if (expr.funcName === 'tan' && expr.args.length === 1 && expr.args[0].toString() === varNode.toString()) {
+                return new Mul(new Num(-1), new Call('ln', [new Call('cos', [varNode])])).simplify();
+            }
+            // cot(x) -> ln(sin(x))
+            if (expr.funcName === 'cot' && expr.args.length === 1 && expr.args[0].toString() === varNode.toString()) {
+                return new Call('ln', [new Call('sin', [varNode])]).simplify();
+            }
+            // sec(x) -> ln(sec(x) + tan(x))
+            if (expr.funcName === 'sec' && expr.args.length === 1 && expr.args[0].toString() === varNode.toString()) {
+                const sum = new Add(new Call('sec', [varNode]), new Call('tan', [varNode]));
+                return new Call('ln', [sum]).simplify();
+            }
+            // csc(x) -> -ln(csc(x) + cot(x))
+            if (expr.funcName === 'csc' && expr.args.length === 1 && expr.args[0].toString() === varNode.toString()) {
+                const sum = new Add(new Call('csc', [varNode]), new Call('cot', [varNode]));
+                return new Mul(new Num(-1), new Call('ln', [sum])).simplify();
+            }
+        }
+        return null;
+    }
+
+    _integrateAtan(expr, varNode) {
+        // Look for 1/(u^2 + a^2) * u'
+        // expr should be Div(..., ...) or Mul(Div..., ...)
+
+        let num, den;
+        if (expr instanceof Div) {
+            num = expr.left;
+            den = expr.right;
+        } else {
+            return null;
+        }
+
+        // Check denominator for u^2 + a^2 form
+        const poly = this._getPolyCoeffs(den, varNode);
+        if (poly && poly.maxDeg === 2) {
+             // A*x^2 + B*x + C
+             // We want form u^2 + a^2.
+             // If B != 0, it's not simple u^2 + a^2 unless we complete square (too complex for now).
+             // Assume B=0.
+             const A = poly.coeffs[2];
+             const B = poly.coeffs[1] || new Num(0);
+             const C = poly.coeffs[0] || new Num(0);
+
+             if (B instanceof Num && B.value === 0) {
+                 // A*x^2 + C
+                 // We want A > 0 and C > 0 for standard atan.
+                 // If A*C < 0, it's partial fractions (ln) or atanh.
+
+                 const prodAC = new Mul(A, C).simplify();
+                 let isPos = false;
+                 if (prodAC instanceof Num && prodAC.value > 0) isPos = true;
+
+                 // If symbolic, we might assume positive unless proved otherwise?
+                 // But for x^2 - 1, A=1, C=-1 -> prod = -1 (negative).
+                 // We should SKIP if negative to allow partfrac to handle it.
+
+                 if (prodAC instanceof Num && prodAC.value <= 0) return null;
+
+                 if (!this._dependsOn(num, varNode)) {
+                      // Apply formula: 1/sqrt(AC) * atan(x * sqrt(A/C))
+                      const term1 = new Call('sqrt', [prodAC]).simplify();
+                      const term2 = new Call('sqrt', [new Div(A, C)]).simplify();
+
+                      const coeff = new Div(num, term1).simplify();
+                      const arg = new Mul(varNode, term2).simplify();
+
+                      return new Mul(coeff, new Call('atan', [arg])).simplify();
+                 }
+             }
+        }
+        return null;
+    }
+
     _integrateSubstitution(expr, varNode) {
         // Handle trig rewrites for substitution
         if (expr instanceof Call) {
+            // tan/cot/tanh handled by _integrateTrig for simple cases now,
+            // but keep rewrite for complex args e.g. tan(2x)
             if (expr.funcName === 'tan') {
                 // sin/cos
                 expr = new Div(new Call('sin', expr.args), new Call('cos', expr.args));
@@ -4882,6 +4970,14 @@ perm, tran, irem, ifactor`;
         const den = expr.right;
 
         // 2. Find roots of denominator
+        // Improved logic: If solving leads to complex roots for a real quadratic, we might want to avoid splitting
+        // IF we are aiming for real integration (atan).
+        // But partfrac is strictly partial fraction decomposition.
+        // In Complex field, 1/(x^2+1) -> 1/2i(x-i) - 1/2i(x+i).
+        // If we want to support real integration, we should handle irreducible quadratics.
+        // However, this function _partfrac is supposed to return the decomposition.
+        // We will stick to full decomposition if possible, but handle integration separately.
+
         const rootsResult = this._solve(den, varNode);
         let roots = [];
 
