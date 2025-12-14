@@ -880,6 +880,87 @@ class Div extends BinaryOp {
         return new Div(num, den);
     }
     integrate(varName) {
+        const isX2 = (node) => node instanceof Pow && node.left.toString() === varName.toString() && node.right instanceof Num && node.right.value === 2;
+        const isConst = (node) => (node instanceof Num) || (node instanceof Sym && node.name !== varName.name);
+
+        if (this.left instanceof Num) {
+             const c = this.left;
+             const den = this.right;
+
+             // 1/(x^2+a)
+             if (den instanceof Add) {
+                 let xPart, aPart;
+                 if (isX2(den.left) && isConst(den.right)) { xPart = den.left; aPart = den.right; }
+                 else if (isConst(den.left) && isX2(den.right)) { xPart = den.right; aPart = den.left; }
+
+                 if (xPart) {
+                     // int(c/(x^2+a)) = c * (1/sqrt(a)) * atan(x/sqrt(a))
+                     const aVal = aPart.evaluateNumeric();
+                     if (aVal > 0) {
+                          const sqrtA = new Call('sqrt', [aPart]).simplify();
+                          return new Mul(new Div(c, sqrtA), new Call('atan', [new Div(varName, sqrtA)]));
+                     }
+                 }
+
+                 // Completing the square: x^2 + bx + c
+                 // Look for Add(Add(Pow(x,2), Mul(b, x)), c)
+                 // Or flat Add structure? This parser/simplifier usually nests Adds. ((x^2 + bx) + c)
+
+                 // Helper to match x^2 + bx
+                 const isQuadPart = (n) => {
+                     if (n instanceof Add) {
+                         if (isX2(n.left) && n.right instanceof Mul && n.right.right.toString() === varName.toString() && isConst(n.right.left)) {
+                             return { b: n.right.left };
+                         }
+                         if (isX2(n.right) && n.left instanceof Mul && n.left.right.toString() === varName.toString() && isConst(n.left.left)) {
+                             return { b: n.left.left };
+                         }
+                         // Handle x^2 + x (b=1)
+                         if (isX2(n.left) && n.right.toString() === varName.toString()) return { b: new Num(1) };
+                         if (isX2(n.right) && n.left.toString() === varName.toString()) return { b: new Num(1) };
+                     }
+                     return null;
+                 };
+
+                 // Check den = (x^2+bx) + c
+                 const qp = isQuadPart(den.left);
+                 if (qp && isConst(den.right)) {
+                     const b = qp.b;
+                     const cVal = den.right;
+                     // Form: x^2 + bx + c = (x + b/2)^2 + (c - b^2/4)
+                     // Let u = x + b/2. du = dx.
+                     // Den = u^2 + K. K = c - b^2/4.
+                     const bOver2 = new Div(b, new Num(2)).simplify();
+                     const bSqOver4 = new Div(new Pow(b, new Num(2)), new Num(4)).simplify();
+                     const K = new Sub(cVal, bSqOver4).simplify();
+
+                     const KVal = K.evaluateNumeric();
+                     if (KVal > 0) {
+                         const sqrtK = new Call('sqrt', [K]).simplify();
+                         const u = new Add(varName, bOver2).simplify();
+                         // Result: (1/sqrtK) * atan(u/sqrtK)
+                         return new Mul(c, new Mul(new Div(new Num(1), sqrtK), new Call('atan', [new Div(u, sqrtK)])));
+                     }
+                 }
+             }
+
+             // 1/sqrt(a - x^2) -> asin(x/sqrt(a))
+             if (den instanceof Call && den.funcName === 'sqrt') {
+                 const arg = den.args[0];
+                 if (arg instanceof Sub) {
+                     // a - x^2
+                     if (isConst(arg.left) && isX2(arg.right)) {
+                         const aPart = arg.left;
+                         const aVal = aPart.evaluateNumeric();
+                         if (aVal > 0) {
+                              const sqrtA = new Call('sqrt', [aPart]).simplify();
+                              return new Mul(c, new Call('asin', [new Div(varName, sqrtA)]));
+                         }
+                     }
+                 }
+             }
+        }
+
         if (this.left instanceof Num && this.left.value === 1 && this.right instanceof Sym && this.right.name === varName.name) {
             return new Call("ln", [varName]);
         }
@@ -1254,6 +1335,11 @@ class Call extends Expr {
             if (arg instanceof Num && arg.value === 0) return new Num(0);
             if (arg instanceof Num && arg.value === 1) return new Div(new Sym('pi'), new Num(4)).simplify();
             if (arg instanceof Num && arg.value === -1) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(4)).simplify();
+            // sqrt(3) -> pi/3, 1/sqrt(3) -> pi/6
+            if (arg instanceof Num && Math.abs(arg.value - Math.sqrt(3)) < 1e-9) return new Div(new Sym('pi'), new Num(3)).simplify();
+            if (arg instanceof Num && Math.abs(arg.value - 1/Math.sqrt(3)) < 1e-9) return new Div(new Sym('pi'), new Num(6)).simplify();
+            if (arg instanceof Num && Math.abs(arg.value - -Math.sqrt(3)) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(3)).simplify();
+            if (arg instanceof Num && Math.abs(arg.value - -1/Math.sqrt(3)) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(6)).simplify();
         }
         if (this.funcName === 'sinh') {
             const arg = simpleArgs[0];
@@ -1515,9 +1601,15 @@ class Call extends Expr {
         return new Call('diff', [this, varName]);
     }
     integrate(varName) {
-        if (this.funcName === 'sin' && this.args[0].toString() === varName.toString()) return new Mul(new Num(-1), new Call('cos', [varName]));
-        if (this.funcName === 'cos' && this.args[0].toString() === varName.toString()) return new Call('sin', [varName]);
-        if (this.funcName === 'exp' && this.args[0].toString() === varName.toString()) return this;
+        if (this.args[0].toString() === varName.toString()) {
+            if (this.funcName === 'sin') return new Mul(new Num(-1), new Call('cos', [varName]));
+            if (this.funcName === 'cos') return new Call('sin', [varName]);
+            if (this.funcName === 'tan') return new Mul(new Num(-1), new Call('ln', [new Call('abs', [new Call('cos', [varName])])]));
+            if (this.funcName === 'cot') return new Call('ln', [new Call('abs', [new Call('sin', [varName])])]);
+            if (this.funcName === 'sec') return new Call('ln', [new Call('abs', [new Add(new Call('sec', [varName]), new Call('tan', [varName]))])]);
+            if (this.funcName === 'csc') return new Mul(new Num(-1), new Call('ln', [new Call('abs', [new Add(new Call('csc', [varName]), new Call('cot', [varName]))])]));
+            if (this.funcName === 'exp') return this;
+        }
         return new Call("integrate", [this, varName]);
     }
     substitute(varName, value) {

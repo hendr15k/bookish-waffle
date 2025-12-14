@@ -206,6 +206,14 @@ class CAS {
                          }
                      }
 
+                     // 4. Try Trigonometric Reduction (Power Reduction)
+                     // e.g. sin(x)^2 -> (1-cos(2x))/2
+                     const reduced = this._linearizeTrig(func).simplify();
+                     if (reduced.toString() !== func.toString()) {
+                         const redInt = reduced.integrate(varNode).simplify();
+                         if (!(redInt instanceof Call && redInt.funcName === 'integrate')) return redInt;
+                     }
+
                      // Try Integration by Parts
                      const parts = this._integrateByParts(func, varNode);
                      if (parts) return parts;
