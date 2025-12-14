@@ -1593,6 +1593,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
     <script src="js/expression.js"></script>
     <script src="js/parser.js"></script>
     <script src="js/chemistry.js"></script>
+    <script src="js/help.js"></script>
     <script src="js/cas.js"></script>
 
     <script>
@@ -3380,52 +3381,56 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             // Allow clicking entry to copy result to input
             entryDiv.style.cursor = 'pointer';
             entryDiv.title = 'Click to insert result into input';
-            entryDiv.onclick = function() {
-                // Determine what to insert: result text or latex?
-                // For simplicity, insert the result text if it's not complex object
-                if (isError) return;
 
-                let valToInsert = '';
-                if (result && result.toLatex) {
-                     // If it's an object with toLatex, it might be a Plot or Info.
-                     // We probably don't want to insert "Plotting..." text.
-                     // If it's a plot, do nothing.
-                     if (result.type === 'plot') return;
-                     if (result.type === 'info') return;
-                }
+            // Only attach click handler if it's NOT a help object (help handles its own clicks)
+            if (!(result && result.type === 'help')) {
+                entryDiv.onclick = function() {
+                    // Determine what to insert: result text or latex?
+                    // For simplicity, insert the result text if it's not complex object
+                    if (isError) return;
 
-                // If result is string (from toString), use it.
-                // But wait, result argument is sometimes object, sometimes string.
-                if (typeof result === 'string') valToInsert = result;
-                else if (result && typeof result.toString === 'function') valToInsert = result.toString();
+                    let valToInsert = '';
+                    if (result && result.toLatex) {
+                        // If it's an object with toLatex, it might be a Plot or Info.
+                        // We probably don't want to insert "Plotting..." text.
+                        // If it's a plot, do nothing.
+                        if (result.type === 'plot') return;
+                        if (result.type === 'info') return;
+                    }
 
-                // Remove parens if it's a simple number? No, keep as is.
+                    // If result is string (from toString), use it.
+                    // But wait, result argument is sometimes object, sometimes string.
+                    if (typeof result === 'string') valToInsert = result;
+                    else if (result && typeof result.toString === 'function') valToInsert = result.toString();
 
-                // Insert into active input
-                // Check if a tool input is focused, otherwise use main input
-                // But on mobile, we might not have focus.
-                // We default to the main calculator input if we are in app mode calculator?
-                // Or just the main input area in desktop.
+                    // Remove parens if it's a simple number? No, keep as is.
 
-                const activeElement = document.activeElement;
-                if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
-                    insertAtCursor(activeElement.id, valToInsert);
-                } else {
-                    // Try to find visible tool input
-                    const visibleTool = document.querySelector('.tool-view[style*="block"]');
-                    if (visibleTool) {
-                         const firstInput = visibleTool.querySelector('input');
-                         if (firstInput) insertAtCursor(firstInput.id, valToInsert);
+                    // Insert into active input
+                    // Check if a tool input is focused, otherwise use main input
+                    // But on mobile, we might not have focus.
+                    // We default to the main calculator input if we are in app mode calculator?
+                    // Or just the main input area in desktop.
+
+                    const activeElement = document.activeElement;
+                    if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+                        insertAtCursor(activeElement.id, valToInsert);
                     } else {
-                        // Desktop mode main input
-                        const mainInput = document.getElementById('command-input');
-                        if (mainInput) {
-                            mainInput.value = valToInsert; // Replace or append? Let's replace for history recall usually.
-                            // insertAtCursor(mainInput.id, valToInsert);
+                        // Try to find visible tool input
+                        const visibleTool = document.querySelector('.tool-view[style*="block"]');
+                        if (visibleTool) {
+                            const firstInput = visibleTool.querySelector('input');
+                            if (firstInput) insertAtCursor(firstInput.id, valToInsert);
+                        } else {
+                            // Desktop mode main input
+                            const mainInput = document.getElementById('command-input');
+                            if (mainInput) {
+                                mainInput.value = valToInsert; // Replace or append? Let's replace for history recall usually.
+                                // insertAtCursor(mainInput.id, valToInsert);
+                            }
                         }
                     }
-                }
-            };
+                };
+            }
 
             const commandDiv = document.createElement('div');
             commandDiv.className = 'command';
@@ -3437,6 +3442,104 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
 
             if (result && result.type === 'action' && result.name === 'clear') {
                 history.innerHTML = '';
+                return;
+            }
+
+            if (result && result.type === 'help') {
+                // Help Card
+                const card = document.createElement('div');
+                card.style.background = '#f8f9fa';
+                card.style.border = '1px solid #dee2e6';
+                card.style.borderRadius = '8px';
+                card.style.padding = '15px';
+                card.style.marginTop = '10px';
+
+                const title = document.createElement('h3');
+                title.style.marginTop = '0';
+                title.style.color = '#007bff';
+                title.textContent = result.command || 'Help';
+                card.appendChild(title);
+
+                if (result.data) {
+                    // Specific command help
+                    const desc = document.createElement('p');
+                    desc.textContent = result.data.description;
+                    card.appendChild(desc);
+
+                    const syntaxHeader = document.createElement('div');
+                    syntaxHeader.innerHTML = '<strong>Syntax:</strong>';
+                    card.appendChild(syntaxHeader);
+
+                    const syntax = document.createElement('code');
+                    syntax.style.display = 'block';
+                    syntax.style.background = '#eee';
+                    syntax.style.padding = '5px';
+                    syntax.style.borderRadius = '4px';
+                    syntax.style.marginBottom = '10px';
+                    syntax.textContent = result.data.syntax;
+                    card.appendChild(syntax);
+
+                    const exHeader = document.createElement('div');
+                    exHeader.innerHTML = '<strong>Examples (click to try):</strong>';
+                    card.appendChild(exHeader);
+
+                    result.data.examples.forEach(ex => {
+                        const btn = document.createElement('button');
+                        btn.textContent = ex;
+                        btn.style.display = 'block';
+                        btn.style.width = '100%';
+                        btn.style.textAlign = 'left';
+                        btn.style.margin = '5px 0';
+                        btn.style.padding = '8px';
+                        btn.style.border = '1px solid #ccc';
+                        btn.style.borderRadius = '4px';
+                        btn.style.background = 'white';
+                        btn.style.cursor = 'pointer';
+                        btn.style.fontFamily = 'monospace';
+
+                        btn.onclick = (e) => {
+                            e.stopPropagation(); // Prevent entry click
+                            document.getElementById('command-input').value = ex;
+                            evaluate();
+                        };
+                        card.appendChild(btn);
+                    });
+
+                } else {
+                    // General Help
+                    const desc = document.createElement('p');
+                    desc.textContent = "Available commands (type ?command for details):";
+                    card.appendChild(desc);
+
+                    const list = document.createElement('div');
+                    list.style.fontSize = '0.9em';
+                    list.style.lineHeight = '1.6';
+
+                    // Create clickable links for commands
+                    const commands = result.text.replace('Available commands:\n', '').split(/[,\n]/).map(s => s.trim()).filter(s => s);
+
+                    commands.forEach(cmd => {
+                        const span = document.createElement('span');
+                        span.textContent = cmd;
+                        span.style.color = '#007bff';
+                        span.style.cursor = 'pointer';
+                        span.style.marginRight = '8px';
+                        span.style.display = 'inline-block';
+                        span.onclick = (e) => {
+                            e.stopPropagation();
+                            input.value = '?' + cmd;
+                            evaluate();
+                        };
+                        list.appendChild(span);
+                    });
+
+                    card.appendChild(list);
+                }
+
+                resultDiv.appendChild(card);
+                entryDiv.appendChild(resultDiv);
+                history.appendChild(entryDiv);
+                history.scrollTop = history.scrollHeight;
                 return;
             }
 
@@ -3532,8 +3635,19 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         }
 
         function evaluate() {
-            const command = input.value.trim();
+            let command = input.value.trim();
             if (!command) return;
+
+            // Intercept Help Syntax
+            let displayCommand = command;
+            if (command.startsWith('?')) {
+                const term = command.substring(1).trim();
+                if (term) {
+                    command = `help(${term})`;
+                } else {
+                    command = `help()`;
+                }
+            }
 
             try {
                 const lexer = new Lexer(command);
@@ -3541,19 +3655,19 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 const tree = parser.parse();
                 const result = cas.evaluate(tree);
 
-                if (result && (result.type === 'plot' || result.type === 'action' || result.type === 'info')) {
-                     addToHistory(command, result, false, null);
+                if (result && (result.type === 'plot' || result.type === 'action' || result.type === 'info' || result.type === 'help')) {
+                     addToHistory(displayCommand, result, false, null);
                 } else {
                      // Always pass toLatex() if available
                      const latex = (result && typeof result.toLatex === 'function') ? result.toLatex() : null;
-                     addToHistory(command, result.toString(), false, latex);
+                     addToHistory(displayCommand, result.toString(), false, latex);
                 }
 
                 // Update variables list
                 updateVariables();
 
             } catch (error) {
-                addToHistory(command, error.message, true);
+                addToHistory(displayCommand, error.message, true);
                 console.error(error);
             }
 
