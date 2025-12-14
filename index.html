@@ -172,6 +172,53 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             min-height: 80vh;
         }
+
+        /* Dark Mode */
+        body.dark-mode {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --text-color: #e0e0e0;
+            --border-color: #333;
+            --primary-color: #4da3ff;
+            --primary-hover: #007bff;
+        }
+        body.dark-mode input,
+        body.dark-mode textarea,
+        body.dark-mode select {
+            background-color: #2d2d2d;
+            color: #fff;
+            border-color: #444;
+        }
+        body.dark-mode .app-card:active {
+            background-color: #333;
+        }
+        body.dark-mode .entry {
+             border-bottom-color: #333;
+        }
+        body.dark-mode .command {
+            color: #bbb;
+        }
+        body.dark-mode .result {
+            color: #80bdff;
+        }
+        body.dark-mode canvas {
+             filter: invert(0.9) hue-rotate(180deg);
+        }
+        body.dark-mode .function-btn {
+            background: #2d2d2d;
+            border-color: #444;
+            color: #e0e0e0;
+        }
+        body.dark-mode .function-btn:active {
+            background: #444;
+        }
+        body.dark-mode .tool-section {
+            border-color: #333;
+        }
+        body.dark-mode .tool-result {
+            background: #252525;
+            border-color: #333;
+        }
         .tool-header {
             display: flex;
             align-items: center;
@@ -973,8 +1020,9 @@
                          <option value="normal">Normal</option>
                          <option value="binomial">Binomial</option>
                          <option value="poisson">Poisson</option>
-                             <option value="exponential">Exponential</option>
-                             <option value="geometric">Geometric</option>
+                         <option value="exponential">Exponential</option>
+                         <option value="geometric">Geometric</option>
+                         <option value="chisquare">Chi-Squared</option>
                      </select>
                  </div>
                  <div style="text-align: center; margin-bottom: 10px;">
@@ -1016,6 +1064,12 @@
                          <div class="form-group">
                              <label class="form-label" for="stat-geo-p" style="display:flex; justify-content:space-between;"><span>Probability (p)</span> <span id="val-geo-p" style="font-weight:normal;">0.5</span></label>
                              <input type="range" id="stat-geo-p" min="0.01" max="1" step="0.01" value="0.5" style="width:100%;" oninput="updateDistPlot()">
+                         </div>
+                     </div>
+                     <div id="dist-inputs-chisquare" style="display:none;">
+                         <div class="form-group">
+                             <label class="form-label" for="stat-chi-k" style="display:flex; justify-content:space-between;"><span>Degrees of Freedom (k)</span> <span id="val-chi-k" style="font-weight:normal;">3</span></label>
+                             <input type="range" id="stat-chi-k" min="1" max="20" step="1" value="3" style="width:100%;" oninput="updateDistPlot()">
                          </div>
                      </div>
              </div>
@@ -4476,12 +4530,14 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             const poisInputs = document.getElementById('dist-inputs-poisson');
             const expInputs = document.getElementById('dist-inputs-exponential');
             const geoInputs = document.getElementById('dist-inputs-geometric');
+            const chiInputs = document.getElementById('dist-inputs-chisquare');
 
             normInputs.style.display = 'none';
             binInputs.style.display = 'none';
             poisInputs.style.display = 'none';
             expInputs.style.display = 'none';
             geoInputs.style.display = 'none';
+            chiInputs.style.display = 'none';
 
             if (type === 'normal') {
                 normInputs.style.display = 'block';
@@ -4493,9 +4549,27 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 expInputs.style.display = 'block';
             } else if (type === 'geometric') {
                 geoInputs.style.display = 'block';
+            } else if (type === 'chisquare') {
+                chiInputs.style.display = 'block';
             }
             updateDistPlot();
         };
+
+        // Gamma approximation (Lanczos)
+        function gamma(z) {
+            const g = 7;
+            const C = [
+                0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+                771.32342877765313, -176.61502916214059, 12.507343278686905,
+                -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7
+            ];
+            if (z < 0.5) return Math.PI / (Math.sin(Math.PI * z) * gamma(1 - z));
+            z -= 1;
+            let x = C[0];
+            for (let i = 1; i < g + 2; i++) x += C[i] / (z + i);
+            const t = z + g + 0.5;
+            return Math.sqrt(2 * Math.PI) * Math.pow(t, z + 0.5) * Math.exp(-t) * x;
+        }
 
         window.updateDistPlot = function() {
              const type = document.getElementById('stat-dist-type').value;
@@ -4776,6 +4850,58 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                       ctx.fillRect(x, y, barWidth, h);
                       ctx.strokeRect(x, y, barWidth, h);
                  }
+             } else if (type === 'chisquare') {
+                 const kInput = document.getElementById('stat-chi-k');
+                 const k = parseFloat(kInput.value);
+                 document.getElementById('val-chi-k').textContent = k;
+
+                 const rangeMin = 0;
+                 const rangeMax = Math.max(20, k + 4*Math.sqrt(2*k)); // Mean k, Var 2k
+                 const rangeYMin = 0;
+                 // Max value is at k-2 for k>=2. f(k-2) approx?
+                 // Let's adapt max Y
+                 const peakX = Math.max(0.1, k - 2);
+                 const maxYVal = (k === 1) ? 1 : (1 / (Math.pow(2, k/2) * gamma(k/2)) * Math.pow(peakX, k/2 - 1) * Math.exp(-peakX/2));
+                 const rangeYMax = maxYVal * 1.2;
+
+                 const mapX = (x) => ((x - rangeMin) / (rangeMax - rangeMin)) * width;
+                 const mapY = (y) => height - ((y - rangeYMin) / (rangeYMax - rangeYMin)) * height;
+
+                 // Draw Axes
+                 ctx.strokeStyle = "#ccc";
+                 ctx.beginPath();
+                 const yZero = mapY(0);
+                 ctx.moveTo(0, yZero);
+                 ctx.lineTo(width, yZero);
+                 const xZero = mapX(0);
+                 ctx.moveTo(xZero, 0);
+                 ctx.lineTo(xZero, height);
+                 ctx.stroke();
+
+                 // PDF
+                 const pdf = (x) => {
+                     if (x <= 0) return 0;
+                     return (1 / (Math.pow(2, k/2) * gamma(k/2))) * Math.pow(x, k/2 - 1) * Math.exp(-x/2);
+                 };
+
+                 ctx.beginPath();
+                 ctx.strokeStyle = "#6f42c1"; // Purple
+                 ctx.lineWidth = 2;
+
+                 let first = true;
+                 for (let px = mapX(0); px <= width; px++) {
+                      const x = rangeMin + (px / width) * (rangeMax - rangeMin);
+                      const y = pdf(x);
+                      if (isNaN(y) || !isFinite(y)) continue;
+                      const py = mapY(y);
+                      if (first) { ctx.moveTo(px, py); first = false; }
+                      else { ctx.lineTo(px, py); }
+                 }
+                 ctx.stroke();
+                 ctx.fillStyle = "rgba(111, 66, 193, 0.1)";
+                 ctx.lineTo(width, mapY(0));
+                 ctx.lineTo(mapX(0), mapY(0));
+                 ctx.fill();
              }
         };
 
