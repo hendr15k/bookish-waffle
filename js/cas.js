@@ -178,6 +178,10 @@ class CAS {
 
                 let res = func.integrate(varNode);
                 if (res instanceof Call && res.funcName === 'integrate') {
+                     // 0. Standard Forms (atan, asin)
+                     const stdRes = this._integrateStandardForms(func, varNode);
+                     if (stdRes) return stdRes;
+
                      // 1. Try Integration by Substitution (Logarithmic form f'/f and others)
                      const subRes = this._integrateSubstitution(func, varNode);
                      if (subRes && !(subRes instanceof Call && subRes.funcName === 'integrate')) return subRes;
@@ -1982,6 +1986,103 @@ perm, tran, irem, ifactor`;
 
         const t = z + g + 0.5;
         return Math.sqrt(2 * Math.PI) * Math.pow(t, z + 0.5) * Math.exp(-t) * x;
+    }
+
+    _integrateStandardForms(expr, varNode) {
+        // Form: c / (k*x^2 + a) -> atan
+        if (expr instanceof Div) {
+            const num = expr.left;
+            const den = expr.right;
+
+            // Check if num is independent of varNode
+            if (!this._dependsOn(num, varNode)) {
+                // Check den: must be Add(..., ...) or just x^2 + a
+                // We look for form A*x^2 + B
+                const poly = this._getPolyCoeffs(den, varNode);
+                if (poly && poly.maxDeg === 2) {
+                    // ax^2 + bx + c
+                    // We want b=0 for standard atan form k*x^2 + a
+                    const a = poly.coeffs[2];
+                    const b = poly.coeffs[1];
+                    const c = poly.coeffs[0] || new Num(0);
+
+                    // linear term b must be 0
+                    if (b && !(b instanceof Num && b.value === 0)) return null;
+
+                    // Form: a*x^2 + c
+                    // Integral of 1/(a*x^2+c) = 1/a * Integral 1/(x^2 + c/a)
+                    // Let K = c/a.
+                    // If K > 0: 1/sqrt(K) * atan(x/sqrt(K))
+                    // Result: (num/a) * (1/sqrt(K) * atan(x/sqrt(K)))
+
+                    // Heuristic: if K is numeric and negative, return null (let partfrac handle it)
+                    // K = c/a
+                    const K = new Div(c, a).simplify();
+                    if (K instanceof Num && K.value < 0) return null;
+
+                    const sqrtK = new Call('sqrt', [K]).simplify();
+                    const factor = new Div(num, a).simplify();
+
+                    // result = factor * (1/sqrtK * atan(x/sqrtK))
+                    const term = new Div(new Call('atan', [new Div(varNode, sqrtK)]), sqrtK);
+                    return new Mul(factor, term).simplify();
+                }
+            }
+        }
+
+        // Form: 1 / sqrt(a - k*x^2) -> asin
+        // Div(num, Call('sqrt', [den]))
+        if (expr instanceof Div && expr.right instanceof Call && expr.right.funcName === 'sqrt') {
+            const num = expr.left;
+            const denInner = expr.right.args[0];
+
+            if (!this._dependsOn(num, varNode)) {
+                // Check denInner: A - B*x^2
+                const poly = this._getPolyCoeffs(denInner, varNode);
+                if (poly && poly.maxDeg === 2) {
+                     const a = poly.coeffs[2]; // coeff of x^2 (should be negative for asin)
+                     const b = poly.coeffs[1];
+                     const c = poly.coeffs[0] || new Num(0);
+
+                     if (b && !(b instanceof Num && b.value === 0)) return null;
+
+                     // Form: c + a*x^2.
+                     // Check if 'a' is negative
+                     let isNeg = false;
+                     if (a instanceof Num && a.value < 0) isNeg = true;
+                     else if (a instanceof Mul && a.left instanceof Num && a.left.value < 0) isNeg = true;
+
+                     if (isNeg) {
+                         // asin form
+                         // Integral 1/sqrt(c - k*x^2)
+                         // let k = -a > 0
+                         const k = new Mul(new Num(-1), a).simplify();
+                         // result = (num/sqrt(k)) * asin(x * sqrt(k/c))
+                         // Check c > 0
+                         // We assume valid domain.
+
+                         const sqrtK = new Call('sqrt', [k]).simplify();
+                         const ratio = new Div(k, c).simplify(); // k/c
+                         const sqrtRatio = new Call('sqrt', [ratio]).simplify();
+
+                         const result = new Mul(new Div(num, sqrtK), new Call('asin', [new Mul(sqrtRatio, varNode)]));
+                         return result.simplify();
+                     } else {
+                         // Positive a -> asinh or ln(x + sqrt(x^2+A))
+                         // Integral 1/sqrt(a*x^2 + c)
+                         // = 1/sqrt(a) * asinh(x * sqrt(a/c))
+                         const sqrtA = new Call('sqrt', [a]).simplify();
+                         const ratio = new Div(a, c).simplify();
+                         const sqrtRatio = new Call('sqrt', [ratio]).simplify();
+
+                         const term = new Call('asinh', [new Mul(sqrtRatio, varNode)]);
+                         return new Mul(new Div(num, sqrtA), term).simplify();
+                     }
+                }
+            }
+        }
+
+        return null;
     }
 
     _integrateSubstitution(expr, varNode) {
