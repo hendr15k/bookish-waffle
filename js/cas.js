@@ -271,7 +271,7 @@ class CAS {
                  // Check for guess (Newton-Raphson)
                  if (args.length === 3) {
                      const guess = args[2];
-                     if (!(varNode instanceof Sym)) throw new Error("Numeric solve requires a single variable");
+                     if (!(varNode instanceof Sym) && !(varNode instanceof Vec)) throw new Error("Second argument to fsolve must be a variable or list of variables");
                      return this._fsolve(eq, varNode, guess);
                  }
 
@@ -2119,8 +2119,15 @@ perm, tran, irem, ifactor`;
     }
 
     _fsolve(eq, varNode, guess) {
-        // Newton-Raphson Method
+        // Multivariate Newton-Raphson
+        if (eq instanceof Vec && varNode instanceof Vec && guess instanceof Vec) {
+            return this._fsolveSystem(eq, varNode, guess);
+        }
+
+        // Single Variable Newton-Raphson Method
         // x_{n+1} = x_n - f(x_n) / f'(x_n)
+
+        if (!(varNode instanceof Sym)) throw new Error("Numeric solve requires a single variable for single equation");
 
         let expr;
         if (eq instanceof Eq) {
@@ -2151,6 +2158,116 @@ perm, tran, irem, ifactor`;
         }
 
         throw new Error("Numeric solver did not converge");
+    }
+
+    _fsolveSystem(eqsVec, varsVec, guessVec) {
+        const n = eqsVec.elements.length;
+        if (varsVec.elements.length !== n || guessVec.elements.length !== n) {
+            throw new Error("Dimension mismatch in fsolve system");
+        }
+
+        // Normalize equations f(x) = 0
+        const functions = eqsVec.elements.map(e => {
+            if (e instanceof Eq) return new Sub(e.left, e.right).simplify();
+            return e.simplify();
+        });
+
+        const vars = varsVec.elements;
+        let currentX = guessVec.elements.map(g => g.evaluateNumeric());
+        if (currentX.some(v => isNaN(v))) throw new Error("Initial guess must be numeric");
+
+        // Jacobian Matrix J[i][j] = df_i / dx_j
+        // Pre-compute symbolic derivatives
+        const jacobianSymbolic = [];
+        for(let i=0; i<n; i++) {
+            const row = [];
+            for(let j=0; j<n; j++) {
+                row.push(functions[i].diff(vars[j]).simplify());
+            }
+            jacobianSymbolic.push(row);
+        }
+
+        const maxIter = 100;
+        const tol = 1e-9;
+
+        for (let iter = 0; iter < maxIter; iter++) {
+            // Evaluate F(x)
+            const F = [];
+            for(let i=0; i<n; i++) {
+                let val = functions[i];
+                for(let k=0; k<n; k++) val = val.substitute(vars[k], new Num(currentX[k]));
+                F.push(val.evaluateNumeric());
+            }
+
+            // Check convergence (norm of F)
+            const normF = Math.sqrt(F.reduce((sum, v) => sum + v*v, 0));
+            if (normF < tol) {
+                return new Vec(currentX.map(v => new Num(v)));
+            }
+
+            // Evaluate Jacobian J(x)
+            const J = [];
+            for(let i=0; i<n; i++) {
+                const row = [];
+                for(let j=0; j<n; j++) {
+                    let val = jacobianSymbolic[i][j];
+                    for(let k=0; k<n; k++) val = val.substitute(vars[k], new Num(currentX[k]));
+                    row.push(val.evaluateNumeric());
+                }
+                J.push(row);
+            }
+
+            // Solve J * deltaX = -F
+            // Use Gaussian elimination for numerical system
+            // Augmented matrix [J | -F]
+            const M = [];
+            for(let i=0; i<n; i++) {
+                const row = [...J[i], -F[i]];
+                M.push(row);
+            }
+
+            // Gaussian elimination
+            for(let i=0; i<n; i++) {
+                // Pivot
+                let maxRow = i;
+                for(let k=i+1; k<n; k++) {
+                    if (Math.abs(M[k][i]) > Math.abs(M[maxRow][i])) maxRow = k;
+                }
+                [M[i], M[maxRow]] = [M[maxRow], M[i]];
+
+                if (Math.abs(M[i][i]) < 1e-12) throw new Error("Jacobian is singular");
+
+                for(let k=i+1; k<n; k++) {
+                    const factor = M[k][i] / M[i][i];
+                    for(let j=i; j<=n; j++) {
+                        M[k][j] -= factor * M[i][j];
+                    }
+                }
+            }
+
+            // Back substitution
+            const deltaX = new Array(n).fill(0);
+            for(let i=n-1; i>=0; i--) {
+                let sum = M[i][n];
+                for(let j=i+1; j<n; j++) {
+                    sum -= M[i][j] * deltaX[j];
+                }
+                deltaX[i] = sum / M[i][i];
+            }
+
+            // Update currentX
+            for(let i=0; i<n; i++) {
+                currentX[i] += deltaX[i];
+            }
+
+            // Check step size
+            const stepSize = Math.sqrt(deltaX.reduce((sum, v) => sum + v*v, 0));
+            if (stepSize < tol) {
+                return new Vec(currentX.map(v => new Num(v)));
+            }
+        }
+
+        throw new Error("System solver did not converge");
     }
 
     _nIntegrate(expr, varNode, start, end) {
@@ -2942,6 +3059,48 @@ perm, tran, irem, ifactor`;
         }
 
         try {
+            // Check for Infinity - Infinity form
+            if (expr instanceof Sub || expr instanceof Add) {
+                const L_left = this._limit(expr.left, varNode, point, depth + 1);
+                const L_right = this._limit(expr.right, varNode, point, depth + 1);
+
+                const isInf = (node) => node instanceof Sym && (node.name === 'Infinity' || node.name === 'infinity');
+                const isNegInf = (node) => node instanceof Mul && node.left instanceof Num && node.left.value === -1 && isInf(node.right);
+
+                const leftInf = isInf(L_left) || isNegInf(L_left);
+                const rightInf = isInf(L_right) || isNegInf(L_right);
+
+                if (leftInf && rightInf) {
+                    // Possible Inf - Inf form
+                    // Attempt to combine fractions or simplify
+                    // E.g. 1/x - 1/sin(x) -> (sin(x)-x) / (x*sin(x))
+                    // simplify() handles basic fraction combination if they are numeric
+                    // But we need to force combination for symbolic fractions.
+                    // Let's try combining manually if they are Divs.
+
+                    // Check if expr can be combined
+                    if (expr.left instanceof Div && expr.right instanceof Div) {
+                        const n1 = expr.left.left;
+                        const d1 = expr.left.right;
+                        const n2 = expr.right.left;
+                        const d2 = expr.right.right;
+
+                        // (n1*d2 +/- n2*d1) / (d1*d2)
+                        let num;
+                        if (expr instanceof Add) num = new Add(new Mul(n1, d2), new Mul(n2, d1));
+                        else num = new Sub(new Mul(n1, d2), new Mul(n2, d1));
+
+                        const den = new Mul(d1, d2);
+                        const combined = new Div(num, den).simplify(); // This might cancel terms or prepare for L'Hopital
+
+                        if (combined instanceof Div) {
+                             // Now evaluate limit of combined
+                             return this._limit(combined, varNode, point, depth + 1);
+                        }
+                    }
+                }
+            }
+
             // Check for 1^Infinity form: lim (base^exp)
             if (expr instanceof Pow) {
                 const L_base = this._limit(expr.left, varNode, point, depth + 1);
