@@ -242,8 +242,21 @@ class CAS {
                  if (args.length < 2) throw new Error("solve requires at least 2 arguments: equation and variable");
                  const eq = args[0];
                  const varNode = args[1];
+
+                 // Check for guess (Newton-Raphson)
+                 if (args.length === 3) {
+                     const guess = args[2];
+                     if (!(varNode instanceof Sym)) throw new Error("Numeric solve requires a single variable");
+                     return this._fsolve(eq, varNode, guess);
+                 }
+
                  if (!(varNode instanceof Sym) && !(varNode instanceof Vec)) throw new Error("Second argument to solve must be a variable or list of variables");
                  return this._solve(eq, varNode);
+            }
+
+            if (node.funcName === 'nIntegrate' || node.funcName === 'numeric_integrate') {
+                if (args.length !== 4) throw new Error("nIntegrate requires 4 arguments: expr, var, start, end");
+                return this._nIntegrate(args[0], args[1], args[2], args[3]);
             }
 
             if (node.funcName === 'minimize') {
@@ -1077,6 +1090,7 @@ expand, simplify, solve, minimize, maximize,
 det, inv, trans, cross, dot, norm, grad, curl, divergence,
 gcd, lcm, factor, nCr, nPr, isPrime, factorial,
 mean, median, variance, linearRegression,
+nIntegrate, fsolve,
 normalPDF, normalCDF, invNorm, binomialPDF, binomialCDF,
 poissonPDF, poissonCDF, exponentialPDF, exponentialCDF,
 geometricPDF, geometricCDF, chisquarePDF,
@@ -1867,6 +1881,71 @@ perm, tran, irem, ifactor`;
         if (results.length === 0) return new Call('set', []);
         if (results.length === 1) return results[0];
         return new Call('set', results);
+    }
+
+    _fsolve(eq, varNode, guess) {
+        // Newton-Raphson Method
+        // x_{n+1} = x_n - f(x_n) / f'(x_n)
+
+        let expr;
+        if (eq instanceof Eq) {
+            expr = new Sub(eq.left, eq.right).simplify();
+        } else {
+            expr = eq.simplify();
+        }
+
+        const deriv = expr.diff(varNode).simplify();
+        let x = guess.evaluateNumeric();
+        if (isNaN(x)) throw new Error("Initial guess must evaluate to a number");
+
+        const maxIter = 100;
+        const tol = 1e-9;
+
+        for (let i = 0; i < maxIter; i++) {
+            const fVal = expr.substitute(varNode, new Num(x)).evaluateNumeric();
+            const dVal = deriv.substitute(varNode, new Num(x)).evaluateNumeric();
+
+            if (Math.abs(dVal) < 1e-12) throw new Error("Derivative is zero during iteration");
+
+            const xNew = x - fVal / dVal;
+
+            if (Math.abs(xNew - x) < tol) {
+                return new Num(xNew);
+            }
+            x = xNew;
+        }
+
+        throw new Error("Numeric solver did not converge");
+    }
+
+    _nIntegrate(expr, varNode, start, end) {
+        // Simpson's Rule
+        // int(f) approx (b-a)/6 * (f(a) + 4f((a+b)/2) + f(b))
+        // Composite Simpson's Rule
+
+        const a = start.evaluateNumeric();
+        const b = end.evaluateNumeric();
+
+        if (isNaN(a) || isNaN(b)) throw new Error("Integration bounds must be numeric");
+
+        const n = 100; // Even number of intervals
+        const h = (b - a) / n;
+
+        const f = (val) => {
+            const res = expr.substitute(varNode, new Num(val)).evaluateNumeric();
+            if (isNaN(res)) throw new Error("Function evaluation failed at " + val);
+            return res;
+        };
+
+        let sum = f(a) + f(b);
+
+        for (let i = 1; i < n; i++) {
+            const x = a + i * h;
+            if (i % 2 === 0) sum += 2 * f(x);
+            else sum += 4 * f(x);
+        }
+
+        return new Num((h / 3) * sum);
     }
 
     _solve(eq, varNode) {
