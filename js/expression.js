@@ -2117,6 +2117,7 @@ class Lt extends BinaryOp {
     }
     evaluateNumeric() { return (this.left.evaluateNumeric() < this.right.evaluateNumeric()) ? 1 : 0; }
     toLatex() { return `${this.left.toLatex()} < ${this.right.toLatex()}`; }
+    diff(varName) { return new Num(0); } // Treat as constant for differentiation safety
 }
 
 class Gt extends BinaryOp {
@@ -2131,6 +2132,7 @@ class Gt extends BinaryOp {
     }
     evaluateNumeric() { return (this.left.evaluateNumeric() > this.right.evaluateNumeric()) ? 1 : 0; }
     toLatex() { return `${this.left.toLatex()} > ${this.right.toLatex()}`; }
+    diff(varName) { return new Num(0); }
 }
 
 class Le extends BinaryOp {
@@ -2145,6 +2147,7 @@ class Le extends BinaryOp {
     }
     evaluateNumeric() { return (this.left.evaluateNumeric() <= this.right.evaluateNumeric()) ? 1 : 0; }
     toLatex() { return `${this.left.toLatex()} \\leq ${this.right.toLatex()}`; }
+    diff(varName) { return new Num(0); }
 }
 
 class Ge extends BinaryOp {
@@ -2159,6 +2162,7 @@ class Ge extends BinaryOp {
     }
     evaluateNumeric() { return (this.left.evaluateNumeric() >= this.right.evaluateNumeric()) ? 1 : 0; }
     toLatex() { return `${this.left.toLatex()} \\geq ${this.right.toLatex()}`; }
+    diff(varName) { return new Num(0); }
 }
 
 class At extends Expr {

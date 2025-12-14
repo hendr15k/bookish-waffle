@@ -1767,6 +1767,180 @@ perm, tran, irem, ifactor`;
         return new Div(new Mul(sign, res), an).simplify();
     }
 
+    _solveInequality(ineq, varNode) {
+        // Normalize to P(x) > 0 (or >=, <, <=)
+        // Move everything to Left Side: LHS - RHS
+        const expr = new Sub(ineq.left, ineq.right).simplify();
+        let type = ''; // gt, ge, lt, le
+
+        if (ineq instanceof Gt) type = 'gt';
+        else if (ineq instanceof Ge) type = 'ge';
+        else if (ineq instanceof Lt) type = 'lt';
+        else if (ineq instanceof Le) type = 'le';
+
+        // 1. Try Linear Logic: ax + b > 0
+        const poly = this._getPolyCoeffs(expr, varNode);
+        if (poly && poly.maxDeg === 1) {
+            const a = poly.coeffs[1];
+            const b = poly.coeffs[0] || new Num(0);
+
+            // Inequality: ax + b > 0  =>  ax > -b
+            const negB = new Mul(new Num(-1), b).simplify();
+
+            // We need to know the sign of 'a' to flip operator
+            const aVal = a.evaluateNumeric();
+            if (!isNaN(aVal)) {
+                const rhs = new Div(negB, a).simplify();
+                if (aVal > 0) {
+                    // Sign preserved
+                    if (type === 'gt') return new Gt(varNode, rhs);
+                    if (type === 'ge') return new Ge(varNode, rhs);
+                    if (type === 'lt') return new Lt(varNode, rhs);
+                    if (type === 'le') return new Le(varNode, rhs);
+                } else if (aVal < 0) {
+                    // Sign flipped
+                    if (type === 'gt') return new Lt(varNode, rhs);
+                    if (type === 'ge') return new Le(varNode, rhs);
+                    if (type === 'lt') return new Gt(varNode, rhs);
+                    if (type === 'le') return new Ge(varNode, rhs);
+                } else {
+                    // a = 0. b > 0?
+                    // Check logic of 0*x + b > 0 => b > 0
+                    const bVal = b.evaluateNumeric();
+                    if (!isNaN(bVal)) {
+                        let holds = false;
+                        if (type === 'gt') holds = bVal > 0;
+                        if (type === 'ge') holds = bVal >= 0;
+                        if (type === 'lt') holds = bVal < 0;
+                        if (type === 'le') holds = bVal <= 0;
+                        return holds ? new Sym('true') : new Sym('false');
+                    }
+                }
+            } else {
+                // Symbolic 'a'. We can't determine direction.
+                // Return undefined or just the simplified form?
+                // Standard CAS might return piecewise or warning.
+                // Let's return strict form ax > -b (assuming positive?) No, dangerous.
+                return new Call('solve', [ineq, varNode]);
+            }
+        }
+
+        // 2. Polynomial Logic via Roots / Critical Points
+        // Roots of P(x) = 0
+        const rootsRes = this._solve(expr, varNode);
+        let roots = [];
+
+        if (rootsRes instanceof Call && rootsRes.funcName === 'set') {
+            roots = rootsRes.args;
+        } else if (rootsRes instanceof Expr && !(rootsRes instanceof Call && rootsRes.funcName === 'solve')) {
+            roots = [rootsRes];
+        }
+
+        // Filter valid numeric roots
+        const numRoots = [];
+        for (const r of roots) {
+            const val = r.evaluateNumeric();
+            if (!isNaN(val)) numRoots.push({ val: val, node: r });
+        }
+
+        // Sort roots
+        numRoots.sort((a, b) => a.val - b.val);
+
+        // Deduplicate
+        const uniqueRoots = [];
+        if (numRoots.length > 0) {
+            uniqueRoots.push(numRoots[0]);
+            for(let i=1; i<numRoots.length; i++) {
+                if (Math.abs(numRoots[i].val - numRoots[i-1].val) > 1e-9) {
+                    uniqueRoots.push(numRoots[i]);
+                }
+            }
+        }
+
+        if (uniqueRoots.length === 0) {
+            // No roots (or only complex/unknown).
+            // Test one point (0 or any)
+            const testVal = expr.substitute(varNode, new Num(0)).evaluateNumeric();
+            if (isNaN(testVal)) return new Call('solve', [ineq, varNode]);
+
+            let holds = false;
+            if (type === 'gt') holds = testVal > 0;
+            if (type === 'ge') holds = testVal >= 0;
+            if (type === 'lt') holds = testVal < 0;
+            if (type === 'le') holds = testVal <= 0;
+
+            return holds ? new Sym('true') : new Sym('false'); // Or Empty set / All reals
+        }
+
+        // Test Intervals
+        // Intervals: (-inf, r0), (r0, r1), ..., (rn, inf)
+        // Test points: r0 - 1, (r0+r1)/2, rn + 1
+        const intervals = [];
+        // (-inf, r0)
+        intervals.push({
+            check: uniqueRoots[0].val - 1,
+            cond: (x) => new Lt(x, uniqueRoots[0].node)
+        });
+
+        for(let i=0; i<uniqueRoots.length - 1; i++) {
+            const mid = (uniqueRoots[i].val + uniqueRoots[i+1].val) / 2;
+            intervals.push({
+                check: mid,
+                cond: (x) => new And(new Gt(x, uniqueRoots[i].node), new Lt(x, uniqueRoots[i+1].node))
+            });
+        }
+
+        // (rn, inf)
+        intervals.push({
+            check: uniqueRoots[uniqueRoots.length - 1].val + 1,
+            cond: (x) => new Gt(x, uniqueRoots[uniqueRoots.length - 1].node)
+        });
+
+        // Collect valid intervals
+        const validConds = [];
+        for(const interval of intervals) {
+            const testVal = expr.substitute(varNode, new Num(interval.check)).evaluateNumeric();
+            let holds = false;
+            if (type === 'gt') holds = testVal > 0;
+            if (type === 'ge') holds = testVal >= 0;
+            if (type === 'lt') holds = testVal < 0;
+            if (type === 'le') holds = testVal <= 0;
+
+            if (holds) {
+                validConds.push(interval.cond(varNode));
+            }
+        }
+
+        // Handle Equality at roots for >= and <=
+        if (type === 'ge' || type === 'le') {
+            // Check roots themselves (usually valid for P(x)=0)
+            // But if P(x) is undefined at root (e.g. rational), we should be careful.
+            // Assuming polynomial here, roots are valid.
+            // We can merge intervals if they touch.
+            // e.g. x < 2 OR x > 2 AND include 2 -> All Reals
+            // My interval logic produces strict inequalities.
+            // If we have x < 2 AND x > 2 AND 2 is valid, we can merge.
+            // For now, let's just OR them.
+            // Ideally: x <= 2 OR x >= 3
+            // If I have (x < 2) and (2 < x < 3) and roots 2,3 are valid.
+            // Merging logic is complex.
+            // Simple approach: Return "Or(validConds) OR (Eq(x, r) for all r)" ?
+            for(const r of uniqueRoots) {
+                validConds.push(new Eq(varNode, r.node));
+            }
+        }
+
+        if (validConds.length === 0) return new Sym('false'); // No solution
+        if (validConds.length === 1) return validConds[0];
+
+        // Combine with OR
+        let res = validConds[0];
+        for(let i=1; i<validConds.length; i++) {
+            res = new Or(res, validConds[i]);
+        }
+        return res;
+    }
+
     _solveSystem(eqs, vars) {
         const n = eqs.elements.length;
         const m = vars.elements.length;
@@ -2002,6 +2176,11 @@ perm, tran, irem, ifactor`;
     _solve(eq, varNode) {
         if (eq instanceof Vec && varNode instanceof Vec) {
             return this._solveSystem(eq, varNode);
+        }
+
+        // Handle Inequalities
+        if (eq instanceof Lt || eq instanceof Gt || eq instanceof Le || eq instanceof Ge) {
+            return this._solveInequality(eq, varNode);
         }
 
         let expr;
