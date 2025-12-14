@@ -91,5 +91,23 @@ window.HELP_DATA = {
             "mean([1, 2, 3, 4, 5])",
             "mean([10, 20, 30])"
         ]
+    },
+    "studentT": {
+        "description": "Student's t-distribution functions.",
+        "syntax": "studentTPDF(x, df), studentTCDF(x, df), invT(p, df)",
+        "examples": [
+            "studentTPDF(0, 10)",
+            "studentTCDF(1.5, 10)",
+            "invT(0.95, 10)"
+        ]
+    },
+    "chisquare": {
+        "description": "Chi-Square distribution functions.",
+        "syntax": "chisquarePDF(x, k), chisquareCDF(x, k), invChiSquare(p, k)",
+        "examples": [
+            "chisquarePDF(2, 4)",
+            "chisquareCDF(5, 4)",
+            "invChiSquare(0.95, 4)"
+        ]
     }
 };

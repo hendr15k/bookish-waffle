@@ -768,6 +768,31 @@ class CAS {
                 return this._chisquarePDF(args[0], args[1]);
             }
 
+            if (node.funcName === 'chisquareCDF') {
+                if (args.length !== 2) throw new Error("chisquareCDF requires 2 arguments: x, k");
+                return this._chisquareCDF(args[0], args[1]);
+            }
+
+            if (node.funcName === 'invChiSquare') {
+                if (args.length !== 2) throw new Error("invChiSquare requires 2 arguments: area, k");
+                return this._invChiSquare(args[0], args[1]);
+            }
+
+            if (node.funcName === 'studentTPDF') {
+                if (args.length !== 2) throw new Error("studentTPDF requires 2 arguments: x, df");
+                return this._studentTPDF(args[0], args[1]);
+            }
+
+            if (node.funcName === 'studentTCDF') {
+                if (args.length !== 2) throw new Error("studentTCDF requires 2 arguments: x, df");
+                return this._studentTCDF(args[0], args[1]);
+            }
+
+            if (node.funcName === 'invT') {
+                if (args.length !== 2) throw new Error("invT requires 2 arguments: area, df");
+                return this._invT(args[0], args[1]);
+            }
+
             if (node.funcName === 'compound') {
                 if (args.length !== 4) throw new Error("compound requires 4 arguments: P, r, n, t");
                 return this._compound(args[0], args[1], args[2], args[3]);
@@ -1110,7 +1135,8 @@ mean, median, variance, linearRegression,
 nIntegrate, fsolve,
 normalPDF, normalCDF, invNorm, binomialPDF, binomialCDF,
 poissonPDF, poissonCDF, exponentialPDF, exponentialCDF,
-geometricPDF, geometricCDF, chisquarePDF,
+geometricPDF, geometricCDF, chisquarePDF, chisquareCDF, invChiSquare,
+studentTPDF, studentTCDF, invT,
 compound, loan,
 degree, coeff, symb2poly, poly2symb,
 seq, range, sort, reverse,
@@ -2153,7 +2179,17 @@ perm, tran, irem, ifactor`;
     }
 
     _gamma(z) {
-        // Lanczos approximation
+        if (z < 0.5) {
+            // Reflection formula for negative z or z < 0.5
+            // Gamma(z) * Gamma(1-z) = pi / sin(pi*z)
+            // Use this directly instead of logGamma to preserve sign for negative inputs
+            return Math.PI / (Math.sin(Math.PI * z) * this._gamma(1 - z));
+        }
+        return Math.exp(this._logGamma(z));
+    }
+
+    _logGamma(z) {
+        // Lanczos approximation for z >= 0.5
         const g = 7;
         const C = [
             0.99999999999980993,
@@ -2167,14 +2203,116 @@ perm, tran, irem, ifactor`;
             1.5056327351493116e-7
         ];
 
-        if (z < 0.5) return Math.PI / (Math.sin(Math.PI * z) * this._gamma(1 - z));
+        if (z < 0.5) {
+            // We shouldn't really use logGamma for negative z if we want the sign?
+            // But if user calls logGamma explicitly?
+            // log(Gamma(z)). If Gamma(z) < 0, this is complex.
+            // For now, assume this is used for probability where z > 0 usually.
+            // But if z is just small positive (< 0.5), we use reflection.
+            return Math.log(Math.PI / (Math.sin(Math.PI * z) * this._gamma(1 - z)));
+        }
 
         z -= 1;
         let x = C[0];
         for (let i = 1; i < g + 2; i++) x += C[i] / (z + i);
 
         const t = z + g + 0.5;
-        return Math.sqrt(2 * Math.PI) * Math.pow(t, z + 0.5) * Math.exp(-t) * x;
+        return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x);
+    }
+
+    _gammainc(s, x) {
+        // Regularized Incomplete Gamma P(s, x)
+        // Uses Series for x < s+1, Continued Fraction for x >= s+1
+        if (x < 0) return 0;
+        if (x === 0) return 0;
+        if (s <= 0) return 0; // Undefined usually
+
+        if (x < s + 1.0) {
+            // Series
+            let ap = s;
+            let sum = 1.0 / s;
+            let del = sum;
+            for (let n = 1; n < 100; n++) {
+                ap += 1.0;
+                del *= x / ap;
+                sum += del;
+                if (Math.abs(del) < Math.abs(sum) * 1e-14) {
+                    return sum * Math.exp(-x + s * Math.log(x) - this._logGamma(s));
+                }
+            }
+        } else {
+            // Continued Fraction
+            const gln = this._logGamma(s);
+            let b = x + 1.0 - s;
+            let c = 1.0 / 1e-30;
+            let d = 1.0 / b;
+            let h = d;
+            for (let i = 1; i < 100; i++) {
+                const an = -i * (i - s);
+                b += 2.0;
+                d = an * d + b;
+                if (Math.abs(d) < 1e-30) d = 1e-30;
+                c = b + an / c;
+                if (Math.abs(c) < 1e-30) c = 1e-30;
+                d = 1.0 / d;
+                const del = d * c;
+                h *= del;
+                if (Math.abs(del - 1.0) < 1e-14) {
+                    return 1.0 - Math.exp(-x + s * Math.log(x) - gln) * h;
+                }
+            }
+        }
+        return 0; // Failed
+    }
+
+    _betainc(x, a, b) {
+        // Regularized Incomplete Beta I_x(a, b)
+        if (x < 0 || x > 1) return 0; // Or NaN
+        if (x === 0) return 0;
+        if (x === 1) return 1;
+
+        const bt = Math.exp(this._logGamma(a + b) - this._logGamma(a) - this._logGamma(b) + a * Math.log(x) + b * Math.log(1.0 - x));
+
+        if (x < (a + 1.0) / (a + b + 2.0)) {
+            return bt * this._betacf(x, a, b) / a;
+        } else {
+            return 1.0 - bt * this._betacf(1.0 - x, b, a) / b;
+        }
+    }
+
+    _betacf(x, a, b) {
+        // Continued Fraction for Beta
+        const MAXIT = 100;
+        const EPS = 1e-14;
+        let qab = a + b;
+        let qap = a + 1.0;
+        let qam = a - 1.0;
+        let c = 1.0;
+        let d = 1.0 - qab * x / qap;
+        if (Math.abs(d) < 1e-30) d = 1e-30;
+        d = 1.0 / d;
+        let h = d;
+
+        for (let m = 1; m <= MAXIT; m++) {
+            let m2 = 2 * m;
+            let aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+            d = 1.0 + aa * d;
+            if (Math.abs(d) < 1e-30) d = 1e-30;
+            c = 1.0 + aa / c;
+            if (Math.abs(c) < 1e-30) c = 1e-30;
+            d = 1.0 / d;
+            h *= d * c;
+            aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+            d = 1.0 + aa * d;
+            if (Math.abs(d) < 1e-30) d = 1e-30;
+            c = 1.0 + aa / c;
+            if (Math.abs(c) < 1e-30) c = 1e-30;
+            d = 1.0 / d;
+            const del = d * c;
+            h *= del;
+            if (Math.abs(del - 1.0) < EPS) break;
+        }
+        return h;
     }
 
     _integrateTrig(expr, varNode) {
@@ -3518,6 +3656,126 @@ perm, tran, irem, ifactor`;
         const term3 = new Call('exp', [new Mul(new Num(-0.5), x)]);
 
         return new Mul(term1, new Mul(term2, term3)).simplify();
+    }
+
+    _studentTPDF(x, df) {
+        x = x.simplify();
+        df = df.simplify();
+
+        if (x instanceof Num && df instanceof Num) {
+            const xv = x.value;
+            const v = df.value;
+            if (v <= 0) return new Num(0);
+
+            // Use Log Gamma to avoid overflow for large df
+            // log(coeff) = logGamma((v+1)/2) - 0.5*log(v*pi) - logGamma(v/2)
+            const logNum = this._logGamma((v + 1) / 2);
+            const logDen = 0.5 * Math.log(v * Math.PI) + this._logGamma(v / 2);
+            const logCoeff = logNum - logDen;
+
+            const base = 1 + (xv * xv) / v;
+            const power = -(v + 1) / 2;
+
+            // result = exp(logCoeff) * base^power
+            // result = exp(logCoeff + power * log(base))
+            const logResult = logCoeff + power * Math.log(base);
+            return new Num(Math.exp(logResult));
+        }
+        return new Call('studentTPDF', [x, df]);
+    }
+
+    _studentTCDF(x, df) {
+        x = x.simplify();
+        df = df.simplify();
+
+        if (x instanceof Num && df instanceof Num) {
+            const t = x.value;
+            const v = df.value;
+            if (v <= 0) return new Num(0);
+
+            // F(t) = 1 - 0.5 * I_x(v/2, 1/2) where x = v / (v + t^2)
+            const xt = v / (v + t * t);
+            const p = 0.5 * this._betainc(xt, v / 2, 0.5);
+
+            if (t > 0) return new Num(1 - p);
+            return new Num(p);
+        }
+        return new Call('studentTCDF', [x, df]);
+    }
+
+    _invT(area, df) {
+        area = area.simplify();
+        df = df.simplify();
+
+        if (area instanceof Num && df instanceof Num) {
+            const p = area.value;
+            const v = df.value;
+            if (p <= 0 || p >= 1) return new Sym("NaN");
+            if (v <= 0) return new Sym("NaN");
+
+            // Use binary search on CDF
+            // Range roughly -10 to 10? T can be large.
+            // Start with rough guess using Normal approx or just search range.
+            let min = -100, max = 100;
+            // Expand range if needed
+            while (this._studentTCDF(new Num(min), df).value > p) min *= 2;
+            while (this._studentTCDF(new Num(max), df).value < p) max *= 2;
+
+            for (let i = 0; i < 100; i++) {
+                const mid = (min + max) / 2;
+                const cdf = this._studentTCDF(new Num(mid), df).value;
+                if (Math.abs(cdf - p) < 1e-9) return new Num(mid);
+                if (cdf < p) min = mid;
+                else max = mid;
+            }
+            return new Num((min + max) / 2);
+        }
+        return new Call('invT', [area, df]);
+    }
+
+    _chisquareCDF(x, k) {
+        x = x.simplify();
+        k = k.simplify();
+
+        if (x instanceof Num && k instanceof Num) {
+            const xv = x.value;
+            const kv = k.value;
+            if (kv <= 0) return new Num(0);
+            if (xv <= 0) return new Num(0);
+
+            // P(k/2, x/2)
+            // _gammainc returns P(s, x) (Regularized Incomplete Gamma)
+            // Arguments for _gammainc are s, x.
+            // We need P(k/2, x/2).
+            return new Num(this._gammainc(kv / 2, xv / 2));
+        }
+        return new Call('chisquareCDF', [x, k]);
+    }
+
+    _invChiSquare(area, k) {
+        area = area.simplify();
+        k = k.simplify();
+
+        if (area instanceof Num && k instanceof Num) {
+            const p = area.value;
+            const kv = k.value;
+            if (p <= 0 || p >= 1) return new Sym("NaN");
+            if (kv <= 0) return new Sym("NaN");
+
+            // Binary search on CDF (x > 0)
+            let min = 0, max = 100;
+            while (this._chisquareCDF(new Num(max), k).value < p) max *= 2;
+
+            for (let i = 0; i < 100; i++) {
+                const mid = (min + max) / 2;
+                const cdf = this._chisquareCDF(new Num(mid), k).value;
+                if (Math.abs(cdf - p) < 1e-9) return new Num(mid);
+                if (cdf < p) min = mid;
+                else max = mid;
+            }
+            return new Num((min + max) / 2);
+        }
+        return new Call('invChiSquare', [area, k]);
     }
 
     _compound(P, r, n, t) {
