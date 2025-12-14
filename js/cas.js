@@ -1855,6 +1855,9 @@ perm, tran, irem, ifactor`;
         expr = expr.expand().simplify();
 
         try {
+            // Try factoring FIRST if degree > 2, before expanding?
+            // No, expanding is needed to know degree.
+
             // Try polynomial extraction first
             const poly = this._getPolyCoeffs(expr, varNode);
             if (poly) {
@@ -1887,6 +1890,70 @@ perm, tran, irem, ifactor`;
                         const sol2 = new Div(new Sub(new Mul(new Num(-1), B), sqrtDisc), new Mul(new Num(2), A));
 
                         return new Call("set", [sol1.simplify(), sol2.simplify()]);
+                    }
+                } else if (poly.maxDeg > 2) {
+                    // Try factoring higher degree polynomials
+                    // Note: _factor internally uses _factorRational which might use the same poly coeffs
+                    const factored = this._factor(expr);
+
+                    // If factorization successfully broke it down (not just returned the input wrapped)
+                    // Important: compare strings or structure.
+                    const isFactorCall = (factored instanceof Call && factored.funcName === 'factor');
+
+                    if (!isFactorCall) {
+                        const terms = [];
+                        const collect = (n) => {
+                            if (n instanceof Mul) {
+                                collect(n.left);
+                                collect(n.right);
+                            } else {
+                                terms.push(n);
+                            }
+                        };
+
+                        // Handle 'factored' call wrapper if it exists (for integers, but maybe mixed)
+                        if (factored instanceof Call && factored.funcName === 'factored') {
+                            factored.args.forEach(a => terms.push(a));
+                        } else {
+                            collect(factored);
+                        }
+
+                        if (terms.length >= 1) {
+                            let solutions = [];
+
+                            for(const term of terms) {
+                                // term could be Pow(base, exp)
+                                let target = term;
+                                if (term instanceof Pow) target = term.left;
+
+                                // Solve factor = 0
+                                if (this._dependsOn(target, varNode)) {
+                                    const sol = this._solve(target, varNode);
+
+                                    if (sol instanceof Call && sol.funcName === 'set') {
+                                        sol.args.forEach(s => solutions.push(s));
+                                    } else if (sol instanceof Expr && !(sol instanceof Call && sol.funcName === 'solve')) {
+                                        solutions.push(sol);
+                                    }
+                                }
+                            }
+
+                            if (solutions.length > 0) {
+                                // Deduplicate
+                                const unique = [];
+                                const seen = new Set();
+                                solutions.forEach(s => {
+                                    const str = s.toString();
+                                    if (!seen.has(str)) {
+                                        seen.add(str);
+                                        unique.push(s);
+                                    }
+                                });
+
+                                if (unique.length === 1) return unique[0];
+                                return new Call("set", unique);
+                            }
+                        }
                     }
                 }
             }
@@ -2241,26 +2308,67 @@ perm, tran, irem, ifactor`;
             return new Sub(new Mul(a, d), new Mul(b, c)).simplify();
         }
 
-        let det = new Num(0);
-        for (let i = 0; i < cols; i++) {
-            const sign = (i % 2 === 0) ? new Num(1) : new Num(-1);
-            const coeff = matrix.elements[0].elements[i];
+        // Use Gaussian Elimination for Determinant O(n^3)
+        // Check if matrix is numeric to safely use Gaussian without huge symbolic expression explosion
+        // Even for symbolic, Gaussian is usually better than cofactor O(n!) for n > 4
 
-            const subRows = [];
-            for (let r = 1; r < rows; r++) {
-                const subRow = [];
-                for (let c = 0; c < cols; c++) {
-                    if (c === i) continue;
-                    subRow.push(matrix.elements[r].elements[c]);
+        // Clone matrix
+        const M = matrix.elements.map(row => [...row.elements]);
+        let sign = 1;
+        let det = new Num(1);
+
+        for (let i = 0; i < rows; i++) {
+            // Find pivot
+            let pivotIdx = i;
+            let found = false;
+
+            // Search for non-zero pivot
+            for(let k=i; k<rows; k++) {
+                const val = M[k][i].simplify();
+                // Check if zero
+                let isZ = false;
+                if (val instanceof Num && val.value === 0) isZ = true;
+
+                if (!isZ) {
+                    pivotIdx = k;
+                    found = true;
+                    break;
                 }
-                subRows.push(new Vec(subRow));
             }
-            const subMatrix = new Vec(subRows);
 
-            const term = new Mul(new Mul(sign, coeff), this._det(subMatrix));
-            det = new Add(det, term);
+            if (!found) return new Num(0); // Zero column -> det 0
+
+            if (pivotIdx !== i) {
+                // Swap rows
+                const temp = M[i];
+                M[i] = M[pivotIdx];
+                M[pivotIdx] = temp;
+                sign *= -1;
+            }
+
+            const pivot = M[i][i];
+
+            // Eliminate rows below
+            for(let k=i+1; k<rows; k++) {
+                const val = M[k][i];
+                if (val instanceof Num && val.value === 0) continue;
+
+                // factor = M[k][i] / pivot
+                const factor = new Div(val, pivot).simplify();
+
+                for(let j=i; j<cols; j++) {
+                    // M[k][j] -= factor * M[i][j]
+                    M[k][j] = new Sub(M[k][j], new Mul(factor, M[i][j])).simplify();
+                }
+            }
         }
-        return det.simplify();
+
+        // Product of diagonal
+        let prod = new Num(sign);
+        for(let i=0; i<rows; i++) {
+            prod = new Mul(prod, M[i][i]);
+        }
+        return prod.simplify();
     }
 
     _inv(matrix) {
