@@ -716,6 +716,16 @@ class CAS {
                 return this._expRegression(args[0]);
             }
 
+            if (node.funcName === 'powerRegression') {
+                if (args.length !== 1) throw new Error("powerRegression requires 1 argument: data");
+                return this._powerRegression(args[0]);
+            }
+
+            if (node.funcName === 'logRegression') {
+                if (args.length !== 1) throw new Error("logRegression requires 1 argument: data");
+                return this._logRegression(args[0]);
+            }
+
             if (node.funcName === 'normalPDF') {
                 if (args.length !== 3) throw new Error("normalPDF requires 3 arguments: x, mu, sigma");
                 return this._normalPDF(args[0], args[1], args[2]);
@@ -6786,6 +6796,83 @@ perm, tran, irem, ifactor`;
 
         // a * e^(b*x)
         return new Mul(new Num(a), new Call('exp', [new Mul(new Num(b), new Sym('x'))])).simplify();
+    }
+
+    _powerRegression(data) {
+        if (!(data instanceof Vec)) throw new Error("Data must be list");
+        // Model: y = A * x^B
+        // Linearize: ln(y) = ln(A) + B * ln(x)
+        // Y = a + b * X
+        // Y = ln(y), X = ln(x), a = ln(A), b = B
+
+        const logData = [];
+        for(const pt of data.elements) {
+             let x, y;
+             if (pt instanceof Vec && pt.elements.length >= 2) {
+                 x = pt.elements[0].evaluateNumeric();
+                 y = pt.elements[1].evaluateNumeric();
+             }
+
+             if (isNaN(x) || isNaN(y)) throw new Error("Regression data must be numeric");
+             if (x <= 0 || y <= 0) throw new Error("Power regression requires positive x and y values");
+
+             const logX = Math.log(x);
+             const logY = Math.log(y);
+             logData.push({x: logX, y: logY});
+        }
+
+        let sumX=0, sumY=0, sumXY=0, sumXX=0, n=0;
+        for(const pt of logData) {
+             sumX += pt.x; sumY += pt.y; sumXY += pt.x*pt.y; sumXX += pt.x*pt.x;
+             n++;
+        }
+
+        const den = n*sumXX - sumX*sumX;
+        if(den===0) throw new Error("Vertical line");
+
+        const B = (n*sumXY - sumX*sumY) / den; // Slope b
+        const a = (sumY - B*sumX) / n; // Intercept a = ln(A)
+        const A = Math.exp(a);
+
+        // A * x^B
+        return new Mul(new Num(A), new Pow(new Sym('x'), new Num(B))).simplify();
+    }
+
+    _logRegression(data) {
+        if (!(data instanceof Vec)) throw new Error("Data must be list");
+        // Model: y = A + B * ln(x)
+        // Linearize: y = A + B * X
+        // X = ln(x)
+
+        const logData = [];
+        for(const pt of data.elements) {
+             let x, y;
+             if (pt instanceof Vec && pt.elements.length >= 2) {
+                 x = pt.elements[0].evaluateNumeric();
+                 y = pt.elements[1].evaluateNumeric();
+             }
+
+             if (isNaN(x) || isNaN(y)) throw new Error("Regression data must be numeric");
+             if (x <= 0) throw new Error("Logarithmic regression requires positive x values");
+
+             const logX = Math.log(x);
+             logData.push({x: logX, y: y});
+        }
+
+        let sumX=0, sumY=0, sumXY=0, sumXX=0, n=0;
+        for(const pt of logData) {
+             sumX += pt.x; sumY += pt.y; sumXY += pt.x*pt.y; sumXX += pt.x*pt.x;
+             n++;
+        }
+
+        const den = n*sumXX - sumX*sumX;
+        if(den===0) throw new Error("Vertical line");
+
+        const B = (n*sumXY - sumX*sumY) / den; // Slope B
+        const A = (sumY - B*sumX) / n; // Intercept A
+
+        // A + B * ln(x)
+        return new Add(new Num(A), new Mul(new Num(B), new Call('ln', [new Sym('x')]))).simplify();
     }
 
     _kron(A, B) {
