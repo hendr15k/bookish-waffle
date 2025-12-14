@@ -1996,6 +1996,11 @@ perm, tran, irem, ifactor`;
             return this._solveSystem(eq, varNode);
         }
 
+        // Handle Inequalities
+        if (eq instanceof Lt || eq instanceof Gt || eq instanceof Le || eq instanceof Ge) {
+            return this._solveInequality(eq, varNode);
+        }
+
         let expr;
         if (eq instanceof Eq) {
             expr = new Sub(eq.left, eq.right).simplify();
@@ -2127,6 +2132,127 @@ perm, tran, irem, ifactor`;
         }
 
         return new Call("solve", [eq, varNode]);
+    }
+
+    _solveInequality(ineq, varNode) {
+        // Normalize to expr > 0 or < 0
+        const expr = new Sub(ineq.left, ineq.right).simplify();
+
+        // Find roots of expr = 0
+        const rootsRes = this._solve(expr, varNode);
+
+        // Check if solver failed (returned symbolic call)
+        if (rootsRes instanceof Call && rootsRes.funcName === 'solve') {
+            return new Call('solve', [ineq, varNode]);
+        }
+
+        let roots = [];
+        if (rootsRes instanceof Call && rootsRes.funcName === 'set') {
+            roots = rootsRes.args;
+        } else if (rootsRes instanceof Expr) {
+            roots = [rootsRes];
+        }
+
+        // Filter roots to real numeric values
+        const realRoots = [];
+        for(const r of roots) {
+            const val = r.evaluateNumeric();
+            if (!isNaN(val)) realRoots.push({ val: val, node: r });
+        }
+
+        if (realRoots.length === 0 && roots.length > 0) {
+             // Symbolic roots only and we can't evaluate? Cannot reliably solve inequality.
+             // Return symbolic call
+             return new Call('solve', [ineq, varNode]);
+        }
+
+        // Sort
+        realRoots.sort((a, b) => a.val - b.val);
+
+        // Test Intervals
+        const intervals = [];
+        const points = [];
+
+        if (realRoots.length === 0) {
+            points.push({ val: 0, desc: 'all' }); // Test 0
+        } else {
+            // Pick safe test points avoiding roots
+            points.push({ val: realRoots[0].val - 1, desc: '(-inf, r0)' });
+            for(let i=0; i<realRoots.length - 1; i++) {
+                points.push({ val: (realRoots[i].val + realRoots[i+1].val)/2, desc: 'mid' });
+            }
+            points.push({ val: realRoots[realRoots.length-1].val + 1, desc: '(inf)' });
+        }
+
+        const validIntervals = [];
+
+        const check = (val) => {
+            try {
+                const res = expr.substitute(varNode, new Num(val)).evaluateNumeric();
+                if (isNaN(res)) return false; // Undefined
+                if (ineq instanceof Lt) return res < 0;
+                if (ineq instanceof Gt) return res > 0;
+                if (ineq instanceof Le) return res <= 0;
+                if (ineq instanceof Ge) return res >= 0;
+            } catch(e) {}
+            return false;
+        };
+
+        // Helper to check boundaries for non-strict
+        // If Le or Ge, we must include roots where expr=0.
+        // Roots are where expr=0.
+        // My logic below constructs intervals ( ) and joins them.
+        // If it's non-strict, we should output [ ] intervals.
+
+        for(let i=0; i<points.length; i++) {
+            if (check(points[i].val)) {
+                // Determine interval bounds
+                // i corresponds to interval before roots[i] (if i < roots.length)
+                // Actually my points array logic:
+                // points[0] is before roots[0]
+                // points[1] is between roots[0] and roots[1]
+                // ...
+                // points[k] is after roots[k-1] (last root)
+
+                const strict = (ineq instanceof Lt || ineq instanceof Gt);
+
+                if (realRoots.length === 0) {
+                    // All reals satisfied
+                    // Return "true"? Or (-inf, inf)
+                    // Let's return logic: varNode > -inf and varNode < inf?
+                    // Just 1 (true)
+                    return new Num(1);
+                }
+
+                let lower, upper;
+                let cond;
+
+                if (i === 0) {
+                    // x < root[0]
+                    // Strict or non-strict depends on operator
+                    cond = strict ? new Lt(varNode, realRoots[0].node) : new Le(varNode, realRoots[0].node);
+                } else if (i === points.length - 1) {
+                    // x > root[n-1]
+                    cond = strict ? new Gt(varNode, realRoots[i-1].node) : new Ge(varNode, realRoots[i-1].node);
+                } else {
+                    // root[i-1] < x < root[i]
+                    const c1 = strict ? new Gt(varNode, realRoots[i-1].node) : new Ge(varNode, realRoots[i-1].node);
+                    const c2 = strict ? new Lt(varNode, realRoots[i].node) : new Le(varNode, realRoots[i].node);
+                    cond = new And(c1, c2);
+                }
+                validIntervals.push(cond);
+            }
+        }
+
+        if (validIntervals.length === 0) return new Num(0); // False
+        if (validIntervals.length === 1) return validIntervals[0];
+
+        // Join with Or
+        let res = validIntervals[0];
+        for(let k=1; k<validIntervals.length; k++) {
+            res = new Or(res, validIntervals[k]);
+        }
+        return res;
     }
 
     _taylor(expr, varNode, point, order) {
