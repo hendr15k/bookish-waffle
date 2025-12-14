@@ -289,6 +289,7 @@ class Sym extends Expr {
     evaluateNumeric() {
         if (this.name === 'pi') return Math.PI;
         if (this.name === 'e') return Math.E;
+        if (this.name === 'Infinity' || this.name === 'infinity') return Infinity;
         if (this.name === 'i') return NaN; // Or complex object?
         return NaN; // Cannot evaluate generic symbol
     }
@@ -2116,6 +2117,7 @@ class Lt extends BinaryOp {
         return new Lt(l, r);
     }
     evaluateNumeric() { return (this.left.evaluateNumeric() < this.right.evaluateNumeric()) ? 1 : 0; }
+    diff(varName) { return new Num(0); }
     toLatex() { return `${this.left.toLatex()} < ${this.right.toLatex()}`; }
 }
 
@@ -2130,6 +2132,7 @@ class Gt extends BinaryOp {
         return new Gt(l, r);
     }
     evaluateNumeric() { return (this.left.evaluateNumeric() > this.right.evaluateNumeric()) ? 1 : 0; }
+    diff(varName) { return new Num(0); }
     toLatex() { return `${this.left.toLatex()} > ${this.right.toLatex()}`; }
 }
 
@@ -2144,6 +2147,7 @@ class Le extends BinaryOp {
         return new Le(l, r);
     }
     evaluateNumeric() { return (this.left.evaluateNumeric() <= this.right.evaluateNumeric()) ? 1 : 0; }
+    diff(varName) { return new Num(0); }
     toLatex() { return `${this.left.toLatex()} \\leq ${this.right.toLatex()}`; }
 }
 
@@ -2158,6 +2162,7 @@ class Ge extends BinaryOp {
         return new Ge(l, r);
     }
     evaluateNumeric() { return (this.left.evaluateNumeric() >= this.right.evaluateNumeric()) ? 1 : 0; }
+    diff(varName) { return new Num(0); }
     toLatex() { return `${this.left.toLatex()} \\geq ${this.right.toLatex()}`; }
 }
 
