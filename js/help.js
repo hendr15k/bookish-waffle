@@ -48,7 +48,26 @@ window.HELP_DATA = {
         "syntax": "sum(expression, variable, start, end)",
         "examples": [
             "sum(k^2, k, 1, 10)",
-            "sum(1/k^2, k, 1, infinity)"
+            "sum(1/k^2, k, 1, infinity)",
+            "sum(3 * 2^k, k, 0, 5)"
+        ]
+    },
+    "ztrans": {
+        "description": "Calculates the Z-Transform of an expression.",
+        "syntax": "ztrans(expr, n, z)",
+        "examples": [
+            "ztrans(a^n, n, z)",
+            "ztrans(n, n, z)",
+            "ztrans(sin(a*n), n, z)"
+        ]
+    },
+    "iztrans": {
+        "description": "Calculates the Inverse Z-Transform.",
+        "syntax": "iztrans(expr, z, n)",
+        "examples": [
+            "iztrans(z/(z-a), z, n)",
+            "iztrans(1, z, n)",
+            "iztrans(z/(z-1)^2, z, n)"
         ]
     },
     "simplify": {

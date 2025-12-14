@@ -1555,6 +1555,16 @@ class Call extends Expr {
         if (this.funcName === 'sqrt') return Math.sqrt(argsVal[0]);
         if (this.funcName === 'abs') return Math.abs(argsVal[0]);
         if (this.funcName === 'sign') return Math.sign(argsVal[0]);
+        if (this.funcName === 'heaviside') {
+            const val = argsVal[0];
+            if (val < 0) return 0;
+            if (val >= 0) return 1;
+        }
+        if (this.funcName === 'dirac') {
+            const val = argsVal[0];
+            if (val !== 0) return 0;
+            return Infinity;
+        }
         if (this.funcName === 'floor') return Math.floor(argsVal[0]);
         if (this.funcName === 'ceil') return Math.ceil(argsVal[0]);
         if (this.funcName === 'round') return Math.round(argsVal[0]);
@@ -1626,6 +1636,7 @@ class Call extends Expr {
         }
         if (this.funcName === 'sqrt') return new Div(u.diff(varName), new Mul(new Num(2), new Call('sqrt', [u])));
         if (this.funcName === 'abs') return new Mul(new Call('sign', [u]), u.diff(varName));
+        if (this.funcName === 'heaviside') return new Mul(new Call('dirac', [u]), u.diff(varName));
         if (this.funcName === 'erf') {
             // d/dx erf(u) = 2/sqrt(pi) * e^(-u^2) * u'
             const coeff = new Div(new Num(2), new Call('sqrt', [new Sym('pi')]));
@@ -1644,6 +1655,7 @@ class Call extends Expr {
             if (this.funcName === 'sec') return new Call('ln', [new Call('abs', [new Add(new Call('sec', [varName]), new Call('tan', [varName]))])]);
             if (this.funcName === 'csc') return new Mul(new Num(-1), new Call('ln', [new Call('abs', [new Add(new Call('csc', [varName]), new Call('cot', [varName]))])]));
             if (this.funcName === 'exp') return this;
+            if (this.funcName === 'dirac') return new Call('heaviside', [varName]);
         }
         return new Call("integrate", [this, varName]);
     }
@@ -1713,7 +1725,11 @@ class Call extends Expr {
             'imag': '\\Im',
             'conj': '\\overline{' + argsTex[0] + '}',
             'sign': '\\operatorname{sgn}',
-            'erf': '\\operatorname{erf}'
+            'erf': '\\operatorname{erf}',
+            'heaviside': '\\theta',
+            'dirac': '\\delta',
+            'ztrans': '\\mathcal{Z}',
+            'iztrans': '\\mathcal{Z}^{-1}'
         };
 
         if (this.funcName === 'floor') return `\\lfloor ${argsTex[0]} \\rfloor`;

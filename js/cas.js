@@ -991,6 +991,14 @@ class CAS {
                 if (args.length !== 3) throw new Error("ilaplace requires 3 arguments: expr, s, t");
                 return this._ilaplace(args[0], args[1], args[2]);
             }
+            if (node.funcName === 'ztrans') {
+                if (args.length !== 3) throw new Error("ztrans requires 3 arguments: expr, n, z");
+                return this._ztrans(args[0], args[1], args[2]);
+            }
+            if (node.funcName === 'iztrans') {
+                if (args.length !== 3) throw new Error("iztrans requires 3 arguments: expr, z, n");
+                return this._iztrans(args[0], args[1], args[2]);
+            }
 
             if (node.funcName === 'kernel' || node.funcName === 'nullspace' || node.funcName === 'ker') {
                 if (args.length !== 1) throw new Error("kernel requires 1 argument");
@@ -1511,7 +1519,31 @@ perm, tran, irem, ifactor`;
             }
         }
 
-        // Normalize sum(..., k, 1, n)
+        // Geometric Series: C * r^k (Check first as it handles any start/end)
+        try {
+            const termK = expr;
+            const termK1 = expr.substitute(varNode, new Add(varNode, new Num(1))).simplify();
+            const ratio = new Div(termK1, termK).simplify();
+
+            if (!this._dependsOn(ratio, varNode)) {
+                // It is geometric with r = ratio
+                const r = ratio;
+                const a = expr.substitute(varNode, start).simplify(); // First term
+
+                // Sum = a * (1 - r^N) / (1 - r) where N is count
+                // count = end - start + 1
+                const N = new Add(new Sub(end, start), new Num(1)).simplify();
+
+                // If r = 1, sum is a * N (already handled by dependsOn check above ideally, but let's be safe)
+                if (r instanceof Num && r.value === 1) return new Mul(a, N).simplify();
+
+                const num = new Mul(a, new Sub(new Num(1), new Pow(r, N)));
+                const den = new Sub(new Num(1), r);
+                return new Div(num, den).simplify();
+            }
+        } catch (e) {}
+
+        // Normalize sum(..., k, 1, n) for polynomial formulas
         // If start != 1, sum(f(k), k, a, b) = sum(f(j+a-1), j, 1, b-a+1)
         if (!(start instanceof Num && start.value === 1)) {
              // Let j = k - a + 1 => k = j + a - 1
@@ -6530,6 +6562,214 @@ perm, tran, irem, ifactor`;
         }
 
         return new Call('ilaplace', [expr, s, t]);
+    }
+
+    _ztrans(expr, n, z) {
+        expr = expr.expand().simplify();
+
+        if (expr instanceof Add) return new Add(this._ztrans(expr.left, n, z), this._ztrans(expr.right, n, z)).simplify();
+        if (expr instanceof Sub) return new Sub(this._ztrans(expr.left, n, z), this._ztrans(expr.right, n, z)).simplify();
+        if (expr instanceof Mul) {
+            if (!this._dependsOn(expr.left, n)) return new Mul(expr.left, this._ztrans(expr.right, n, z)).simplify();
+            if (!this._dependsOn(expr.right, n)) return new Mul(expr.right, this._ztrans(expr.left, n, z)).simplify();
+
+            // Properties
+            // 1. Multiplication by n: n * f(n) -> -z * d/dz F(z)
+            const checkN = (term, func) => {
+                if (term instanceof Sym && term.name === n.name) {
+                    const F = this._ztrans(func, n, z);
+                    if (!(F instanceof Call && F.funcName === 'ztrans')) {
+                        const dF = F.diff(z).simplify();
+                        return new Mul(new Mul(new Num(-1), z), dF).simplify();
+                    }
+                }
+                return null;
+            };
+            const multN1 = checkN(expr.left, expr.right);
+            if (multN1) return multN1;
+            const multN2 = checkN(expr.right, expr.left);
+            if (multN2) return multN2;
+
+            // 2. Multiplication by a^n: a^n * f(n) -> F(z/a)
+            const checkExp = (term, func) => {
+                if (term instanceof Pow && term.right instanceof Sym && term.right.name === n.name) {
+                    const a = term.left;
+                    if (!this._dependsOn(a, n)) {
+                        const F = this._ztrans(func, n, z);
+                        if (!(F instanceof Call && F.funcName === 'ztrans')) {
+                            return F.substitute(z, new Div(z, a)).simplify();
+                        }
+                    }
+                }
+                return null;
+            };
+            const exp1 = checkExp(expr.left, expr.right);
+            if (exp1) return exp1;
+            const exp2 = checkExp(expr.right, expr.left);
+            if (exp2) return exp2;
+        }
+
+        if (!this._dependsOn(expr, n)) {
+            // Z{c} = c * z/(z-1)  (Step function assumed)
+            return new Mul(expr, new Div(z, new Sub(z, new Num(1)))).simplify();
+        }
+
+        // Table
+        // delta(n) -> 1
+        if (expr instanceof Call && expr.funcName === 'dirac') {
+            const arg = expr.args[0];
+            // dirac(n)
+            if (arg instanceof Sym && arg.name === n.name) return new Num(1);
+            // dirac(n-k) -> z^-k
+            if (arg instanceof Sub && arg.left instanceof Sym && arg.left.name === n.name && !this._dependsOn(arg.right, n)) {
+                return new Pow(z, new Mul(new Num(-1), arg.right)).simplify();
+            }
+        }
+
+        // heaviside(n) -> z/(z-1)
+        if (expr instanceof Call && expr.funcName === 'heaviside') {
+            const arg = expr.args[0];
+            if (arg instanceof Sym && arg.name === n.name) return new Div(z, new Sub(z, new Num(1))).simplify();
+        }
+
+        // n -> z/(z-1)^2
+        if (expr instanceof Sym && expr.name === n.name) {
+            const z_1 = new Sub(z, new Num(1));
+            return new Div(z, new Pow(z_1, new Num(2))).simplify();
+        }
+
+        // a^n -> z/(z-a)
+        if (expr instanceof Pow && expr.right instanceof Sym && expr.right.name === n.name) {
+            const a = expr.left;
+            if (!this._dependsOn(a, n)) {
+                return new Div(z, new Sub(z, a)).simplify();
+            }
+        }
+
+        // sin(an) -> z*sin(a) / (z^2 - 2z cos(a) + 1)
+        if (expr instanceof Call && expr.funcName === 'sin') {
+            const arg = expr.args[0];
+            // Extract a from an
+            const poly = this._getPolyCoeffs(arg, n);
+            if (poly && poly.maxDeg === 1 && (!poly.coeffs[0] || poly.coeffs[0].value === 0)) {
+                const a = poly.coeffs[1];
+                const sinA = new Call('sin', [a]);
+                const cosA = new Call('cos', [a]);
+
+                const num = new Mul(z, sinA);
+                const den = new Add(new Sub(new Pow(z, new Num(2)), new Mul(new Num(2), new Mul(z, cosA))), new Num(1));
+                return new Div(num, den).simplify();
+            }
+        }
+
+        // cos(an) -> z(z-cos(a)) / (z^2 - 2z cos(a) + 1)
+        if (expr instanceof Call && expr.funcName === 'cos') {
+            const arg = expr.args[0];
+            const poly = this._getPolyCoeffs(arg, n);
+            if (poly && poly.maxDeg === 1 && (!poly.coeffs[0] || poly.coeffs[0].value === 0)) {
+                const a = poly.coeffs[1];
+                const cosA = new Call('cos', [a]);
+
+                const num = new Mul(z, new Sub(z, cosA));
+                const den = new Add(new Sub(new Pow(z, new Num(2)), new Mul(new Num(2), new Mul(z, cosA))), new Num(1));
+                return new Div(num, den).simplify();
+            }
+        }
+
+        return new Call('ztrans', [expr, n, z]);
+    }
+
+    _iztrans(expr, z, n) {
+        // Inverse Z Transform using Partial Fractions on F(z)/z
+        expr = expr.expand().simplify();
+
+        if (expr instanceof Add) return new Add(this._iztrans(expr.left, z, n), this._iztrans(expr.right, z, n)).simplify();
+        if (expr instanceof Sub) return new Sub(this._iztrans(expr.left, z, n), this._iztrans(expr.right, z, n)).simplify();
+        if (expr instanceof Mul) {
+            if (!this._dependsOn(expr.left, z)) return new Mul(expr.left, this._iztrans(expr.right, z, n)).simplify();
+            if (!this._dependsOn(expr.right, z)) return new Mul(expr.right, this._iztrans(expr.left, z, n)).simplify();
+        }
+
+        // Table Lookup
+        // 1 -> delta(n)
+        if (expr instanceof Num && expr.value === 1) return new Call('dirac', [n]);
+
+        // z^-k -> delta(n-k)
+        if (expr instanceof Pow && expr.left instanceof Sym && expr.left.name === z.name && expr.right instanceof Num && expr.right.value < 0) {
+            const k = -expr.right.value;
+            return new Call('dirac', [new Sub(n, new Num(k))]);
+        }
+
+        // z/(z-a) -> a^n
+        if (expr instanceof Div) {
+            const num = expr.left;
+            const den = expr.right;
+            if (num instanceof Sym && num.name === z.name) {
+                // z / (z-a)
+                if (den instanceof Sub && den.left instanceof Sym && den.left.name === z.name) {
+                    const a = den.right;
+                    if (!this._dependsOn(a, z)) return new Pow(a, n).simplify();
+                }
+                // z / (z+a) -> (-a)^n
+                if (den instanceof Add && den.left instanceof Sym && den.left.name === z.name) {
+                    const a = den.right;
+                    if (!this._dependsOn(a, z)) return new Pow(new Mul(new Num(-1), a), n).simplify();
+                }
+            }
+        }
+
+        // Try F(z)/z partial fractions
+        const exprOverZ = new Div(expr, z).simplify();
+        const pf = this._partfrac(exprOverZ, z);
+
+        if (!(pf instanceof Call && pf.funcName === 'partfrac') && pf.toString() !== exprOverZ.toString()) {
+            // pf is sum of A/(z-p)
+            // Multiply back by z: sum of A*z/(z-p)
+            const exprExpanded = new Mul(z, pf).expand().simplify();
+
+            // Helper for single term
+            const izTerm = (term) => {
+                // A * z / (z - p) -> A * p^n
+                // Check form
+                if (term instanceof Mul) {
+                    if (!this._dependsOn(term.left, z)) return new Mul(term.left, izTerm(term.right)).simplify();
+                    if (!this._dependsOn(term.right, z)) return new Mul(term.right, izTerm(term.left)).simplify();
+                }
+
+                if (term instanceof Div) {
+                    const num = term.left;
+                    const den = term.right;
+                    // Check num = z
+                    if (num.toString() === z.toString()) {
+                        // z / (z - p) -> p^n
+                        // z / (z + p) -> (-p)^n
+                        const poly = this._getPolyCoeffs(den, z);
+                        if (poly && poly.maxDeg === 1) {
+                            const c1 = poly.coeffs[1]; // coeff of z
+                            const c0 = poly.coeffs[0] || new Num(0);
+
+                            // Normalize to z - p
+                            // (c1*z + c0) -> c1(z + c0/c1)
+                            // We have z / (c1*z + c0) = (1/c1) * z / (z + c0/c1)
+                            // p = -c0/c1
+                            const invC1 = new Div(new Num(1), c1).simplify();
+                            const p = new Mul(new Num(-1), new Div(c0, c1)).simplify();
+                            return new Mul(invC1, new Pow(p, n)).simplify();
+                        }
+                    }
+                }
+
+                // Fallback to recursive call on simpler term
+                // But avoid infinite recursion. If simpler term is same as expr, stop.
+                // We are inside iztrans, so we can't call it if structure didn't improve.
+                return new Call('iztrans', [term, z, n]);
+            };
+
+            if (exprExpanded instanceof Add) return new Add(this._iztrans(exprExpanded.left, z, n), this._iztrans(exprExpanded.right, z, n)).simplify();
+            return izTerm(exprExpanded);
+        }
+
+        return new Call('iztrans', [expr, z, n]);
     }
 
     _molarMass(formula) {
