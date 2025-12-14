@@ -733,6 +733,16 @@ class CAS {
                 return this._loan(args[0], args[1], args[2]);
             }
 
+            if (node.funcName === 'npv') {
+                if (args.length !== 2) throw new Error("npv requires 2 arguments: rate, cash_flows");
+                return this._npv(args[0], args[1]);
+            }
+
+            if (node.funcName === 'irr') {
+                if (args.length !== 1) throw new Error("irr requires 1 argument: cash_flows");
+                return this._irr(args[0]);
+            }
+
             if (node.funcName === 'dot') {
                 if (args.length !== 2) throw new Error("dot requires 2 arguments");
                 // dot(u, v) is u * v (Mul handles dot product for vectors)
@@ -3153,6 +3163,75 @@ and, or, not, xor, int, evalf`;
         const denom = new Sub(new Num(1), new Pow(base, new Mul(new Num(-1), n)));
 
         return new Div(num, denom).simplify();
+    }
+
+    _npv(rate, flows) {
+        if (!(flows instanceof Vec)) throw new Error("Cash flows must be a list");
+        rate = rate.simplify();
+        // rate is typically decimal (0.05) or symbolic
+        let sum = new Num(0);
+        // flows[0] is at t=0, flows[1] at t=1, etc.
+        for(let i=0; i<flows.elements.length; i++) {
+            const flow = flows.elements[i];
+            const den = new Pow(new Add(new Num(1), rate), new Num(i)).simplify();
+            sum = new Add(sum, new Div(flow, den)).simplify();
+        }
+        return sum;
+    }
+
+    _irr(flows) {
+        if (!(flows instanceof Vec)) throw new Error("Cash flows must be a list");
+
+        // Solve NPV(r) = 0 for r > -1
+        // NPV = C0 + C1/(1+r) + C2/(1+r)^2 + ...
+        // Let x = 1/(1+r). Then r = 1/x - 1.
+        // Polynomial: C0 + C1*x + C2*x^2 + ... = 0
+
+        const x = new Sym('__x_irr__');
+        let poly = new Num(0);
+
+        for(let i=0; i<flows.elements.length; i++) {
+            const flow = flows.elements[i];
+            const term = new Mul(flow, new Pow(x, new Num(i))).simplify();
+            poly = new Add(poly, term).simplify();
+        }
+
+        // Solve for x
+        const roots = this._solve(poly, x);
+
+        const solutions = [];
+        const processRoot = (root) => {
+             // r = 1/root - 1
+             const rVal = new Sub(new Div(new Num(1), root), new Num(1)).simplify();
+             // Check if real and > -1 (x must be positive for r > -1)
+             // Actually if x > 0, then 1+r > 0 => r > -1.
+             // If x < 0, 1+r < 0 => r < -1 (not useful usually).
+             // If x = 0, impossible (1/(1+r)=0 => r->inf)
+
+             try {
+                 const numX = root.evaluateNumeric();
+                 if (!isNaN(numX) && numX > 0) {
+                     solutions.push(rVal);
+                 } else if (isNaN(numX)) {
+                     // Keep symbolic
+                     solutions.push(rVal);
+                 }
+             } catch(e) {
+                 solutions.push(rVal);
+             }
+        };
+
+        if (roots instanceof Call && roots.funcName === 'set') {
+            roots.args.forEach(processRoot);
+        } else if (roots instanceof Expr && !(roots instanceof Call && roots.funcName === 'solve')) {
+            processRoot(roots);
+        } else if (roots instanceof Vec) {
+             // Systems return Vec? No, _solve returns set or Expr.
+        }
+
+        if (solutions.length === 0) return new Call('irr', [flows]);
+        if (solutions.length === 1) return solutions[0];
+        return new Call('set', solutions);
     }
 
     _nCr(n, k) {

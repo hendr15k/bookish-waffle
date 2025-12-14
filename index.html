@@ -393,6 +393,11 @@
     </div>
 
     <!-- App Grid (Interactive Mode) -->
+    <!-- App Search (Interactive Mode) -->
+    <div id="app-search-container" style="display:none; margin-bottom: 10px;">
+        <input type="text" id="app-search" placeholder="Search apps..." style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; box-sizing: border-box;" oninput="filterApps()">
+    </div>
+
     <div id="app-grid">
         <div class="app-card" onclick="openTool('calculator')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('calculator')">
             <span class="app-icon" style="color: #007bff;">🧮</span>
@@ -1173,6 +1178,7 @@
         <div class="tab-header">
              <button class="tab-btn active" onclick="openTab(event, 'tab-fin-compound')">Compound Interest</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-fin-loan')">Loan Payment</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-fin-cash')">Cash Flow</button>
         </div>
 
         <div id="tab-fin-compound" class="tab-content active">
@@ -1214,6 +1220,23 @@
                 <button class="action-btn" onclick="runFinance('loan')">Calculate Payment</button>
              </div>
         </div>
+
+        <div id="tab-fin-cash" class="tab-content">
+             <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="fin-flows">Cash Flows (C0, C1, ...)</label>
+                    <input type="text" class="form-input" id="fin-flows" placeholder="e.g. -1000, 200, 300, 500">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="fin-rate">Discount Rate (%) (r)</label>
+                    <input type="number" class="form-input" id="fin-rate" placeholder="e.g. 5">
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runFinance('npv')">Calculate NPV</button>
+                    <button class="action-btn" onclick="runFinance('irr')">Calculate IRR</button>
+                </div>
+             </div>
+        </div>
         <div class="tool-result"></div>
     </div>
 
@@ -1228,6 +1251,7 @@
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-dyn')">Dynamics</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-nrg')">Energy</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-elec')">Electricity</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-phys-waves')">Waves</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-const')">Constants</button>
         </div>
 
@@ -1311,6 +1335,23 @@
                  </div>
                  <div id="phys-elec-inputs"></div>
                  <button class="action-btn" onclick="runPhysics('elec')">Calculate</button>
+             </div>
+        </div>
+
+        <!-- Waves Tab -->
+        <div id="tab-phys-waves" class="tab-content">
+             <div class="tool-form">
+                 <div class="form-group">
+                     <label class="form-label">Unknown Variable</label>
+                     <select id="phys-waves-type" class="form-input" onchange="updatePhysicsInputs('waves')">
+                         <option value="v">Velocity (v=fλ)</option>
+                         <option value="f">Frequency (f=v/λ)</option>
+                         <option value="lambda">Wavelength (λ=v/f)</option>
+                         <option value="T">Period (T=1/f)</option>
+                     </select>
+                 </div>
+                 <div id="phys-waves-inputs"></div>
+                 <button class="action-btn" onclick="runPhysics('waves')">Calculate</button>
              </div>
         </div>
 
@@ -1580,19 +1621,34 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 document.body.classList.add('mobile-mode');
                 modeToggle.textContent = 'Desktop Mode';
                 document.getElementById('input-area').style.display = 'none'; // Hide raw input in mobile
-                // If history was hidden, maybe show it only in desktop
+                document.getElementById('app-search-container').style.display = 'block'; // Show search
             } else {
                 document.body.classList.remove('mobile-mode');
                 modeToggle.textContent = 'App Mode';
                 document.getElementById('input-area').style.display = 'flex';
+                document.getElementById('app-search-container').style.display = 'none'; // Hide search
                 document.getElementById('history').style.display = 'block';
                 closeTool(); // Ensure no tool is open
             }
         });
 
         // App/Tool Logic
+        window.filterApps = function() {
+            const query = document.getElementById('app-search').value.toLowerCase();
+            const cards = document.querySelectorAll('.app-card');
+            cards.forEach(card => {
+                const name = card.querySelector('.app-name').textContent.toLowerCase();
+                if (name.includes(query)) {
+                    card.style.display = 'flex';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        };
+
         window.openTool = function(toolName) {
             document.getElementById('app-grid').style.display = 'none';
+            document.getElementById('app-search-container').style.display = 'none';
             const tool = document.getElementById('tool-' + toolName);
             tool.style.display = 'block';
 
@@ -1623,6 +1679,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 updatePhysicsInputs('dyn');
                 updatePhysicsInputs('nrg');
                 updatePhysicsInputs('elec');
+                updatePhysicsInputs('waves');
             }
         };
 
@@ -1633,6 +1690,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
 
             if (isMobileMode) {
                 document.getElementById('app-grid').style.display = 'grid';
+                document.getElementById('app-search-container').style.display = 'block';
             }
         };
 
@@ -4433,6 +4491,44 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                      result = `Monthly Payment = ${M.toFixed(2)}`;
                  }
              }
+             if (type === 'npv' || type === 'irr') {
+                 const flowsStr = document.getElementById('fin-flows').value;
+                 const rateStr = document.getElementById('fin-rate').value;
+
+                 // Construct command
+                 // Parse flows string "100, 200" -> "[100, 200]"
+                 // Or better, let user enter brackets?
+                 // Let's wrap in brackets if not present.
+                 let vecStr = flowsStr.trim();
+                 if (!vecStr.startsWith('[')) vecStr = `[${vecStr}]`;
+
+                 const rVal = parseFloat(rateStr) / 100; // decimal
+
+                 let cmd = "";
+                 if (type === 'npv') {
+                     if (isNaN(rVal)) return;
+                     cmd = `npv(${rVal}, ${vecStr})`;
+                 } else {
+                     cmd = `irr(${vecStr})`;
+                 }
+
+                 try {
+                     const l = new Lexer(cmd);
+                     const p = new Parser(l);
+                     const t = p.parse();
+                     const res = cas.evaluate(t);
+
+                     // Format result
+                     if (type === 'npv') result = `NPV = ${res.evaluateNumeric().toFixed(2)}`;
+                     else {
+                         const val = res.evaluateNumeric();
+                         if (!isNaN(val)) result = `IRR = ${(val * 100).toFixed(2)}%`;
+                         else result = `IRR = ${res.toString()}`;
+                     }
+                 } catch(e) {
+                     result = "Error: " + e.message;
+                 }
+             }
 
              const info = { type: 'info', text: result };
              addToHistory(`Finance ${type}`, info, false);
@@ -4783,6 +4879,19 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                      container.appendChild(createInput('phys-V', 'Voltage (V)'));
                      container.appendChild(createInput('phys-I', 'Current (I)'));
                  }
+             } else if (tab === 'waves') {
+                 if (type === 'v') {
+                     container.appendChild(createInput('phys-f', 'Frequency (f)'));
+                     container.appendChild(createInput('phys-l', 'Wavelength (λ)'));
+                 } else if (type === 'f') {
+                     container.appendChild(createInput('phys-v', 'Velocity (v)'));
+                     container.appendChild(createInput('phys-l', 'Wavelength (λ)'));
+                 } else if (type === 'lambda') {
+                     container.appendChild(createInput('phys-v', 'Velocity (v)'));
+                     container.appendChild(createInput('phys-f', 'Frequency (f)'));
+                 } else if (type === 'T') {
+                     container.appendChild(createInput('phys-f', 'Frequency (f)'));
+                 }
              }
         };
 
@@ -5126,6 +5235,20 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                  } else if (type === 'P') { // P = VI
                       if (isNaN(V) || isNaN(I)) return;
                       result = `Power (P) = ${(V*I).toFixed(4)} W`;
+                 }
+             } else if (tab === 'waves') {
+                 const v = val('phys-v');
+                 const f = val('phys-f');
+                 const l = val('phys-l');
+
+                 if (type === 'v') {
+                     if (!isNaN(f) && !isNaN(l)) result = `Velocity (v) = ${(f*l).toFixed(4)} m/s`;
+                 } else if (type === 'f') {
+                     if (!isNaN(v) && !isNaN(l)) result = `Frequency (f) = ${(v/l).toFixed(4)} Hz`;
+                 } else if (type === 'lambda') {
+                     if (!isNaN(v) && !isNaN(f)) result = `Wavelength (λ) = ${(v/f).toFixed(4)} m`;
+                 } else if (type === 'T') {
+                     if (!isNaN(f)) result = `Period (T) = ${(1/f).toFixed(4)} s`;
                  }
              }
 
