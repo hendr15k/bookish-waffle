@@ -1436,6 +1436,8 @@
                     <option value="length">Length</option>
                     <option value="mass">Mass</option>
                     <option value="temp">Temperature</option>
+                    <option value="pressure">Pressure</option>
+                    <option value="data">Data Storage</option>
                     <option value="area">Area</option>
                     <option value="volume">Volume</option>
                     <option value="speed">Speed</option>
@@ -1504,17 +1506,23 @@
             <div class="tool-form">
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
-                        <label class="form-label" for="geo-p1">Point A [x, y]</label>
+                        <label class="form-label" for="geo-p1">Point A / Center</label>
                         <input type="text" class="form-input" id="geo-p1" placeholder="[1, 2]">
                     </div>
                     <div class="form-group" style="flex:1">
-                        <label class="form-label" for="geo-p2">Point B [x, y]</label>
+                        <label class="form-label" for="geo-p2">Point B</label>
                         <input type="text" class="form-input" id="geo-p2" placeholder="[4, 6]">
                     </div>
                 </div>
+                <div class="form-group">
+                    <label class="form-label" for="geo-r-analytic">Radius (for Circle)</label>
+                    <input type="text" class="form-input" id="geo-r-analytic" placeholder="5">
+                </div>
                 <div class="action-grid">
-                    <button class="action-btn" onclick="runTool('distance', ['geo-p1', 'geo-p2'])">Distance</button>
-                    <button class="action-btn" onclick="runTool('midpoint', ['geo-p1', 'geo-p2'])">Midpoint</button>
+                    <button class="action-btn" onclick="runTool('distance', ['geo-p1', 'geo-p2'])">Distance (AB)</button>
+                    <button class="action-btn" onclick="runTool('midpoint', ['geo-p1', 'geo-p2'])">Midpoint (AB)</button>
+                    <button class="action-btn secondary" onclick="runTool('lineEquation', ['geo-p1', 'geo-p2'])">Line Eq (AB)</button>
+                    <button class="action-btn secondary" onclick="runTool('circleEquation', ['geo-p1', 'geo-r-analytic'])">Circle Eq (A, r)</button>
                 </div>
             </div>
         </div>
@@ -4004,6 +4012,31 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             commandDiv.textContent = '> ' + command;
             entryDiv.appendChild(commandDiv);
 
+            // Copy Button
+            const copyBtn = document.createElement('span');
+            copyBtn.textContent = ' 📋';
+            copyBtn.style.cursor = 'pointer';
+            copyBtn.style.fontSize = '0.8em';
+            copyBtn.title = 'Copy result to clipboard';
+            copyBtn.onclick = (e) => {
+                e.stopPropagation();
+                let textToCopy = "";
+                if (result && typeof result === 'object' && result.toLatex) {
+                     // For specialized objects, prefer Latex or String?
+                     // Usually user wants to copy the expression text to paste elsewhere
+                     textToCopy = result.toString();
+                } else if (typeof result === 'string') {
+                    textToCopy = result;
+                }
+                navigator.clipboard.writeText(textToCopy).then(() => {
+                    // Feedback
+                    const original = copyBtn.textContent;
+                    copyBtn.textContent = ' ✓';
+                    setTimeout(() => copyBtn.textContent = original, 1000);
+                });
+            };
+            commandDiv.appendChild(copyBtn);
+
             const resultDiv = document.createElement('div');
             resultDiv.className = isError ? 'result error' : 'result';
 
@@ -4795,6 +4828,24 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             },
             temp: {
                 'C': 'c', 'F': 'f', 'K': 'k' // Special handling
+            },
+            pressure: {
+                'Pa': 1, 'bar': 100000, 'atm': 101325, 'psi': 6894.76, 'Torr': 133.322
+            },
+            data: {
+                'b': 1, 'B': 8, 'KB': 8192, 'MB': 8388608, 'GB': 8589934592, 'TB': 8796093022208
+            },
+            time: {
+                's': 1, 'min': 60, 'h': 3600, 'd': 86400, 'wk': 604800, 'y': 31536000
+            },
+            speed: {
+                'm/s': 1, 'km/h': 0.277778, 'mph': 0.44704, 'ft/s': 0.3048, 'kn': 0.514444
+            },
+            area: {
+                'm^2': 1, 'km^2': 1e6, 'cm^2': 0.0001, 'mm^2': 1e-6, 'ft^2': 0.092903, 'in^2': 0.00064516, 'ac': 4046.86, 'ha': 10000
+            },
+            volume: {
+                'm^3': 1, 'km^3': 1e9, 'cm^3': 1e-6, 'mm^3': 1e-9, 'ft^3': 0.0283168, 'in^3': 1.6387e-5, 'L': 0.001, 'mL': 1e-6, 'gal': 0.00378541
             }
         };
 
@@ -4816,6 +4867,8 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             if (category === 'length') { fromSel.value = 'm'; toSel.value = 'ft'; }
             if (category === 'mass') { fromSel.value = 'kg'; toSel.value = 'lb'; }
             if (category === 'temp') { fromSel.value = 'C'; toSel.value = 'F'; }
+            if (category === 'pressure') { fromSel.value = 'bar'; toSel.value = 'psi'; }
+            if (category === 'data') { fromSel.value = 'MB'; toSel.value = 'GB'; }
 
             runConverter('from');
         };
@@ -4851,9 +4904,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
 
                     toInput.value = Number(result.toPrecision(6)); // formatting
                 } else {
-                    // Reverse logic mirrors above, essentially same func just swapped inputs
-                    // But simpler to just trigger 'from' logic? No, input is different.
-                    // Copy paste logic inverted.
+                    // Reverse logic
                      if (toUnit === 'C') k = val + 273.15;
                     else if (toUnit === 'F') k = (val - 32) * 5/9 + 273.15;
                     else k = val;
@@ -4866,6 +4917,9 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 }
             } else {
                 const rates = conversionRates[category];
+                // Check if unit exists (robustness)
+                if (!rates[fromUnit] || !rates[toUnit]) return;
+
                 const baseVal = direction === 'from' ? val * rates[fromUnit] : val * rates[toUnit];
 
                 if (direction === 'from') {
