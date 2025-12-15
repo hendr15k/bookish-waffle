@@ -584,6 +584,14 @@
             <span class="app-icon" style="color: #007bff;">⚙️</span>
             <span class="app-name">Settings</span>
         </div>
+        <div class="app-card" onclick="openTool('polynomials')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('polynomials')">
+            <span class="app-icon" style="color: #fd7e14;">P(x)</span>
+            <span class="app-name">Polynomials</span>
+        </div>
+        <div class="app-card" onclick="openTool('system')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('system')">
+            <span class="app-icon" style="color: #6f42c1;">{ }</span>
+            <span class="app-name">System Solver</span>
+        </div>
     </div>
 
     <!-- Tool Views -->
@@ -716,6 +724,7 @@
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-fourier')">Fourier</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-tangent')">Tangent</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-vector')">Vector Calc</button>
+            <button class="tab-btn" onclick="openTab(event, 'tab-calc-laplace')">Laplace</button>
         </div>
 
         <!-- Diff & Limit Tab -->
@@ -931,6 +940,30 @@
                     <button class="action-btn" onclick="runTool('grad', ['vcalc-expr', 'vcalc-vars'])">Gradient</button>
                     <button class="action-btn" onclick="runTool('divergence', ['vcalc-expr', 'vcalc-vars'])">Divergence</button>
                     <button class="action-btn" onclick="runTool('curl', ['vcalc-expr', 'vcalc-vars'])">Curl</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Laplace Tab -->
+        <div id="tab-calc-laplace" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="laplace-expr">Function f(t) or F(s)</label>
+                    <input type="text" class="form-input" id="laplace-expr" placeholder="e.g. t^2 or 1/s^3">
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="laplace-t">Var t</label>
+                        <input type="text" class="form-input" id="laplace-t" value="t">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="laplace-s">Var s</label>
+                        <input type="text" class="form-input" id="laplace-s" value="s">
+                    </div>
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('laplace', ['laplace-expr', 'laplace-t', 'laplace-s'])">Transform (L)</button>
+                    <button class="action-btn secondary" onclick="runTool('ilaplace', ['laplace-expr', 'laplace-s', 'laplace-t'])">Inverse (L⁻¹)</button>
                 </div>
             </div>
         </div>
@@ -1915,6 +1948,89 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             <h3>About</h3>
             <p style="font-size: 0.9em; color: #666;">Web CAS v1.0<br>Client-side JavaScript Algebra System.</p>
         </div>
+    </div>
+
+    <!-- POLYNOMIALS TOOL -->
+    <div id="tool-polynomials" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Polynomials</span>
+        </div>
+        <div class="tab-header">
+             <button class="tab-btn active" onclick="openTab(event, 'tab-poly-roots')">Roots & Factors</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-poly-div')">Division</button>
+        </div>
+
+        <div id="tab-poly-roots" class="tab-content active">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="poly-expr">Polynomial P(x)</label>
+                    <input type="text" class="form-input" id="poly-expr" placeholder="e.g. x^2 - 4">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="poly-var">Variable</label>
+                    <input type="text" class="form-input" id="poly-var" value="x">
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('solve', ['poly-expr', 'poly-var'])">Find Roots</button>
+                    <button class="action-btn" onclick="runTool('factor', ['poly-expr'])">Factor</button>
+                    <button class="action-btn secondary" onclick="runTool('discriminant', ['poly-expr', 'poly-var'])">Discriminant</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-poly-div" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="poly-num">Numerator P(x)</label>
+                    <input type="text" class="form-input" id="poly-num" placeholder="e.g. x^3 - 1">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="poly-den">Denominator D(x)</label>
+                    <input type="text" class="form-input" id="poly-den" placeholder="e.g. x - 1">
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('quo', ['poly-num', 'poly-den'])">Quotient</button>
+                    <button class="action-btn" onclick="runTool('rem', ['poly-num', 'poly-den'])">Remainder</button>
+                    <button class="action-btn secondary" onclick="runTool('divisors', ['poly-num'])">Int Divisors (Num)</button>
+                </div>
+            </div>
+        </div>
+        <div class="tool-result"></div>
+    </div>
+
+    <!-- SYSTEM SOLVER TOOL -->
+    <div id="tool-system" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">System Solver</span>
+        </div>
+        <div class="tool-form">
+            <div id="system-equations-list">
+                <!-- Dynamic Inputs -->
+                <div class="form-group" id="sys-row-0">
+                    <div style="display:flex; gap:5px;">
+                        <input type="text" class="form-input sys-eq" placeholder="Eq 1 (e.g. x+y=5)">
+                        <button class="function-btn" onclick="removeSystemRow(0)" style="color:red;">×</button>
+                    </div>
+                </div>
+                <div class="form-group" id="sys-row-1">
+                    <div style="display:flex; gap:5px;">
+                        <input type="text" class="form-input sys-eq" placeholder="Eq 2 (e.g. x-y=1)">
+                        <button class="function-btn" onclick="removeSystemRow(1)" style="color:red;">×</button>
+                    </div>
+                </div>
+            </div>
+            <button class="function-btn" onclick="addSystemRow()" style="width:100%; margin-bottom:15px;">+ Add Equation</button>
+
+            <div class="form-group">
+                <label class="form-label" for="sys-vars">Variables (comma sep)</label>
+                <input type="text" class="form-input" id="sys-vars" placeholder="x, y" value="x, y">
+            </div>
+
+            <button class="action-btn" onclick="runSystemSolver()">Solve System</button>
+        </div>
+        <div class="tool-result"></div>
     </div>
 
     <div id="sidebar">
@@ -6562,6 +6678,66 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                  resBox.innerText = result;
                  resBox.style.display = 'block';
              }
+        };
+
+        // System Solver Logic
+        let sysRowCount = 2;
+        window.addSystemRow = function() {
+            const container = document.getElementById('system-equations-list');
+            const div = document.createElement('div');
+            div.className = 'form-group';
+            div.id = `sys-row-${sysRowCount}`;
+            div.innerHTML = `
+                <div style="display:flex; gap:5px;">
+                    <input type="text" class="form-input sys-eq" placeholder="Eq ${sysRowCount+1}">
+                    <button class="function-btn" onclick="removeSystemRow(${sysRowCount})" style="color:red;">×</button>
+                </div>
+            `;
+            container.appendChild(div);
+            sysRowCount++;
+        };
+
+        window.removeSystemRow = function(id) {
+            const row = document.getElementById(`sys-row-${id}`);
+            if(row) row.remove();
+        };
+
+        window.runSystemSolver = function() {
+            // Collect equations
+            const inputs = document.querySelectorAll('.sys-eq');
+            const eqs = [];
+            inputs.forEach(inp => {
+                if(inp.value.trim()) eqs.push(inp.value.trim());
+            });
+
+            const varsStr = document.getElementById('sys-vars').value;
+            if(eqs.length === 0 || !varsStr) return;
+
+            // Construct command: solve([eq1, eq2], [x, y])
+            // Check if user already put brackets? Assume raw expressions.
+            const eqsList = `[${eqs.join(', ')}]`;
+            const varsList = varsStr.startsWith('[') ? varsStr : `[${varsStr}]`;
+
+            const cmd = `solve(${eqsList}, ${varsList})`;
+            input.value = cmd;
+            evaluate();
+
+            // Show result
+            setTimeout(() => {
+                const entries = document.querySelectorAll('.entry');
+                if (entries.length > 0) {
+                    const lastEntry = entries[entries.length - 1];
+                    const resultDiv = lastEntry.querySelector('.result');
+                    const tool = document.getElementById('tool-system');
+                    if (resultDiv && tool) {
+                        const resultBox = tool.querySelector('.tool-result');
+                        resultBox.innerHTML = '';
+                        resultBox.appendChild(resultDiv.cloneNode(true));
+                        resultBox.style.display = 'block';
+                        if (window.MathJax) MathJax.typesetPromise([resultBox]).catch(()=>{});
+                    }
+                }
+            }, 50);
         };
     </script>
 </body>
