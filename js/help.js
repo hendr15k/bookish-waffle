@@ -142,6 +142,16 @@ window.HELP_DATA = {
         "syntax": "divergence([Fx, Fy, Fz], [x, y, z])",
         "examples": ["divergence([x, y, z], [x, y, z])"]
     },
+    "potential": {
+        "description": "Finds the scalar potential of a conservative vector field.",
+        "syntax": "potential(field, vars)",
+        "examples": ["potential([2x, 2y], [x, y])"]
+    },
+    "conservative": {
+        "description": "Checks if a vector field is conservative.",
+        "syntax": "conservative(field, vars)",
+        "examples": ["conservative([-y, x], [x, y])"]
+    },
 
     // --- Linear Algebra ---
     "det": {
