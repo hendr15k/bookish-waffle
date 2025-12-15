@@ -422,6 +422,11 @@ class Add extends BinaryOp {
 
         if (l.toString() === r.toString()) return new Mul(new Num(2), l);
 
+        // Logarithmic Combination: ln(a) + ln(b) -> ln(a*b)
+        if (l instanceof Call && r instanceof Call && l.funcName === r.funcName && (l.funcName === 'ln' || l.funcName === 'log')) {
+             return new Call(l.funcName, [new Mul(l.args[0], r.args[0])]).simplify();
+        }
+
         // Pythagorean Identity: sin(x)^2 + cos(x)^2 -> 1
         if ((l instanceof Pow && r instanceof Pow) || (l instanceof Pow && r instanceof Mul) || (l instanceof Mul && r instanceof Pow)) {
              // Helper to check for sin(x)^2
@@ -500,6 +505,11 @@ class Sub extends BinaryOp {
         }
 
         if (l.toString() === r.toString()) return new Num(0);
+
+        // Logarithmic Combination: ln(a) - ln(b) -> ln(a/b)
+        if (l instanceof Call && r instanceof Call && l.funcName === r.funcName && (l.funcName === 'ln' || l.funcName === 'log')) {
+             return new Call(l.funcName, [new Div(l.args[0], r.args[0])]).simplify();
+        }
 
         // Pythagorean Identities
         // 1 - sin(x)^2 -> cos(x)^2

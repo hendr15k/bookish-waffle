@@ -555,14 +555,30 @@ class CAS {
             }
 
             if (node.funcName === 'limit') {
-                // limit(expr, var, point)
+                // limit(expr, var, point, [dir])
                 if (args.length < 3) throw new Error("limit requires 3 arguments: expression, variable, point");
                 const expr = args[0];
                 const varNode = args[1];
                 const point = args[2];
+                let dir = 0;
+                if (args.length > 3) {
+                    const d = args[3].evaluateNumeric();
+                    if (!isNaN(d)) dir = d;
+                }
+
                 if (!(varNode instanceof Sym)) throw new Error("Second argument to limit must be a variable");
 
-                return this._limit(expr, varNode, point);
+                return this._limit(expr, varNode, point, 0, dir);
+            }
+
+            if (node.funcName === 'potential') {
+                 if (args.length !== 2) throw new Error("potential requires 2 arguments: vector field, vars");
+                 return this._potential(args[0], args[1]);
+            }
+
+            if (node.funcName === 'conservative') {
+                 if (args.length !== 2) throw new Error("conservative requires 2 arguments: vector field, vars");
+                 return this._conservative(args[0], args[1]);
             }
 
             if (node.funcName === 'tangent') {
@@ -3088,7 +3104,7 @@ class CAS {
         return new Call("integrate", [expr, varNode]);
     }
 
-    _limit(expr, varNode, point, depth = 0) {
+    _limit(expr, varNode, point, depth = 0, dir = 0) {
         if (depth > 5) return new Call("limit", [expr, varNode, point]);
 
         if (expr instanceof Div) {
@@ -3101,12 +3117,25 @@ class CAS {
             if (isZero(num) && isZero(den)) {
                  const diffNum = expr.left.diff(varNode).simplify();
                  const diffDen = expr.right.diff(varNode).simplify();
-                 return this._limit(new Div(diffNum, diffDen), varNode, point, depth + 1);
+                 return this._limit(new Div(diffNum, diffDen), varNode, point, depth + 1, dir);
             }
 
             if (num instanceof Num && den instanceof Num) {
                 if (den.value !== 0) return new Num(num.value / den.value);
                 if (num.value !== 0 && den.value === 0) {
+                     // Directional Limit Logic
+                     if (dir !== 0) {
+                         try {
+                             const eps = (dir > 0 ? 1 : -1) * 1e-9;
+                             const val = point.evaluateNumeric() + eps;
+                             const denVal = expr.right.substitute(varNode, new Num(val)).evaluateNumeric();
+
+                             if (!isNaN(denVal) && denVal !== 0) {
+                                 const resultSign = (num.value > 0 ? 1 : -1) * (denVal > 0 ? 1 : -1);
+                                 return (resultSign > 0) ? new Sym("Infinity") : new Mul(new Num(-1), new Sym("Infinity"));
+                             }
+                         } catch(e) {}
+                     }
                      if (num.value < 0) return new Mul(new Num(-1), new Sym("Infinity"));
                      return new Sym("Infinity");
                 }
@@ -3116,8 +3145,8 @@ class CAS {
         try {
             // Check for Infinity - Infinity form
             if (expr instanceof Sub || expr instanceof Add) {
-                const L_left = this._limit(expr.left, varNode, point, depth + 1);
-                const L_right = this._limit(expr.right, varNode, point, depth + 1);
+                const L_left = this._limit(expr.left, varNode, point, depth + 1, dir);
+                const L_right = this._limit(expr.right, varNode, point, depth + 1, dir);
 
                 const isInf = (node) => node instanceof Sym && (node.name === 'Infinity' || node.name === 'infinity');
                 const isNegInf = (node) => node instanceof Mul && node.left instanceof Num && node.left.value === -1 && isInf(node.right);
@@ -4595,6 +4624,57 @@ class CAS {
         const c3 = new Sub(Fy.diff(x), Fx.diff(y)).simplify();
 
         return new Vec([c1, c2, c3]);
+    }
+
+    _conservative(field, vars) {
+        if (!(field instanceof Vec) || !(vars instanceof Vec)) throw new Error("Arguments must be vectors");
+        // Check dimension
+        const n = field.elements.length;
+        if (vars.elements.length !== n) throw new Error("Dimension mismatch");
+
+        // Check partials: dFi/dxj = dFj/dxi
+        for(let i=0; i<n; i++) {
+            for(let j=i+1; j<n; j++) {
+                const dFi_dxj = field.elements[i].diff(vars.elements[j]).simplify();
+                const dFj_dxi = field.elements[j].diff(vars.elements[i]).simplify();
+                // Check equality
+                const diff = new Sub(dFi_dxj, dFj_dxi).simplify();
+                if (diff instanceof Num && diff.value === 0) continue;
+                // If symbolic difference is 0?
+                // simplify() handles basic algebra.
+                // If not 0, return 0 (false)
+                return new Num(0);
+            }
+        }
+        return new Num(1);
+    }
+
+    _potential(field, vars) {
+        const isCons = this._conservative(field, vars);
+        if (isCons.value === 0) throw new Error("Field is not conservative");
+
+        const n = field.elements.length;
+        let phi = new Num(0);
+
+        // phi = int(F1, x1) + C(x2, x3...)
+        // Then dphi/dx2 = F2 ...
+
+        // We can do this iteratively.
+        // Current phi accounts for first k variables.
+        // We calculate partial derivative of phi w.r.t next variable, subtract from F_next.
+        // Remainder should depend only on x_{k+1}...
+        // Integrate remainder.
+
+        for(let i=0; i<n; i++) {
+             // Differentiate current phi w.r.t current var
+             const dPhi = phi.diff(vars.elements[i]).simplify();
+             // Remainder to integrate
+             const rem = new Sub(field.elements[i], dPhi).simplify();
+             // Integrate rem w.r.t current var
+             const term = rem.integrate(vars.elements[i]).simplify();
+             phi = new Add(phi, term).simplify();
+        }
+        return phi;
     }
 
     _rem(a, b) {
