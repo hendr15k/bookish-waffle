@@ -711,6 +711,7 @@
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-riemann')">Riemann</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-fourier')">Fourier</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-tangent')">Tangent</button>
+            <button class="tab-btn" onclick="openTab(event, 'tab-calc-vector')">Vector Calc</button>
         </div>
 
         <!-- Diff & Limit Tab -->
@@ -911,6 +912,25 @@
             </div>
         </div>
 
+        <!-- Vector Calculus Tab -->
+        <div id="tab-calc-vector" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="vcalc-expr">Vector Field / Scalar Func</label>
+                    <input type="text" class="form-input" id="vcalc-expr" placeholder="e.g. [x^2, y^2, z] or x*y*z">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="vcalc-vars">Variables</label>
+                    <input type="text" class="form-input" id="vcalc-vars" placeholder="[x, y, z]" value="[x, y, z]">
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('grad', ['vcalc-expr', 'vcalc-vars'])">Gradient</button>
+                    <button class="action-btn" onclick="runTool('divergence', ['vcalc-expr', 'vcalc-vars'])">Divergence</button>
+                    <button class="action-btn" onclick="runTool('curl', ['vcalc-expr', 'vcalc-vars'])">Curl</button>
+                </div>
+            </div>
+        </div>
+
         <div id="palette-calculus"></div>
         <div class="tool-result"></div>
     </div>
@@ -925,6 +945,8 @@
         <div class="tab-header">
              <button class="tab-btn active" onclick="openTab(event, 'tab-plot-2d')">2D Function</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-plot-3d')">3D Plot</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-plot-implicit')">Implicit</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-plot-vector')">Vector Field</button>
         </div>
 
         <div id="tab-plot-2d" class="tab-content active">
@@ -991,6 +1013,91 @@
                 </div>
                  <div class="action-grid">
                     <button class="action-btn" onclick="runTool('plot3d', ['plot-3d-expr', 'plot-3d-x', 'plot-3d-y', 'plot-3d-xmin', 'plot-3d-xmax', 'plot-3d-ymin', 'plot-3d-ymax'])">Plot 3D</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-plot-implicit" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="plot-imp-eq">Equation f(x,y) = g(x,y)</label>
+                    <input type="text" class="form-input" id="plot-imp-eq" placeholder="e.g. x^2 + y^2 = 1">
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-imp-x">Var X</label>
+                        <input type="text" class="form-input" id="plot-imp-x" value="x">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-imp-y">Var Y</label>
+                        <input type="text" class="form-input" id="plot-imp-y" value="y">
+                    </div>
+                </div>
+                <div class="form-row">
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-imp-xmin">Min X</label>
+                        <input type="number" class="form-input" id="plot-imp-xmin" value="-5">
+                    </div>
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-imp-xmax">Max X</label>
+                        <input type="number" class="form-input" id="plot-imp-xmax" value="5">
+                    </div>
+                </div>
+                <div class="form-row">
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-imp-ymin">Min Y</label>
+                        <input type="number" class="form-input" id="plot-imp-ymin" value="-5">
+                    </div>
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-imp-ymax">Max Y</label>
+                        <input type="number" class="form-input" id="plot-imp-ymax" value="5">
+                    </div>
+                </div>
+                 <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('plotimplicit', ['plot-imp-eq', 'plot-imp-x', 'plot-imp-y', 'plot-imp-xmin', 'plot-imp-xmax', 'plot-imp-ymin', 'plot-imp-ymax'])">Plot Implicit</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-plot-vector" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="plot-vec-expr">Vector [u, v] or Slope Eq</label>
+                    <input type="text" class="form-input" id="plot-vec-expr" placeholder="e.g. [y, -x] or y' = x+y">
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-vec-x">Var X</label>
+                        <input type="text" class="form-input" id="plot-vec-x" value="x">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-vec-y">Var Y</label>
+                        <input type="text" class="form-input" id="plot-vec-y" value="y">
+                    </div>
+                </div>
+                <div class="form-row">
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-vec-xmin">Min X</label>
+                        <input type="number" class="form-input" id="plot-vec-xmin" value="-5">
+                    </div>
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-vec-xmax">Max X</label>
+                        <input type="number" class="form-input" id="plot-vec-xmax" value="5">
+                    </div>
+                </div>
+                <div class="form-row">
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-vec-ymin">Min Y</label>
+                        <input type="number" class="form-input" id="plot-vec-ymin" value="-5">
+                    </div>
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-vec-ymax">Max Y</label>
+                        <input type="number" class="form-input" id="plot-vec-ymax" value="5">
+                    </div>
+                </div>
+                 <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('vectorfield', ['plot-vec-expr', 'plot-vec-x', 'plot-vec-y', 'plot-vec-xmin', 'plot-vec-xmax', 'plot-vec-ymin', 'plot-vec-ymax'])">Vector Field</button>
+                    <button class="action-btn secondary" onclick="runTool('slopefield', ['plot-vec-expr', 'plot-vec-x', 'plot-vec-y', 'plot-vec-xmin', 'plot-vec-xmax', 'plot-vec-ymin', 'plot-vec-ymax'])">Slope Field</button>
                 </div>
             </div>
         </div>
