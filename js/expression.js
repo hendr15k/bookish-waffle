@@ -1653,6 +1653,12 @@ class Call extends Expr {
             if (this.funcName === 'cot') return new Call('ln', [new Call('abs', [new Call('sin', [varName])])]);
             if (this.funcName === 'sec') return new Call('ln', [new Call('abs', [new Add(new Call('sec', [varName]), new Call('tan', [varName]))])]);
             if (this.funcName === 'csc') return new Mul(new Num(-1), new Call('ln', [new Call('abs', [new Add(new Call('csc', [varName]), new Call('cot', [varName]))])]));
+            if (this.funcName === 'sinh') return new Call('cosh', [varName]);
+            if (this.funcName === 'cosh') return new Call('sinh', [varName]);
+            if (this.funcName === 'tanh') return new Call('ln', [new Call('cosh', [varName])]);
+            if (this.funcName === 'sech') return new Call('atan', [new Call('sinh', [varName])]);
+            if (this.funcName === 'csch') return new Call('ln', [new Call('tanh', [new Div(varName, new Num(2))])]);
+            if (this.funcName === 'coth') return new Call('ln', [new Call('sinh', [varName])]);
             if (this.funcName === 'exp') return this;
         }
         return new Call("integrate", [this, varName]);
