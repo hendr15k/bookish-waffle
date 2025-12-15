@@ -425,7 +425,7 @@
         .variable-value {
             color: #333;
         }
-        #mode-toggle {
+        #mode-toggle, #graphing-toggle {
             padding: 8px 16px;
             background: transparent;
             border: 1px solid var(--primary-color);
@@ -433,9 +433,108 @@
             border-radius: 6px;
             cursor: pointer;
             font-weight: 600;
+            margin-left: 10px;
         }
-        #mode-toggle:hover {
+        #mode-toggle:hover, #graphing-toggle:hover {
             background: rgba(0, 123, 255, 0.1);
+        }
+
+        /* Graphing Mode Styles */
+        #graphing-mode {
+            display: none;
+            height: calc(100vh - 80px); /* Adjust for header/padding */
+            gap: 0; /* Remove gap handled by border */
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            background: var(--card-bg);
+        }
+        #graphing-sidebar {
+            width: 300px;
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-color);
+        }
+        #graphing-cell-list {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        .graphing-cell {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-left: 5px solid #ccc; /* Color indicator */
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            position: relative;
+        }
+        .graphing-cell.focused {
+            border-color: var(--primary-color);
+        }
+        .graphing-cell-input {
+            border: none;
+            outline: none;
+            font-size: 1.1em;
+            width: 100%;
+            background: transparent;
+            font-family: monospace;
+            color: var(--text-color);
+        }
+        .graphing-cell-output {
+            font-size: 0.9em;
+            color: #666;
+            min-height: 1.2em;
+        }
+        .graphing-cell-remove {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: none;
+            border: none;
+            color: #999;
+            cursor: pointer;
+            font-size: 1.2em;
+            padding: 0 5px;
+        }
+        .graphing-cell-remove:hover {
+            color: #d73a49;
+        }
+        #graphing-add-btn {
+            padding: 15px;
+            background: var(--card-bg);
+            border: none;
+            border-top: 1px solid var(--border-color);
+            cursor: pointer;
+            text-align: left;
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+        #graphing-add-btn:hover {
+            background: rgba(0,0,0,0.02);
+        }
+        #graphing-main {
+            flex-grow: 1;
+            position: relative;
+            background: white;
+            overflow: hidden;
+        }
+        /* Dark mode adjustments for Graphing Mode */
+        body.dark-mode #graphing-sidebar {
+            background: #121212;
+            border-right-color: #333;
+        }
+        body.dark-mode #graphing-add-btn {
+            background: #1e1e1e;
+            border-top-color: #333;
+        }
+        body.dark-mode #graphing-main {
+            background: #1e1e1e;
         }
 
         /* Tabs */
@@ -481,15 +580,37 @@
     </style>
 </head>
 <body>
-    <div id="main-content">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h1 style="margin: 0; font-size: 1.5em;">Web CAS</h1>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h1 style="margin: 0; font-size: 1.5em;">Web CAS</h1>
+        <div>
+            <button id="graphing-toggle">Graphing Mode</button>
             <button id="mode-toggle">App Mode</button>
         </div>
+    </div>
+
+    <div id="main-content">
         <div id="history"></div>
         <div id="input-area">
             <input type="text" id="command-input" placeholder="Enter command (e.g. sum(k^2, k, 1, 5))" autocomplete="off">
             <button id="submit-btn">Evaluate</button>
+        </div>
+    </div>
+
+    <!-- Graphing Mode (GeoGebra-like) -->
+    <div id="graphing-mode">
+        <div id="graphing-sidebar">
+            <div id="graphing-cell-list">
+                <!-- Cells injected here -->
+            </div>
+            <button id="graphing-add-btn" onclick="addGraphingCell()">+ Add Expression</button>
+        </div>
+        <div id="graphing-main">
+            <canvas id="graphing-canvas" style="width:100%; height:100%; display:block;"></canvas>
+            <div style="position:absolute; bottom:20px; right:20px; display:flex; flex-direction:column; gap:10px;">
+                <button onclick="resetGraphingView()" style="width:30px; height:30px; border-radius:4px; border:1px solid #ccc; background:rgba(255,255,255,0.8); cursor:pointer;">⌂</button>
+                <button onclick="zoomGraphing(0.8)" style="width:30px; height:30px; border-radius:4px; border:1px solid #ccc; background:rgba(255,255,255,0.8); cursor:pointer;">+</button>
+                <button onclick="zoomGraphing(1.25)" style="width:30px; height:30px; border-radius:4px; border:1px solid #ccc; background:rgba(255,255,255,0.8); cursor:pointer;">-</button>
+            </div>
         </div>
     </div>
 
@@ -2084,8 +2205,10 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         const variableList = document.getElementById('variable-list');
         const appVariableList = document.getElementById('app-variable-list');
         const modeToggle = document.getElementById('mode-toggle');
+        const graphingToggle = document.getElementById('graphing-toggle');
         const darkModeToggle = document.getElementById('dark-mode-toggle');
         let isMobileMode = false;
+        let isGraphingMode = false;
         let lastFocusedInput = 'command-input';
 
         // Track focused input
@@ -2113,20 +2236,63 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             }
         });
 
+        function switchMode(mode) {
+             const mainContent = document.getElementById('main-content');
+             const appGrid = document.getElementById('app-grid');
+             const appSearch = document.getElementById('app-search-container');
+             const graphingMode = document.getElementById('graphing-mode');
+             const sidebar = document.getElementById('sidebar');
+
+             // Reset states
+             document.body.classList.remove('mobile-mode');
+             mainContent.style.display = 'none';
+             appGrid.style.display = 'none';
+             appSearch.style.display = 'none';
+             graphingMode.style.display = 'none';
+             if (sidebar) sidebar.style.display = 'none';
+
+             isMobileMode = false;
+             isGraphingMode = false;
+             modeToggle.textContent = 'App Mode';
+             graphingToggle.textContent = 'Graphing Mode';
+
+             closeTool(); // Close any open tools
+
+             if (mode === 'desktop') {
+                 mainContent.style.display = 'block';
+                 if (sidebar) sidebar.style.display = 'block';
+                 document.getElementById('input-area').style.display = 'flex';
+                 document.getElementById('history').style.display = 'block';
+             } else if (mode === 'app') {
+                 isMobileMode = true;
+                 document.body.classList.add('mobile-mode');
+                 appGrid.style.display = 'grid';
+                 appSearch.style.display = 'block';
+                 modeToggle.textContent = 'Desktop Mode';
+             } else if (mode === 'graphing') {
+                 isGraphingMode = true;
+                 graphingMode.style.display = 'flex';
+                 graphingToggle.textContent = 'Close Graphing';
+                 // Initialize canvas size
+                 resizeGraphingCanvas();
+                 // Add first cell if empty
+                 if (graphingCells.length === 0) addGraphingCell();
+             }
+        }
+
         modeToggle.addEventListener('click', () => {
-            isMobileMode = !isMobileMode;
             if (isMobileMode) {
-                document.body.classList.add('mobile-mode');
-                modeToggle.textContent = 'Desktop Mode';
-                document.getElementById('input-area').style.display = 'none'; // Hide raw input in mobile
-                document.getElementById('app-search-container').style.display = 'block'; // Show search
+                switchMode('desktop');
             } else {
-                document.body.classList.remove('mobile-mode');
-                modeToggle.textContent = 'App Mode';
-                document.getElementById('input-area').style.display = 'flex';
-                document.getElementById('app-search-container').style.display = 'none'; // Hide search
-                document.getElementById('history').style.display = 'block';
-                closeTool(); // Ensure no tool is open
+                switchMode('app');
+            }
+        });
+
+        graphingToggle.addEventListener('click', () => {
+            if (isGraphingMode) {
+                switchMode('desktop');
+            } else {
+                switchMode('graphing');
             }
         });
 
@@ -4929,6 +5095,211 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                     result = baseVal / rates[fromUnit];
                     fromInput.value = Number(result.toPrecision(6));
                 }
+            }
+        };
+
+        // --- Graphing Mode Logic ---
+        const graphingCells = [];
+        const graphingColors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'];
+        let graphingCanvasBounds = null; // Store current bounds for persistent zoom/pan
+
+        function resizeGraphingCanvas() {
+            const container = document.getElementById('graphing-main');
+            const canvas = document.getElementById('graphing-canvas');
+            if (container && canvas) {
+                canvas.width = container.clientWidth;
+                canvas.height = container.clientHeight;
+                updateGraphingPlot(); // Redraw
+            }
+        }
+
+        window.addEventListener('resize', () => {
+             if (isGraphingMode) resizeGraphingCanvas();
+        });
+
+        window.addGraphingCell = function(expr = '') {
+            const id = 'gcell-' + Date.now() + Math.random().toString(36).substr(2, 9);
+            const color = graphingColors[graphingCells.length % graphingColors.length];
+
+            const cellObj = { id, expr, color, valid: false };
+            graphingCells.push(cellObj);
+
+            const container = document.getElementById('graphing-cell-list');
+            const div = document.createElement('div');
+            div.className = 'graphing-cell';
+            div.id = id;
+            div.style.borderLeftColor = color;
+
+            div.innerHTML = `
+                <button class="graphing-cell-remove" onclick="removeGraphingCell('${id}')">×</button>
+                <input type="text" class="graphing-cell-input" placeholder="Expression (e.g. sin(x))" value="${expr}" onkeydown="handleGraphingInput(event, '${id}')" onblur="updateGraphingPlot()">
+                <div class="graphing-cell-output"></div>
+            `;
+
+            container.appendChild(div);
+
+            // Focus new input
+            setTimeout(() => div.querySelector('input').focus(), 10);
+        };
+
+        window.removeGraphingCell = function(id) {
+            const idx = graphingCells.findIndex(c => c.id === id);
+            if (idx !== -1) {
+                graphingCells.splice(idx, 1);
+                const el = document.getElementById(id);
+                if(el) el.remove();
+                updateGraphingPlot();
+            }
+        };
+
+        window.handleGraphingInput = function(e, id) {
+            if (e.key === 'Enter') {
+                updateGraphingPlot();
+                // Add new cell if it's the last one and not empty
+                const idx = graphingCells.findIndex(c => c.id === id);
+                if (idx === graphingCells.length - 1 && e.target.value.trim() !== '') {
+                     addGraphingCell();
+                }
+            }
+        };
+
+        window.updateGraphingPlot = function() {
+            if (!isGraphingMode) return;
+            const canvas = document.getElementById('graphing-canvas');
+            if (!canvas) return;
+
+            const validPlots = [];
+
+            // Iterate all cells
+            graphingCells.forEach(cell => {
+                const el = document.getElementById(cell.id);
+                if (!el) return;
+                const inputVal = el.querySelector('input').value.trim();
+                const outputDiv = el.querySelector('.graphing-cell-output');
+                cell.expr = inputVal;
+
+                if (!inputVal) {
+                    outputDiv.textContent = '';
+                    cell.valid = false;
+                    return;
+                }
+
+                try {
+                    const lexer = new Lexer(inputVal);
+                    const parser = new Parser(lexer);
+                    const tree = parser.parse();
+                    const result = cas.evaluate(tree);
+
+                    // Determine if plot-able
+                    // Support y = ... (Eq) or just expression
+                    let exprToPlot = result;
+                    let plotType = 'function'; // default
+
+                    // Handle Equations y = x^2
+                    // We need explicit plot logic if possible, or solve for y
+                    // For now, assume expression of x
+                    // Or check result type
+
+                    // Construct a plot object using internal plot logic helpers or manually
+                    // We can reuse the result of "plot(expr)" which gives us the bounds and structure
+                    // But we want to preserve color and combine them.
+
+                    // Check for variables
+                    let varName = 'x';
+                     // (Simplified var detection)
+
+                    // Just wrap in Plot object structure expected by drawPlot
+                    const plotObj = {
+                         type: 'plot',
+                         subtype: 'function', // or parametric/polar detected from input?
+                         expr: result,
+                         var: new Sym(varName),
+                         min: -10,
+                         max: 10,
+                         color: cell.color,
+                         isMulti: false // individual
+                    };
+
+                    // Use CAS plot command to resolve types/bounds if possible?
+                    // "plot(expr)" returns a plot object. Let's try that.
+                    // But we need to avoid side-effects or history logging.
+                    // We can check if result is already a plot object (e.g. plot(x))
+                    if (result.type === 'plot') {
+                        result.color = cell.color;
+                        validPlots.push(result);
+                    } else {
+                        // Create standard function plot
+                        validPlots.push(plotObj);
+                    }
+
+                    // Success output
+                    outputDiv.textContent = result.toString();
+                    outputDiv.style.color = '#666';
+                    cell.valid = true;
+
+                } catch (e) {
+                    outputDiv.textContent = e.message;
+                    outputDiv.style.color = 'red';
+                    cell.valid = false;
+                }
+            });
+
+            // Combine plots
+            if (validPlots.length > 0) {
+                 const multiResult = {
+                     type: 'plot',
+                     subtype: 'function', // Default, mixed types handled by drawPlot loop
+                     isMulti: true,
+                     plots: validPlots,
+                     min: -10, max: 10 // defaults, overwritten by bounds
+                 };
+
+                 // Preserve bounds if dragging happened
+                 // If canvas.plotBounds exists, we might want to respect it?
+                 // But drawPlot usually calculates bounds from input.
+                 // We need to pass explicitBounds if we have them.
+
+                 drawPlot(canvas, multiResult, graphingCanvasBounds);
+                 setupInteractivePlot(canvas);
+            } else {
+                 const ctx = canvas.getContext('2d');
+                 ctx.clearRect(0,0,canvas.width, canvas.height);
+            }
+        };
+
+        window.zoomGraphing = function(factor) {
+            const canvas = document.getElementById('graphing-canvas');
+            if (canvas && canvas.plotBounds) {
+                 manualZoom(canvas, factor);
+                 // manualZoom updates canvas.plotBounds and redraws
+                 // We should sync our global bounds tracker
+                 graphingCanvasBounds = canvas.plotBounds;
+            }
+        };
+
+        window.resetGraphingView = function() {
+            graphingCanvasBounds = null;
+            updateGraphingPlot();
+        };
+
+        // Hook into setupInteractivePlot to save bounds when user pans/zooms in graphing mode
+        const originalSetupInteractivePlot = window.setupInteractivePlot;
+        window.setupInteractivePlot = function(canvas) {
+            originalSetupInteractivePlot(canvas);
+            if (canvas.id === 'graphing-canvas') {
+                // Add listener to update global bounds on interaction end?
+                // The manualZoom and interaction logic in index.html (implied) updates plotBounds on the canvas object.
+                // We just need to make sure we persist it if updateGraphingPlot is called again (e.g. typing).
+                // We passed graphingCanvasBounds to drawPlot.
+                // When drawPlot finishes, it sets canvas.plotBounds.
+                // If interaction happens, canvas.plotBounds updates.
+                // So we should capture it.
+                canvas.addEventListener('mouseup', () => {
+                     graphingCanvasBounds = canvas.plotBounds;
+                });
+                canvas.addEventListener('wheel', () => {
+                     graphingCanvasBounds = canvas.plotBounds;
+                });
             }
         };
 

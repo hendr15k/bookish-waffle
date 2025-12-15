@@ -1,6 +1,6 @@
 {
   "devDependencies": {
-    "jsdom": "^27.2.0"
+    "jsdom": "^27.3.0"
   },
   "scripts": {
     "test": "node tests/test_core.js"
