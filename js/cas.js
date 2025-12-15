@@ -1335,6 +1335,26 @@ class CAS {
                 return this._toPolar(args[0]);
             }
 
+            if (node.funcName === 'bernoulli') {
+                if (args.length !== 1) throw new Error("bernoulli requires 1 argument (n)");
+                return this._bernoulli(args[0]);
+            }
+
+            if (node.funcName === 'harmonic') {
+                if (args.length !== 1) throw new Error("harmonic requires 1 argument (n)");
+                return this._harmonic(args[0]);
+            }
+
+            if (node.funcName === 'lineEquation') {
+                if (args.length !== 2) throw new Error("lineEquation requires 2 arguments: point1, point2");
+                return this._lineEquation(args[0], args[1]);
+            }
+
+            if (node.funcName === 'circleEquation') {
+                if (args.length !== 2) throw new Error("circleEquation requires 2 arguments: center, radius");
+                return this._circleEquation(args[0], args[1]);
+            }
+
             return new Call(node.funcName, args);
         }
 
@@ -7463,6 +7483,99 @@ class CAS {
 
         // Result: [U, S, V] (V, not V^T, following standard svd returns)
         return new Vec([U, S, V]);
+    }
+
+    _bernoulli(n) {
+        n = n.simplify();
+        if (n instanceof Num && Number.isInteger(n.value) && n.value >= 0) {
+            const k = n.value;
+            if (k === 0) return new Num(1);
+            if (k === 1) return new Div(new Num(-1), new Num(2)); // B1 = -1/2
+            if (k % 2 !== 0) return new Num(0); // Odd B_k are 0 for k > 1
+
+            // Compute recursively: B_m = -1/(m+1) * sum(binom(m+1, k) * B_k) for k=0..m-1
+            // Cache?
+            const cache = { 0: new Num(1) };
+            for(let m=1; m<=k; m++) {
+                if (m === 1) { cache[1] = new Div(new Num(-1), new Num(2)); continue; }
+                if (m % 2 !== 0) { cache[m] = new Num(0); continue; }
+
+                let sum = new Num(0);
+                for(let j=0; j<m; j++) {
+                    const bin = this._nCr(new Num(m+1), new Num(j));
+                    sum = new Add(sum, new Mul(bin, cache[j])).simplify();
+                }
+                const term = new Div(new Num(-1), new Num(m+1));
+                cache[m] = new Mul(term, sum).simplify();
+            }
+            return cache[k];
+        }
+        return new Call('bernoulli', [n]);
+    }
+
+    _harmonic(n) {
+        // H_n = sum(1/k, k, 1, n)
+        n = n.simplify();
+        if (n instanceof Num && Number.isInteger(n.value) && n.value >= 0) {
+            if (n.value === 0) return new Num(0);
+            let sum = new Num(0);
+            for(let i=1; i<=n.value; i++) {
+                sum = new Add(sum, new Div(new Num(1), new Num(i)));
+            }
+            return sum.simplify();
+        }
+        // Symbolic sum
+        const k = new Sym('__k_harmonic__');
+        return this._sum(new Div(new Num(1), k), k, new Num(1), n);
+    }
+
+    _lineEquation(p1, p2) {
+        if (!(p1 instanceof Vec) || !(p2 instanceof Vec)) throw new Error("Points must be vectors [x, y]");
+        if (p1.elements.length < 2 || p2.elements.length < 2) throw new Error("Points must be at least 2D");
+
+        const x1 = p1.elements[0];
+        const y1 = p1.elements[1];
+        const x2 = p2.elements[0];
+        const y2 = p2.elements[1];
+
+        const dx = new Sub(x2, x1).simplify();
+        const dy = new Sub(y2, y1).simplify();
+
+        const x = new Sym('x');
+        const y = new Sym('y');
+
+        // Check if vertical line (dx = 0)
+        let isVertical = false;
+        if (dx instanceof Num && dx.value === 0) isVertical = true;
+
+        if (isVertical) {
+            // x = x1
+            return new Eq(x, x1);
+        }
+
+        // slope m = dy/dx
+        const m = new Div(dy, dx).simplify();
+
+        // y - y1 = m(x - x1)
+        // y = m(x - x1) + y1
+        const rhs = new Add(new Mul(m, new Sub(x, x1)), y1).simplify();
+        return new Eq(y, rhs);
+    }
+
+    _circleEquation(center, radius) {
+        if (!(center instanceof Vec)) throw new Error("Center must be vector [x, y]");
+        const cx = center.elements[0];
+        const cy = center.elements[1];
+        const r = radius.simplify();
+
+        const x = new Sym('x');
+        const y = new Sym('y');
+
+        // (x - cx)^2 + (y - cy)^2 = r^2
+        const lhs = new Add(new Pow(new Sub(x, cx), new Num(2)), new Pow(new Sub(y, cy), new Num(2))).simplify();
+        const rhs = new Pow(r, new Num(2)).simplify();
+
+        return new Eq(lhs, rhs);
     }
 
 }
