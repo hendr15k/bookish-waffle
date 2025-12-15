@@ -365,7 +365,71 @@ window.HELP_DATA = {
         "examples": ["balance(H2 + O2 -> H2O)"]
     },
 
+    // --- Logic ---
+    "true": { "description": "Boolean true (1).", "syntax": "true", "examples": ["true"] },
+    "false": { "description": "Boolean false (0).", "syntax": "false", "examples": ["false"] },
+    "and": { "description": "Logical AND.", "syntax": "a and b", "examples": ["x > 0 and x < 5"] },
+    "or": { "description": "Logical OR.", "syntax": "a or b", "examples": ["x < 0 or x > 5"] },
+    "not": { "description": "Logical NOT.", "syntax": "not a", "examples": ["not (x=0)"] },
+
+    // --- Polynomials & Number Theory ---
+    "degree": { "description": "Degree of a polynomial.", "syntax": "degree(poly, var)", "examples": ["degree(x^3+x, x)"] },
+    "coeff": { "description": "Coefficient of x^n.", "syntax": "coeff(poly, var, n)", "examples": ["coeff(3x^2+2x, x, 2)"] },
+    "symb2poly": { "description": "Converts polynomial to coefficient list.", "syntax": "symb2poly(expr, var)", "examples": ["symb2poly(x^2+2x+1, x)"] },
+    "poly2symb": { "description": "Converts coefficient list to polynomial.", "syntax": "poly2symb(list, var)", "examples": ["poly2symb([1, 2, 1], x)"] },
+    "resultant": { "description": "Resultant of two polynomials.", "syntax": "resultant(p1, p2, var)", "examples": ["resultant(x^2-1, x+1, x)"] },
+    "discriminant": { "description": "Discriminant of a polynomial.", "syntax": "discriminant(poly, var)", "examples": ["discriminant(x^2+bx+c, x)"] },
+    "divisors": { "description": "List of integer divisors.", "syntax": "divisors(n)", "examples": ["divisors(12)"] },
+    "euler": { "description": "Euler's totient function (phi).", "syntax": "euler(n)", "examples": ["euler(10)"] },
+    "fibonacci": { "description": "nth Fibonacci number.", "syntax": "fibonacci(n)", "examples": ["fibonacci(10)"] },
+    "gamma": { "description": "Gamma function.", "syntax": "gamma(z)", "examples": ["gamma(0.5)"] },
+
+    // --- Calculus Extras ---
+    "minimize": { "description": "Finds local minimum.", "syntax": "minimize(f, x)", "examples": ["minimize(x^2-4x, x)"] },
+    "maximize": { "description": "Finds local maximum.", "syntax": "maximize(f, x)", "examples": ["maximize(-x^2, x)"] },
+    "nIntegrate": { "description": "Numeric Integration (Simpson's Rule).", "syntax": "nIntegrate(f, x, a, b)", "examples": ["nIntegrate(exp(-x^2), x, 0, 1)"] },
+    "vectorfield": { "description": "Plots a 2D vector field.", "syntax": "vectorfield([u, v], x, y)", "examples": ["vectorfield([-y, x], x, y)"] },
+    "trigReduce": { "description": "Linearize trigonometric powers.", "syntax": "trigReduce(expr)", "examples": ["trigReduce(sin(x)^2)"] },
+    "trigExpand": { "description": "Expand trigonometric sums.", "syntax": "trigExpand(expr)", "examples": ["trigExpand(sin(2x))"] },
+
+    // --- List & Matrix Tools ---
+    "seq": { "description": "Generate a sequence.", "syntax": "seq(expr, var, start, end, step)", "examples": ["seq(k^2, k, 1, 5, 1)"] },
+    "range": { "description": "Generate a range of numbers.", "syntax": "range(start, end, step)", "examples": ["range(0, 10, 2)"] },
+    "sort": { "description": "Sorts a list.", "syntax": "sort(list)", "examples": ["sort([3, 1, 2])"] },
+    "reverse": { "description": "Reverses a list.", "syntax": "reverse(list)", "examples": ["reverse([1, 2, 3])"] },
+    "size": { "description": "Size of a list or vector.", "syntax": "size(list)", "examples": ["size([1, 2, 3])"] },
+    "flatten": { "description": "Flattens nested lists.", "syntax": "flatten(list)", "examples": ["flatten([[1, 2], [3]])"] },
+    "cumsum": { "description": "Cumulative sum of a list.", "syntax": "cumsum(list)", "examples": ["cumsum([1, 2, 3])"] },
+    "diag": { "description": "Create diagonal matrix from list.", "syntax": "diag(list)", "examples": ["diag([1, 2, 3])"] },
+    "identity": { "description": "Identity matrix of size n.", "syntax": "identity(n)", "examples": ["identity(3)"] },
+    "zeros": { "description": "Matrix of zeros.", "syntax": "zeros(rows, cols)", "examples": ["zeros(2, 3)"] },
+    "ones": { "description": "Matrix of ones.", "syntax": "ones(rows, cols)", "examples": ["ones(2, 3)"] },
+    "kernel": { "description": "Kernel (Nullspace) of a matrix.", "syntax": "kernel(matrix)", "examples": ["kernel([[1, 2], [2, 4]])"] },
+    "basis": { "description": "Basis of the column space.", "syntax": "basis(matrix)", "examples": ["basis([[1, 2], [3, 4]])"] },
+
+    // --- Statistics Extras ---
+    "geoMean": { "description": "Geometric Mean.", "syntax": "geoMean(list)", "examples": ["geoMean([1, 2, 4])"] },
+    "harmMean": { "description": "Harmonic Mean.", "syntax": "harmMean(list)", "examples": ["harmMean([1, 2, 4])"] },
+    "rms": { "description": "Root Mean Square.", "syntax": "rms(list)", "examples": ["rms([1, -1])"] },
+    "mad": { "description": "Mean Absolute Deviation.", "syntax": "mad(list)", "examples": ["mad([1, 2, 3])"] },
+    "binomialCDF": { "description": "Binomial Cumulative Probability.", "syntax": "binomialCDF(k, n, p)", "examples": ["binomialCDF(2, 5, 0.5)"] },
+    "poissonCDF": { "description": "Poisson Cumulative Probability.", "syntax": "poissonCDF(k, lambda)", "examples": ["poissonCDF(3, 5)"] },
+    "exponentialPDF": { "description": "Exponential PDF.", "syntax": "exponentialPDF(x, lambda)", "examples": ["exponentialPDF(1, 0.5)"] },
+    "exponentialCDF": { "description": "Exponential CDF.", "syntax": "exponentialCDF(x, lambda)", "examples": ["exponentialCDF(1, 0.5)"] },
+    "geometricPDF": { "description": "Geometric PDF.", "syntax": "geometricPDF(k, p)", "examples": ["geometricPDF(3, 0.5)"] },
+    "geometricCDF": { "description": "Geometric CDF.", "syntax": "geometricCDF(k, p)", "examples": ["geometricCDF(3, 0.5)"] },
+    "chisquarePDF": { "description": "Chi-Square PDF.", "syntax": "chisquarePDF(x, k)", "examples": ["chisquarePDF(2, 3)"] },
+    "invChiSquare": { "description": "Inverse Chi-Square CDF.", "syntax": "invChiSquare(area, k)", "examples": ["invChiSquare(0.95, 3)"] },
+    "studentTPDF": { "description": "Student's t PDF.", "syntax": "studentTPDF(x, df)", "examples": ["studentTPDF(0, 5)"] },
+    "invT": { "description": "Inverse Student's t CDF.", "syntax": "invT(area, df)", "examples": ["invT(0.95, 10)"] },
+
+    // --- Engineering ---
+    "cis": { "description": "Polar complex form: cos(x) + i*sin(x).", "syntax": "cis(angle_deg)", "examples": ["cis(90)"] },
+    "phasor": { "description": "Phasor form.", "syntax": "phasor(mag, angle_deg)", "examples": ["phasor(10, 45)"] },
+    "parallel": { "description": "Parallel impedance (1 / sum(1/Z)).", "syntax": "parallel(z1, z2, ...)", "examples": ["parallel(10, 10)", "par(10, 20)"] },
+
     // --- Utils ---
+    "approx": { "description": "Numeric approximation.", "syntax": "approx(expr)", "examples": ["approx(pi)"] },
     "clear": { "description": "Clears variables and history.", "syntax": "clear()", "examples": ["clear()"] },
     "help": { "description": "Displays help.", "syntax": "help([command])", "examples": ["help()", "help(plot)"] }
 };
