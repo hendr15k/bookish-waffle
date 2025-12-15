@@ -576,6 +576,10 @@
             <span class="app-icon" style="color: #28a745;">🕸️</span>
             <span class="app-name">Graph</span>
         </div>
+        <div class="app-card" onclick="openTool('table')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('table')">
+            <span class="app-icon" style="color: #17a2b8;">📅</span>
+            <span class="app-name">Table</span>
+        </div>
         <div class="app-card" onclick="openTool('settings')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('settings')">
             <span class="app-icon" style="color: #007bff;">⚙️</span>
             <span class="app-name">Settings</span>
@@ -1053,6 +1057,10 @@
                 </div>
                 <div id="matrix-builder-container"></div>
                 <button class="action-btn" onclick="insertMatrix()">Insert Matrix</button>
+                <div class="action-grid" style="margin-top: 10px;">
+                    <button class="action-btn secondary" onclick="importMatrixCSV()">Import CSV</button>
+                    <button class="action-btn secondary" onclick="exportMatrixCSV()">Export CSV</button>
+                </div>
             </div>
         </div>
 
@@ -1136,6 +1144,7 @@
                          <option value="geometric">Geometric</option>
                          <option value="chisquare">Chi-Squared</option>
                          <option value="studentt">Student-t</option>
+                         <option value="fdist">F-Distribution</option>
                      </select>
                  </div>
                  <div style="text-align: center; margin-bottom: 10px;">
@@ -1189,6 +1198,16 @@
                          <div class="form-group">
                              <label class="form-label" for="stat-t-df" style="display:flex; justify-content:space-between;"><span>Degrees of Freedom (df)</span> <span id="val-t-df" style="font-weight:normal;">5</span></label>
                              <input type="range" id="stat-t-df" min="1" max="50" step="1" value="5" style="width:100%;" oninput="updateDistPlot()">
+                         </div>
+                     </div>
+                     <div id="dist-inputs-fdist" style="display:none;">
+                         <div class="form-group">
+                             <label class="form-label" for="stat-f-d1" style="display:flex; justify-content:space-between;"><span>d1 (Numerator)</span> <span id="val-f-d1" style="font-weight:normal;">5</span></label>
+                             <input type="range" id="stat-f-d1" min="1" max="50" step="1" value="5" style="width:100%;" oninput="updateDistPlot()">
+                         </div>
+                         <div class="form-group">
+                             <label class="form-label" for="stat-f-d2" style="display:flex; justify-content:space-between;"><span>d2 (Denominator)</span> <span id="val-f-d2" style="font-weight:normal;">10</span></label>
+                             <input type="range" id="stat-f-d2" min="1" max="50" step="1" value="10" style="width:100%;" oninput="updateDistPlot()">
                          </div>
                      </div>
              </div>
@@ -1692,6 +1711,36 @@
         <div class="tool-result" style="text-align:left; font-family:monospace; white-space:pre;"></div>
     </div>
 
+    <!-- TABLE TOOL -->
+    <div id="tool-table" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Table of Values</span>
+        </div>
+        <div class="tool-form">
+            <div class="form-group">
+                <label class="form-label" for="table-expr">Function f(x)</label>
+                <input type="text" class="form-input" id="table-expr" placeholder="e.g. x^2 + 1">
+            </div>
+            <div class="form-row">
+                <div class="form-group" style="flex:1">
+                    <label class="form-label" for="table-start">Start</label>
+                    <input type="number" class="form-input" id="table-start" value="0">
+                </div>
+                <div class="form-group" style="flex:1">
+                    <label class="form-label" for="table-end">End</label>
+                    <input type="number" class="form-input" id="table-end" value="10">
+                </div>
+                <div class="form-group" style="flex:1">
+                    <label class="form-label" for="table-step">Step</label>
+                    <input type="number" class="form-input" id="table-step" value="1">
+                </div>
+            </div>
+            <button class="action-btn" onclick="runTable()">Generate Table</button>
+        </div>
+        <div class="tool-result" style="overflow-x: auto;"></div>
+    </div>
+
     <!-- EDITOR APP -->
     <div id="tool-editor" class="tool-view">
         <div class="tool-header">
@@ -1719,7 +1768,11 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         <div id="app-variable-list" style="margin-bottom: 20px;">
             <!-- Content populated by JS -->
         </div>
-        <button class="action-btn secondary" style="width: 100%;" onclick="runTool('clear', [])">Clear All Variables</button>
+        <div class="action-grid">
+            <button class="action-btn secondary" onclick="saveSession()">Save Variables</button>
+            <button class="action-btn secondary" onclick="loadSession()">Load Variables</button>
+        </div>
+        <button class="action-btn secondary" style="width: 100%; margin-top: 10px;" onclick="runTool('clear', [])">Clear All Variables</button>
         <div class="tool-result"></div>
     </div>
 
@@ -1907,6 +1960,57 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 document.getElementById('app-grid').style.display = 'grid';
                 document.getElementById('app-search-container').style.display = 'block';
             }
+        };
+
+        window.saveSession = function() {
+            const vars = cas.getVariables();
+            const data = {};
+            for (const key in vars) {
+                if (key !== 'pi' && key !== 'true' && key !== 'false' && key !== 'j') {
+                    data[key] = vars[key].toString();
+                }
+            }
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'cas_session.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        };
+
+        window.loadSession = function() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = e => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = evt => {
+                    try {
+                        const data = JSON.parse(evt.target.result);
+                        for (const key in data) {
+                            try {
+                                const lexer = new Lexer(data[key]);
+                                const parser = new Parser(lexer);
+                                const tree = parser.parse();
+                                const val = cas.evaluate(tree);
+                                cas.variables[key] = val;
+                            } catch (e) {
+                                console.warn(`Failed to load variable ${key}: ${e.message}`);
+                            }
+                        }
+                        updateVariables();
+                        alert("Session loaded successfully.");
+                    } catch (e) {
+                        alert("Error loading session: " + e.message);
+                    }
+                };
+                reader.readAsText(file);
+            };
+            input.click();
         };
 
         window.openTab = function(evt, tabId) {
@@ -4263,6 +4367,60 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             linExpr.focus();
         };
 
+        window.exportMatrixCSV = function() {
+            const matStr = document.getElementById('lin-expr').value;
+            if(!matStr) return;
+            try {
+                // Parse matrix
+                const lexer = new Lexer(matStr);
+                const parser = new Parser(lexer);
+                const mat = parser.parse();
+                if (!(mat instanceof Vec)) throw new Error("Not a matrix");
+
+                let csv = "";
+                for(const row of mat.elements) {
+                    if (!(row instanceof Vec)) throw new Error("Not a matrix");
+                    const line = row.elements.map(e => e.toString()).join(",");
+                    csv += line + "\n";
+                }
+
+                // Download
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'matrix.csv';
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch(e) {
+                alert("Export Error: " + e.message);
+            }
+        };
+
+        window.importMatrixCSV = function() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.csv';
+            input.onchange = e => {
+                const file = e.target.files[0];
+                if(!file) return;
+                const reader = new FileReader();
+                reader.onload = evt => {
+                    const text = evt.target.result;
+                    const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+                    const matrix = [];
+                    for(const line of lines) {
+                        const row = line.split(',').map(s => s.trim());
+                        matrix.push(`[${row.join(',')}]`);
+                    }
+                    const matStr = `[${matrix.join(',')}]`;
+                    document.getElementById('lin-expr').value = matStr;
+                };
+                reader.readAsText(file);
+            };
+            input.click();
+        };
+
         // Linear Regression Logic
         window.runRegression = function() {
             const dataStr = document.getElementById('reg-data').value;
@@ -4720,6 +4878,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             const expInputs = document.getElementById('dist-inputs-exponential');
             const geoInputs = document.getElementById('dist-inputs-geometric');
             const chiInputs = document.getElementById('dist-inputs-chisquare');
+            const fInputs = document.getElementById('dist-inputs-fdist');
 
             normInputs.style.display = 'none';
             binInputs.style.display = 'none';
@@ -4727,6 +4886,8 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             expInputs.style.display = 'none';
             geoInputs.style.display = 'none';
             chiInputs.style.display = 'none';
+            document.getElementById('dist-inputs-studentt').style.display = 'none';
+            fInputs.style.display = 'none';
 
             if (type === 'normal') {
                 normInputs.style.display = 'block';
@@ -4742,6 +4903,8 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 chiInputs.style.display = 'block';
             } else if (type === 'studentt') {
                 document.getElementById('dist-inputs-studentt').style.display = 'block';
+            } else if (type === 'fdist') {
+                fInputs.style.display = 'block';
             }
             updateDistPlot();
         };
@@ -5146,6 +5309,67 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                  }
                  ctx.stroke();
                  ctx.fillStyle = "rgba(23, 162, 184, 0.1)";
+                 ctx.lineTo(width, mapY(0));
+                 ctx.lineTo(0, mapY(0));
+                 ctx.fill();
+             } else if (type === 'fdist') {
+                 const d1Input = document.getElementById('stat-f-d1');
+                 const d2Input = document.getElementById('stat-f-d2');
+                 const d1 = parseFloat(d1Input.value);
+                 const d2 = parseFloat(d2Input.value);
+
+                 document.getElementById('val-f-d1').textContent = d1;
+                 document.getElementById('val-f-d2').textContent = d2;
+
+                 // Range X: 0 to ~5? Mean is d2/(d2-2) approx 1. Variance can be large.
+                 // Let's use 0 to 5.
+                 const rangeMin = 0;
+                 const rangeMax = 5;
+                 const rangeYMin = 0;
+                 const rangeYMax = 1.0; // Peak varies
+
+                 const mapX = (x) => ((x - rangeMin) / (rangeMax - rangeMin)) * width;
+                 const mapY = (y) => height - ((y - rangeYMin) / (rangeYMax - rangeYMin)) * height;
+
+                 // Draw Axes
+                 ctx.strokeStyle = "#ccc";
+                 ctx.beginPath();
+                 const yZero = mapY(0);
+                 ctx.moveTo(0, yZero);
+                 ctx.lineTo(width, yZero);
+                 const xZero = mapX(0);
+                 ctx.moveTo(xZero, 0);
+                 ctx.lineTo(xZero, height);
+                 ctx.stroke();
+
+                 // F-PDF
+                 // f(x, d1, d2)
+                 // Use cas internal? Or implement JS approx.
+                 // cas._fPDF is available.
+
+                 const fpdf = (x, d1, d2) => {
+                     try {
+                         const val = cas._fPDF(new Num(x), new Num(d1), new Num(d2));
+                         if(val instanceof Num) return val.value;
+                     } catch(e){}
+                     return 0;
+                 };
+
+                 ctx.beginPath();
+                 ctx.strokeStyle = "#fd7e14"; // Orange
+                 ctx.lineWidth = 2;
+
+                 let first = true;
+                 // Start slightly offset from 0 to avoid singularity if d1 < 2
+                 for (let px = 0; px <= width; px++) {
+                      const x = rangeMin + (px / width) * (rangeMax - rangeMin);
+                      const y = (x <= 0) ? 0 : fpdf(x, d1, d2);
+                      const py = mapY(y);
+                      if (first) { ctx.moveTo(px, py); first = false; }
+                      else { ctx.lineTo(px, py); }
+                 }
+                 ctx.stroke();
+                 ctx.fillStyle = "rgba(253, 126, 20, 0.1)";
                  ctx.lineTo(width, mapY(0));
                  ctx.lineTo(0, mapY(0));
                  ctx.fill();
@@ -5820,6 +6044,85 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 res += (i+1) + " [" + matrix[i].join(", ") + "]\n";
             }
             document.querySelector('#tool-graph .tool-result').innerText = res;
+        };
+
+        window.runTable = function() {
+            const exprStr = document.getElementById('table-expr').value;
+            const startVal = parseFloat(document.getElementById('table-start').value);
+            const endVal = parseFloat(document.getElementById('table-end').value);
+            const stepVal = parseFloat(document.getElementById('table-step').value);
+
+            if (!exprStr || isNaN(startVal) || isNaN(endVal) || isNaN(stepVal) || stepVal === 0) {
+                return;
+            }
+
+            try {
+                const lexer = new Lexer(exprStr);
+                const parser = new Parser(lexer);
+                const expr = parser.parse();
+
+                // Identify variable
+                const vars = new Set();
+                const collect = (node) => {
+                    if (node instanceof Sym && !['pi', 'e', 'i', 'Infinity', 'NaN'].includes(node.name)) vars.add(node.name);
+                    if (node instanceof Call) node.args.forEach(collect);
+                    if (node instanceof BinaryOp) { collect(node.left); collect(node.right); }
+                    if (node instanceof Not) collect(node.arg);
+                };
+                collect(expr);
+
+                let varName = 'x';
+                if (vars.size > 0) {
+                    if (vars.has('x')) varName = 'x';
+                    else varName = Array.from(vars)[0];
+                }
+                const varNode = new Sym(varName);
+
+                // Generate table
+                let tableHTML = `<table style="width:100%; border-collapse: collapse;">
+                    <thead><tr style="background:#f0f0f0;">
+                        <th style="border:1px solid #ddd; padding:8px;">${varName}</th>
+                        <th style="border:1px solid #ddd; padding:8px;">f(${varName})</th>
+                    </tr></thead><tbody>`;
+
+                // Handle direction
+                const range = [];
+                if (stepVal > 0) {
+                    for (let x = startVal; x <= endVal; x += stepVal) range.push(x);
+                } else {
+                    for (let x = startVal; x >= endVal; x += stepVal) range.push(x);
+                }
+
+                // Add exact end if floating point error missed it slightly
+                // Not strictly necessary for basic tool
+
+                for (const x of range) {
+                    let yStr = "";
+                    try {
+                        const val = expr.substitute(varNode, new Num(x)).simplify();
+                        if (val instanceof Num) yStr = parseFloat(val.value.toFixed(6)).toString(); // Clean float
+                        else yStr = val.toString();
+                    } catch (e) { yStr = "Err"; }
+
+                    tableHTML += `<tr>
+                        <td style="border:1px solid #ddd; padding:8px; text-align:center;">${parseFloat(x.toFixed(6))}</td>
+                        <td style="border:1px solid #ddd; padding:8px; text-align:center;">${yStr}</td>
+                    </tr>`;
+                }
+                tableHTML += '</tbody></table>';
+
+                const visibleTool = document.querySelector('.tool-view[style*="block"]');
+                if(visibleTool) {
+                    const resBox = visibleTool.querySelector('.tool-result');
+                    resBox.innerHTML = tableHTML;
+                    resBox.style.display = 'block';
+                }
+
+                addToHistory(`Table ${exprStr}`, { type: 'info', text: 'Table Generated' }, false);
+
+            } catch (e) {
+                addToHistory("Table Error", e.message, true);
+            }
         };
 
         window.addEventListener('load', () => {

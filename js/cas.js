@@ -806,6 +806,16 @@ class CAS {
                 return this._studentTCDF(args[0], args[1]);
             }
 
+            if (node.funcName === 'fPDF') {
+                if (args.length !== 3) throw new Error("fPDF requires 3 arguments: x, d1, d2");
+                return this._fPDF(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'fCDF') {
+                if (args.length !== 3) throw new Error("fCDF requires 3 arguments: x, d1, d2");
+                return this._fCDF(args[0], args[1], args[2]);
+            }
+
             if (node.funcName === 'invT') {
                 if (args.length !== 2) throw new Error("invT requires 2 arguments: area, df");
                 return this._invT(args[0], args[1]);
@@ -2720,6 +2730,11 @@ class CAS {
         return 0; // Failed
     }
 
+    _beta(a, b) {
+        // B(a, b) = Gamma(a)Gamma(b) / Gamma(a+b)
+        return Math.exp(this._logGamma(a) + this._logGamma(b) - this._logGamma(a + b));
+    }
+
     _betainc(x, a, b) {
         // Regularized Incomplete Beta I_x(a, b)
         if (x < 0 || x > 1) return 0; // Or NaN
@@ -4224,6 +4239,52 @@ class CAS {
             return new Num(p);
         }
         return new Call('studentTCDF', [x, df]);
+    }
+
+    _fPDF(x, d1, d2) {
+        x = x.simplify();
+        d1 = d1.simplify();
+        d2 = d2.simplify();
+
+        if (x instanceof Num && d1 instanceof Num && d2 instanceof Num) {
+            const xv = x.value;
+            const v1 = d1.value;
+            const v2 = d2.value;
+
+            if (xv < 0) return new Num(0);
+            if (v1 <= 0 || v2 <= 0) return new Num(0);
+
+            // f(x) = sqrt( (v1*x)^v1 * v2^v2 / (v1*x + v2)^(v1+v2) ) / (x * B(v1/2, v2/2))
+            // Logarithmic calculation for stability
+            const logNum = (v1 / 2) * Math.log(v1 * xv) + (v2 / 2) * Math.log(v2);
+            const logDen = ( (v1 + v2) / 2 ) * Math.log(v1 * xv + v2);
+            const logBeta = this._logGamma(v1/2) + this._logGamma(v2/2) - this._logGamma((v1+v2)/2);
+
+            // log(f) = logNum - logDen - log(x) - logBeta
+            const logF = logNum - logDen - Math.log(xv) - logBeta;
+            return new Num(Math.exp(logF));
+        }
+        return new Call('fPDF', [x, d1, d2]);
+    }
+
+    _fCDF(x, d1, d2) {
+        x = x.simplify();
+        d1 = d1.simplify();
+        d2 = d2.simplify();
+
+        if (x instanceof Num && d1 instanceof Num && d2 instanceof Num) {
+            const xv = x.value;
+            const v1 = d1.value;
+            const v2 = d2.value;
+
+            if (xv <= 0) return new Num(0);
+            if (v1 <= 0 || v2 <= 0) return new Num(0);
+
+            // F(x) = I_z(d1/2, d2/2) where z = d1*x / (d1*x + d2)
+            const z = (v1 * xv) / (v1 * xv + v2);
+            return new Num(this._betainc(z, v1/2, v2/2));
+        }
+        return new Call('fCDF', [x, d1, d2]);
     }
 
     _invT(area, df) {
