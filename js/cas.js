@@ -76,6 +76,82 @@ class CAS {
                 throw new Error("purge argument must be a variable name");
             }
 
+            if (node.funcName === 'help') {
+                const aliasMap = {
+                    'int': 'integrate',
+                    'derivative': 'diff',
+                    'differentiation': 'diff',
+                    'antiderivative': 'integrate',
+                    'comb': 'nCr',
+                    'perm': 'nPr',
+                    'evalf': 'approx',
+                    'approx': 'approx',
+                    'tran': 'trans',
+                    'transpose': 'trans',
+                    'eye': 'identity',
+                    'idn': 'identity',
+                    'ker': 'kernel',
+                    'nullspace': 'kernel',
+                    'rem': 'mod',
+                    'binomial': 'nCr',
+                    'stddev': 'std',
+                    'var': 'variance',
+                    'roots': 'solve',
+                    'molar': 'molarMass'
+                };
+
+                const getHelpList = () => {
+                    if (typeof globalThis.HELP_DATA !== 'undefined') {
+                        const keys = Object.keys(globalThis.HELP_DATA).sort();
+                        return "Available commands:\n" + keys.join(', ');
+                    }
+                    return "Help data not loaded.";
+                };
+
+                // Check for argument help("cmd") or help(cmd)
+                if (node.args.length === 1) {
+                    // Extract command name
+                    let cmd = "";
+                    if (node.args[0] instanceof Sym) cmd = node.args[0].name;
+
+                    if (cmd) {
+                        // Resolve alias
+                        if (aliasMap[cmd]) cmd = aliasMap[cmd];
+
+                        const data = (typeof globalThis.HELP_DATA !== 'undefined') ? globalThis.HELP_DATA[cmd] : null;
+                        if (data) {
+                            return {
+                                type: 'help',
+                                command: cmd,
+                                data: data,
+                                toString: () => `${cmd}: ${data.description}\nUsage: ${data.syntax}`,
+                                toLatex: () => `\\text{${cmd}: ${data.description}}`
+                            };
+                        } else {
+                            // Try to find partial matches
+                            let suggestions = "";
+                            if (typeof globalThis.HELP_DATA !== 'undefined') {
+                                const matches = Object.keys(globalThis.HELP_DATA).filter(k => k.includes(cmd));
+                                if (matches.length > 0) {
+                                    suggestions = "\nDid you mean: " + matches.join(', ');
+                                }
+                            }
+
+                            return {
+                                type: 'info',
+                                text: `No specific help found for '${cmd}'.${suggestions}`,
+                                toLatex: () => `\\text{No help found for ${cmd}}`
+                            };
+                        }
+                    }
+                }
+
+                // Default Help
+                const helpText = getHelpList();
+                const latexHelp = `\\text{Available commands: see list}`;
+                return { type: 'help', text: helpText, toString: () => helpText, toLatex: () => latexHelp };
+            }
+
             const args = node.args.map(arg => this._recursiveEval(arg));
 
             // Check for user-defined function
@@ -1153,82 +1229,6 @@ class CAS {
                  };
             }
 
-            if (node.funcName === 'help') {
-                const aliasMap = {
-                    'int': 'integrate',
-                    'derivative': 'diff',
-                    'differentiation': 'diff',
-                    'antiderivative': 'integrate',
-                    'comb': 'nCr',
-                    'perm': 'nPr',
-                    'evalf': 'approx',
-                    'approx': 'approx', // if not in help
-                    'tran': 'trans',
-                    'transpose': 'trans',
-                    'eye': 'identity',
-                    'idn': 'identity',
-                    'ker': 'kernel',
-                    'nullspace': 'kernel',
-                    'rem': 'mod', // roughly
-                    'binomial': 'nCr',
-                    'stddev': 'std',
-                    'var': 'variance',
-                    'roots': 'solve',
-                    'zeros': 'solve',
-                    'molar': 'molarMass'
-                };
-
-                const getHelpList = () => {
-                    if (typeof globalThis.HELP_DATA !== 'undefined') {
-                        const keys = Object.keys(globalThis.HELP_DATA).sort();
-                        return "Available commands:\n" + keys.join(', ');
-                    }
-                    return "Help data not loaded.";
-                };
-
-                // Check for argument help("cmd") or help(cmd)
-                if (args.length === 1) {
-                    // Extract command name
-                    let cmd = "";
-                    if (args[0] instanceof Sym) cmd = args[0].name;
-
-                    if (cmd) {
-                        // Resolve alias
-                        if (aliasMap[cmd]) cmd = aliasMap[cmd];
-
-                        const data = (typeof globalThis.HELP_DATA !== 'undefined') ? globalThis.HELP_DATA[cmd] : null;
-                        if (data) {
-                            return {
-                                type: 'help',
-                                command: cmd,
-                                data: data,
-                                toString: () => `${cmd}: ${data.description}\nUsage: ${data.syntax}`,
-                                toLatex: () => `\\text{${cmd}: ${data.description}}`
-                            };
-                        } else {
-                            // Try to find partial matches
-                            let suggestions = "";
-                            if (typeof globalThis.HELP_DATA !== 'undefined') {
-                                const matches = Object.keys(globalThis.HELP_DATA).filter(k => k.includes(cmd));
-                                if (matches.length > 0) {
-                                    suggestions = "\nDid you mean: " + matches.join(', ');
-                                }
-                            }
-
-                            return {
-                                type: 'info',
-                                text: `No specific help found for '${cmd}'.${suggestions}`,
-                                toLatex: () => `\\text{No help found for ${cmd}}`
-                            };
-                        }
-                    }
-                }
-
-                // Default Help
-                const helpText = getHelpList();
-                const latexHelp = `\\text{Available commands: see list}`;
-                return { type: 'help', text: helpText, toString: () => helpText, toLatex: () => latexHelp };
-            }
 
             if (node.funcName === 'molarMass') {
                 if (args.length !== 1) throw new Error("molarMass requires 1 argument (string formula)");
