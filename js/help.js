@@ -55,10 +55,20 @@ window.HELP_DATA = {
         "syntax": "isPrime(n)",
         "examples": ["isPrime(17)", "isPrime(20)"]
     },
+    "isSquare": {
+        "description": "Checks if a number is a perfect square.",
+        "syntax": "isSquare(n)",
+        "examples": ["isSquare(16)", "isSquare(15)"]
+    },
     "nextprime": {
         "description": "Returns the smallest prime greater than n.",
         "syntax": "nextprime(n)",
         "examples": ["nextprime(100)"]
+    },
+    "cfrac": {
+        "description": "Continued fraction expansion.",
+        "syntax": "cfrac(val, [depth])",
+        "examples": ["cfrac(1.2)", "cfrac(pi, 5)"]
     },
 
     // --- Calculus ---
@@ -381,6 +391,7 @@ window.HELP_DATA = {
     "and": { "description": "Logical AND.", "syntax": "a and b", "examples": ["x > 0 and x < 5"] },
     "or": { "description": "Logical OR.", "syntax": "a or b", "examples": ["x < 0 or x > 5"] },
     "not": { "description": "Logical NOT.", "syntax": "not a", "examples": ["not (x=0)"] },
+    "truthTable": { "description": "Generates a truth table.", "syntax": "truthTable(expr, [vars])", "examples": ["truthTable(A and B, [A, B])"] },
 
     // --- Polynomials & Number Theory ---
     "degree": { "description": "Degree of a polynomial.", "syntax": "degree(poly, var)", "examples": ["degree(x^3+x, x)"] },
@@ -439,6 +450,7 @@ window.HELP_DATA = {
     "parallel": { "description": "Parallel impedance (1 / sum(1/Z)).", "syntax": "parallel(z1, z2, ...)", "examples": ["parallel(10, 10)", "par(10, 20)"] },
 
     // --- Utils ---
+    "root": { "description": "N-th root of x.", "syntax": "root(x, n)", "examples": ["root(8, 3)", "root(x, 2)"] },
     "approx": { "description": "Numeric approximation.", "syntax": "approx(expr)", "examples": ["approx(pi)"] },
     "clear": { "description": "Clears variables and history.", "syntax": "clear()", "examples": ["clear()"] },
     "help": { "description": "Displays help.", "syntax": "help([command])", "examples": ["help()", "help(plot)"] }
