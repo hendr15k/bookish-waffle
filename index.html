@@ -2211,10 +2211,63 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         let isGraphingMode = false;
         let lastFocusedInput = 'command-input';
 
+        // Command History
+        const commandHistory = [];
+        let historyIndex = -1;
+
         // Track focused input
         document.addEventListener('focusin', (e) => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
                 lastFocusedInput = e.target.id;
+            }
+        });
+
+        // Command History & Autocomplete
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp') {
+                if (commandHistory.length > 0) {
+                    if (historyIndex === -1) historyIndex = commandHistory.length - 1;
+                    else if (historyIndex > 0) historyIndex--;
+                    input.value = commandHistory[historyIndex];
+                    setTimeout(() => input.setSelectionRange(input.value.length, input.value.length), 0);
+                }
+                e.preventDefault();
+            } else if (e.key === 'ArrowDown') {
+                if (historyIndex !== -1) {
+                    if (historyIndex < commandHistory.length - 1) {
+                        historyIndex++;
+                        input.value = commandHistory[historyIndex];
+                    } else {
+                        historyIndex = -1;
+                        input.value = '';
+                    }
+                }
+                e.preventDefault();
+            } else if (e.key === 'Tab') {
+                e.preventDefault();
+                // Basic Autocomplete
+                const val = input.value;
+                const match = val.match(/([a-zA-Z_]\w*)$/);
+                if (match && typeof HELP_DATA !== 'undefined') {
+                    const prefix = match[1];
+                    const keys = Object.keys(HELP_DATA);
+                    const candidates = keys.filter(k => k.startsWith(prefix));
+                    if (candidates.length === 1) {
+                        const completion = candidates[0].substring(prefix.length);
+                        insertAtCursor('command-input', completion + '(');
+                    } else if (candidates.length > 1) {
+                        // Find common prefix
+                        let common = candidates[0];
+                        for(let i=1; i<candidates.length; i++) {
+                            let j=0;
+                            while(j<common.length && j<candidates[i].length && common[j] === candidates[i][j]) j++;
+                            common = common.substring(0, j);
+                        }
+                        if (common.length > prefix.length) {
+                            insertAtCursor('command-input', common.substring(prefix.length));
+                        }
+                    }
+                }
             }
         });
 
@@ -4178,31 +4231,6 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             commandDiv.textContent = '> ' + command;
             entryDiv.appendChild(commandDiv);
 
-            // Copy Button
-            const copyBtn = document.createElement('span');
-            copyBtn.textContent = ' 📋';
-            copyBtn.style.cursor = 'pointer';
-            copyBtn.style.fontSize = '0.8em';
-            copyBtn.title = 'Copy result to clipboard';
-            copyBtn.onclick = (e) => {
-                e.stopPropagation();
-                let textToCopy = "";
-                if (result && typeof result === 'object' && result.toLatex) {
-                     // For specialized objects, prefer Latex or String?
-                     // Usually user wants to copy the expression text to paste elsewhere
-                     textToCopy = result.toString();
-                } else if (typeof result === 'string') {
-                    textToCopy = result;
-                }
-                navigator.clipboard.writeText(textToCopy).then(() => {
-                    // Feedback
-                    const original = copyBtn.textContent;
-                    copyBtn.textContent = ' ✓';
-                    setTimeout(() => copyBtn.textContent = original, 1000);
-                });
-            };
-            commandDiv.appendChild(copyBtn);
-
             const resultDiv = document.createElement('div');
             resultDiv.className = isError ? 'result error' : 'result';
 
@@ -4393,6 +4421,29 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             history.appendChild(entryDiv);
             history.scrollTop = history.scrollHeight;
 
+            // Add Copy Button
+            const copyBtn = document.createElement('button');
+            copyBtn.innerHTML = '📋';
+            copyBtn.title = "Copy Result";
+            copyBtn.style.cssText = "position: absolute; right: 10px; top: 10px; background: none; border: none; cursor: pointer; opacity: 0.5;";
+            copyBtn.onmouseover = () => copyBtn.style.opacity = 1;
+            copyBtn.onmouseout = () => copyBtn.style.opacity = 0.5;
+            copyBtn.onclick = (e) => {
+                e.stopPropagation();
+                let textToCopy = result.toString();
+                if (result && result.toLatex) textToCopy = result.toLatex();
+                if (latex) textToCopy = latex;
+
+                navigator.clipboard.writeText(textToCopy).then(() => {
+                    const originalText = copyBtn.innerHTML;
+                    copyBtn.innerHTML = '✓';
+                    setTimeout(() => copyBtn.innerHTML = originalText, 1000);
+                });
+            };
+            // Add to entryDiv, making it relative
+            entryDiv.style.position = 'relative';
+            entryDiv.appendChild(copyBtn);
+
             if ((latex || (result && result.toLatex)) && !isError) {
                 if (window.MathJax && typeof MathJax.typesetPromise === 'function') {
                     MathJax.typesetPromise([resultDiv])
@@ -4433,6 +4484,12 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
 
                 // Update variables list
                 updateVariables();
+
+                // Add to history array
+                if (command && (!commandHistory.length || commandHistory[commandHistory.length - 1] !== command)) {
+                    commandHistory.push(command);
+                }
+                historyIndex = -1;
 
             } catch (error) {
                 addToHistory(displayCommand, error.message, true);
@@ -5285,15 +5342,11 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         // Hook into setupInteractivePlot to save bounds when user pans/zooms in graphing mode
         const originalSetupInteractivePlot = window.setupInteractivePlot;
         window.setupInteractivePlot = function(canvas) {
+            if (canvas.dataset.interactive === 'true') return;
             originalSetupInteractivePlot(canvas);
+            canvas.dataset.interactive = 'true';
+
             if (canvas.id === 'graphing-canvas') {
-                // Add listener to update global bounds on interaction end?
-                // The manualZoom and interaction logic in index.html (implied) updates plotBounds on the canvas object.
-                // We just need to make sure we persist it if updateGraphingPlot is called again (e.g. typing).
-                // We passed graphingCanvasBounds to drawPlot.
-                // When drawPlot finishes, it sets canvas.plotBounds.
-                // If interaction happens, canvas.plotBounds updates.
-                // So we should capture it.
                 canvas.addEventListener('mouseup', () => {
                      graphingCanvasBounds = canvas.plotBounds;
                 });

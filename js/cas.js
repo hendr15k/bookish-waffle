@@ -76,6 +76,34 @@ class CAS {
                 throw new Error("purge argument must be a variable name");
             }
 
+            if (node.funcName === 'roots') {
+                if (node.args.length < 2) throw new Error("roots requires at least 2 arguments: polynomial, variable");
+                // Evaluate arguments
+                const poly = this._recursiveEval(node.args[0]);
+                const varNode = this._recursiveEval(node.args[1]);
+                return this._roots(poly, varNode);
+            }
+
+            if (node.funcName === 'subs' || node.funcName === 'substitute') {
+                 if (node.args.length !== 2) throw new Error("subs requires 2 arguments: expr, substitution (var=val)");
+                 const expr = this._recursiveEval(node.args[0]);
+                 const sub = this._recursiveEval(node.args[1]);
+
+                 if (sub instanceof Eq) {
+                     return expr.substitute(sub.left, sub.right).simplify();
+                 }
+                 if (sub instanceof Vec) {
+                     let res = expr;
+                     for(const el of sub.elements) {
+                         if (el instanceof Eq) {
+                             res = res.substitute(el.left, el.right);
+                         }
+                     }
+                     return res.simplify();
+                 }
+                 throw new Error("subs second argument must be an equation (var=val) or list of equations");
+            }
+
             if (node.funcName === 'help') {
                 const aliasMap = {
                     'int': 'integrate',
@@ -96,8 +124,8 @@ class CAS {
                     'binomial': 'nCr',
                     'stddev': 'std',
                     'var': 'variance',
-                    'roots': 'solve',
-                    'molar': 'molarMass'
+                    'molar': 'molarMass',
+                    'subs': 'substitute'
                 };
 
                 const getHelpList = () => {
@@ -157,8 +185,8 @@ class CAS {
             // Check for user-defined function
             if (this.functions.hasOwnProperty(node.funcName)) {
                 const funcDef = this.functions[node.funcName];
-                if (funcDef.params.length !== args.length) {
-                    throw new Error(`Function ${node.funcName} expects ${funcDef.params.length} arguments, got ${args.length}`);
+                if (funcDef.params.length !== node.args.length) {
+                    throw new Error(`Function ${node.funcName} expects ${funcDef.params.length} arguments, got ${node.args.length}`);
                 }
 
                 // Substitute arguments securely (to avoid collision if args contain params)
@@ -183,19 +211,19 @@ class CAS {
             }
 
             if (node.funcName === 'N') {
-                if (args.length !== 1) throw new Error("N requires 1 argument");
+                if (node.args.length !== 1) throw new Error("N requires 1 argument");
                 const val = args[0].evaluateNumeric();
                 return new Num(val);
             }
 
             if (node.funcName === 'diff') {
-                if (args.length < 2) throw new Error("diff requires at least 2 arguments");
+                if (node.args.length < 2) throw new Error("diff requires at least 2 arguments");
                 const func = args[0];
                 const varNode = args[1];
                 if (!(varNode instanceof Sym)) throw new Error("Second argument to diff must be a variable");
 
                 let order = 1;
-                if (args.length >= 3) {
+                if (node.args.length >= 3) {
                     const o = args[2];
                     if (o instanceof Num && Number.isInteger(o.value)) order = o.value;
                     else return new Call('diff', args); // Symbolic order
@@ -209,12 +237,12 @@ class CAS {
             }
 
             if (node.funcName === 'integrate' || node.funcName === 'int') {
-                if (args.length < 2) throw new Error("integrate requires at least 2 arguments");
+                if (node.args.length < 2) throw new Error("integrate requires at least 2 arguments");
                 const func = args[0];
                 const varNode = args[1];
                 if (!(varNode instanceof Sym)) throw new Error("Second argument to integrate must be a variable");
 
-                if (args.length === 4) {
+                if (node.args.length === 4) {
                     const lower = args[2];
                     const upper = args[3];
                     let indefinite = func.integrate(varNode);
@@ -298,36 +326,36 @@ class CAS {
             }
 
             if (node.funcName === 'sum') {
-                if (args.length === 1) return this._sumList(args[0]);
+                if (node.args.length === 1) return this._sumList(args[0]);
                 // sum(expr, var, start, end)
-                if (args.length !== 4) throw new Error("sum requires 1 argument (list) or 4 arguments: expression, variable, start, end");
+                if (node.args.length !== 4) throw new Error("sum requires 1 argument (list) or 4 arguments: expression, variable, start, end");
                 return this._sum(args[0], args[1], args[2], args[3]);
             }
 
             if (node.funcName === 'product') {
-                if (args.length === 1) return this._productList(args[0]);
+                if (node.args.length === 1) return this._productList(args[0]);
                 // product(expr, var, start, end)
-                if (args.length !== 4) throw new Error("product requires 1 argument (list) or 4 arguments: expression, variable, start, end");
+                if (node.args.length !== 4) throw new Error("product requires 1 argument (list) or 4 arguments: expression, variable, start, end");
                 return this._product(args[0], args[1], args[2], args[3]);
             }
 
             if (node.funcName === 'cumsum') {
-                if (args.length !== 1) throw new Error("cumsum requires 1 argument (list)");
+                if (node.args.length !== 1) throw new Error("cumsum requires 1 argument (list)");
                 return this._cumsum(args[0]);
             }
 
             if (node.funcName === 'flatten') {
-                if (args.length !== 1) throw new Error("flatten requires 1 argument (list)");
+                if (node.args.length !== 1) throw new Error("flatten requires 1 argument (list)");
                 return this._flatten(args[0]);
             }
 
             if (node.funcName === 'expand') {
-                if (args.length !== 1) throw new Error("expand takes exactly 1 argument");
+                if (node.args.length !== 1) throw new Error("expand takes exactly 1 argument");
                 return args[0].expand();
             }
 
             if (node.funcName === 'simplify') {
-                if (args.length !== 1) throw new Error("simplify takes exactly 1 argument");
+                if (node.args.length !== 1) throw new Error("simplify takes exactly 1 argument");
                 let simplified = args[0].simplify();
                 // If result is a complex Add/Sub expression, try expand().simplify() to see if it reduces
                 if (simplified instanceof Add || simplified instanceof Sub) {
@@ -340,12 +368,12 @@ class CAS {
             }
 
             if (node.funcName === 'solve' || node.funcName === 'fsolve') {
-                 if (args.length < 2) throw new Error("solve requires at least 2 arguments: equation and variable");
+                 if (node.args.length < 2) throw new Error("solve requires at least 2 arguments: equation and variable");
                  const eq = args[0];
                  const varNode = args[1];
 
                  // Check for guess (Newton-Raphson)
-                 if (args.length === 3) {
+                 if (node.args.length === 3) {
                      const guess = args[2];
                      if (!(varNode instanceof Sym) && !(varNode instanceof Vec)) throw new Error("Second argument to fsolve must be a variable or list of variables");
                      return this._fsolve(eq, varNode, guess);
@@ -356,38 +384,38 @@ class CAS {
             }
 
             if (node.funcName === 'nIntegrate' || node.funcName === 'numeric_integrate') {
-                if (args.length !== 4) throw new Error("nIntegrate requires 4 arguments: expr, var, start, end");
+                if (node.args.length !== 4) throw new Error("nIntegrate requires 4 arguments: expr, var, start, end");
                 return this._nIntegrate(args[0], args[1], args[2], args[3]);
             }
 
             if (node.funcName === 'minimize') {
-                 if (args.length !== 2) throw new Error("minimize requires 2 arguments: expr, variable");
+                 if (node.args.length !== 2) throw new Error("minimize requires 2 arguments: expr, variable");
                  if (!(args[1] instanceof Sym)) throw new Error("Second argument to minimize must be a variable");
                  return this._minimize(args[0], args[1]);
             }
 
             if (node.funcName === 'maximize') {
-                 if (args.length !== 2) throw new Error("maximize requires 2 arguments: expr, variable");
+                 if (node.args.length !== 2) throw new Error("maximize requires 2 arguments: expr, variable");
                  if (!(args[1] instanceof Sym)) throw new Error("Second argument to maximize must be a variable");
                  return this._maximize(args[0], args[1]);
             }
 
             if (node.funcName === 'resultant') {
-                 if (args.length !== 3) throw new Error("resultant requires 3 arguments: poly1, poly2, variable");
+                 if (node.args.length !== 3) throw new Error("resultant requires 3 arguments: poly1, poly2, variable");
                  return this._resultant(args[0], args[1], args[2]);
             }
 
             if (node.funcName === 'discriminant') {
-                 if (args.length !== 2) throw new Error("discriminant requires 2 arguments: poly, variable");
+                 if (node.args.length !== 2) throw new Error("discriminant requires 2 arguments: poly, variable");
                  return this._discriminant(args[0], args[1]);
             }
 
             if (node.funcName === 'plot') {
-                 if (args.length < 2) throw new Error("plot requires at least 2 arguments: expression and variable");
+                 if (node.args.length < 2) throw new Error("plot requires at least 2 arguments: expression and variable");
                  const expr = args[0];
                  const varNode = args[1];
-                 let min = args.length > 2 ? args[2].evaluateNumeric() : -10;
-                 let max = args.length > 3 ? args[3].evaluateNumeric() : 10;
+                 let min = node.args.length > 2 ? args[2].evaluateNumeric() : -10;
+                 let max = node.args.length > 3 ? args[3].evaluateNumeric() : 10;
 
                  if (isNaN(min)) min = -10;
                  if (isNaN(max)) max = 10;
@@ -407,18 +435,18 @@ class CAS {
 
             if (node.funcName === 'plot3d') {
                 // plot3d(expr, x, y, [x_min, x_max, y_min, y_max])
-                if (args.length < 3) throw new Error("plot3d requires at least 3 arguments: expression, var1, var2");
+                if (node.args.length < 3) throw new Error("plot3d requires at least 3 arguments: expression, var1, var2");
                 const expr = args[0];
                 const varX = args[1];
                 const varY = args[2];
                 let xMin = -10, xMax = 10, yMin = -10, yMax = 10;
 
-                if (args.length >= 7) {
+                if (node.args.length >= 7) {
                     xMin = args[3].evaluateNumeric();
                     xMax = args[4].evaluateNumeric();
                     yMin = args[5].evaluateNumeric();
                     yMax = args[6].evaluateNumeric();
-                } else if (args.length >= 5) {
+                } else if (node.args.length >= 5) {
                     xMin = args[3].evaluateNumeric();
                     xMax = args[4].evaluateNumeric();
                 }
@@ -449,21 +477,21 @@ class CAS {
 
                 let xExpr, yExpr, tVar, min, max;
 
-                if (args.length >= 2 && args[0] instanceof Vec) {
+                if (node.args.length >= 2 && args[0] instanceof Vec) {
                     // plotparam([x, y], t, [min], [max])
                     if (args[0].elements.length !== 2) throw new Error("plotparam list must contain 2 expressions");
                     xExpr = args[0].elements[0];
                     yExpr = args[0].elements[1];
                     tVar = args[1];
-                    min = args.length > 2 ? args[2].evaluateNumeric() : -10;
-                    max = args.length > 3 ? args[3].evaluateNumeric() : 10;
-                } else if (args.length >= 3) {
+                    min = node.args.length > 2 ? args[2].evaluateNumeric() : -10;
+                    max = node.args.length > 3 ? args[3].evaluateNumeric() : 10;
+                } else if (node.args.length >= 3) {
                     // plotparam(x, y, t, [min], [max])
                     xExpr = args[0];
                     yExpr = args[1];
                     tVar = args[2];
-                    min = args.length > 3 ? args[3].evaluateNumeric() : -10;
-                    max = args.length > 4 ? args[4].evaluateNumeric() : 10;
+                    min = node.args.length > 3 ? args[3].evaluateNumeric() : -10;
+                    max = node.args.length > 4 ? args[4].evaluateNumeric() : 10;
                 } else {
                     throw new Error("plotparam requires arguments: x, y, t, [min, max]");
                 }
@@ -487,11 +515,11 @@ class CAS {
 
             if (node.funcName === 'plotpolar') {
                 // plotpolar(r, theta, min, max)
-                if (args.length < 3) throw new Error("plotpolar requires at least 3 arguments: r, theta, min, max");
+                if (node.args.length < 3) throw new Error("plotpolar requires at least 3 arguments: r, theta, min, max");
                 const rExpr = args[0];
                 const thetaVar = args[1];
-                let min = args.length > 2 ? args[2].evaluateNumeric() : 0;
-                let max = args.length > 3 ? args[3].evaluateNumeric() : 2 * Math.PI;
+                let min = node.args.length > 2 ? args[2].evaluateNumeric() : 0;
+                let max = node.args.length > 3 ? args[3].evaluateNumeric() : 2 * Math.PI;
 
                 if (!(thetaVar instanceof Sym)) throw new Error("plotpolar variable must be a symbol");
                 if (isNaN(min)) min = 0;
@@ -510,7 +538,7 @@ class CAS {
             }
 
             if (node.funcName === 'plotlist') {
-                if (args.length !== 1) throw new Error("plotlist requires 1 argument (list)");
+                if (node.args.length !== 1) throw new Error("plotlist requires 1 argument (list)");
                 const list = args[0];
                 if (!(list instanceof Vec)) throw new Error("plotlist argument must be a list");
 
@@ -542,7 +570,7 @@ class CAS {
 
             if (node.funcName === 'taylor') {
                 // taylor(expr, var, point, order)
-                if (args.length < 4) throw new Error("taylor requires 4 arguments: expression, variable, point, order");
+                if (node.args.length < 4) throw new Error("taylor requires 4 arguments: expression, variable, point, order");
                 const expr = args[0];
                 const varNode = args[1];
                 const point = args[2];
@@ -556,12 +584,12 @@ class CAS {
 
             if (node.funcName === 'limit') {
                 // limit(expr, var, point, [dir])
-                if (args.length < 3) throw new Error("limit requires 3 arguments: expression, variable, point");
+                if (node.args.length < 3) throw new Error("limit requires 3 arguments: expression, variable, point");
                 const expr = args[0];
                 const varNode = args[1];
                 const point = args[2];
                 let dir = 0;
-                if (args.length > 3) {
+                if (node.args.length > 3) {
                     const d = args[3].evaluateNumeric();
                     if (!isNaN(d)) dir = d;
                 }
@@ -572,18 +600,18 @@ class CAS {
             }
 
             if (node.funcName === 'potential') {
-                 if (args.length !== 2) throw new Error("potential requires 2 arguments: vector field, vars");
+                 if (node.args.length !== 2) throw new Error("potential requires 2 arguments: vector field, vars");
                  return this._potential(args[0], args[1]);
             }
 
             if (node.funcName === 'conservative') {
-                 if (args.length !== 2) throw new Error("conservative requires 2 arguments: vector field, vars");
+                 if (node.args.length !== 2) throw new Error("conservative requires 2 arguments: vector field, vars");
                  return this._conservative(args[0], args[1]);
             }
 
             if (node.funcName === 'tangent') {
                 // tangent(expr, var, point)
-                if (args.length < 3) throw new Error("tangent requires 3 arguments: expression, variable, point");
+                if (node.args.length < 3) throw new Error("tangent requires 3 arguments: expression, variable, point");
                 const expr = args[0];
                 const varNode = args[1];
                 const point = args[2];
@@ -600,67 +628,67 @@ class CAS {
             }
 
             if (node.funcName === 'trigReduce') {
-                if (args.length !== 1) throw new Error("trigReduce requires 1 argument");
+                if (node.args.length !== 1) throw new Error("trigReduce requires 1 argument");
                 return this._linearizeTrig(args[0]);
             }
 
             if (node.funcName === 'trigExpand') {
-                if (args.length !== 1) throw new Error("trigExpand requires 1 argument");
+                if (node.args.length !== 1) throw new Error("trigExpand requires 1 argument");
                 return args[0].expand().simplify();
             }
 
             if (node.funcName === 'det') {
-                if (args.length !== 1) throw new Error("det requires 1 argument");
+                if (node.args.length !== 1) throw new Error("det requires 1 argument");
                 return this._det(args[0]);
             }
 
             if (node.funcName === 'inv') {
-                if (args.length !== 1) throw new Error("inv requires 1 argument");
+                if (node.args.length !== 1) throw new Error("inv requires 1 argument");
                 return this._inv(args[0]);
             }
 
             if (node.funcName === 'rref') {
-                if (args.length !== 1) throw new Error("rref requires 1 argument");
+                if (node.args.length !== 1) throw new Error("rref requires 1 argument");
                 return this._rref(args[0]);
             }
 
             if (node.funcName === 'rank') {
-                if (args.length !== 1) throw new Error("rank requires 1 argument");
+                if (node.args.length !== 1) throw new Error("rank requires 1 argument");
                 return this._rank(args[0]);
             }
 
             if (node.funcName === 'cross') {
-                if (args.length !== 2) throw new Error("cross requires 2 arguments");
+                if (node.args.length !== 2) throw new Error("cross requires 2 arguments");
                 return this._cross(args[0], args[1]);
             }
 
             if (node.funcName === 'trans' || node.funcName === 'transpose' || node.funcName === 'tran') {
-                if (args.length !== 1) throw new Error("trans requires 1 argument");
+                if (node.args.length !== 1) throw new Error("trans requires 1 argument");
                 return this._trans(args[0]);
             }
 
             if (node.funcName === 'eye' || node.funcName === 'idn') {
-                if (args.length !== 1) throw new Error("eye requires 1 argument");
+                if (node.args.length !== 1) throw new Error("eye requires 1 argument");
                 return this._identity(args[0]);
             }
 
             if (node.funcName === 'zeros') {
-                if (args.length !== 2) throw new Error("zeros requires 2 arguments: rows, cols");
+                if (node.args.length !== 2) throw new Error("zeros requires 2 arguments: rows, cols");
                 return this._zeros(args[0], args[1]);
             }
 
             if (node.funcName === 'ones') {
-                if (args.length !== 2) throw new Error("ones requires 2 arguments: rows, cols");
+                if (node.args.length !== 2) throw new Error("ones requires 2 arguments: rows, cols");
                 return this._ones(args[0], args[1]);
             }
 
             if (node.funcName === 'binomial' || node.funcName === 'comb') {
-                if (args.length !== 2) throw new Error("binomial requires 2 arguments");
+                if (node.args.length !== 2) throw new Error("binomial requires 2 arguments");
                 return this._nCr(args[0], args[1]);
             }
 
             if (node.funcName === 'divisors') {
-                if (args.length !== 1) throw new Error("divisors requires 1 argument");
+                if (node.args.length !== 1) throw new Error("divisors requires 1 argument");
                 return this._divisors(args[0]);
             }
 
@@ -669,40 +697,40 @@ class CAS {
             }
 
             if (node.funcName === 'gcd') {
-                if (args.length === 1 && args[0] instanceof Vec) {
+                if (node.args.length === 1 && args[0] instanceof Vec) {
                     const list = args[0].elements;
                     if (list.length === 0) return new Num(0);
                     let res = list[0];
                     for(let i=1; i<list.length; i++) res = this._gcd(res, list[i]);
                     return res;
                 }
-                if (args.length < 2) throw new Error("gcd requires at least 2 arguments");
+                if (node.args.length < 2) throw new Error("gcd requires at least 2 arguments");
                 let res = args[0];
-                for(let i=1; i<args.length; i++) res = this._gcd(res, args[i]);
+                for(let i=1; i<node.args.length; i++) res = this._gcd(res, args[i]);
                 return res;
             }
 
             if (node.funcName === 'lcm') {
-                if (args.length === 1 && args[0] instanceof Vec) {
+                if (node.args.length === 1 && args[0] instanceof Vec) {
                     const list = args[0].elements;
                     if (list.length === 0) return new Num(1);
                     let res = list[0];
                     for(let i=1; i<list.length; i++) res = this._lcm(res, list[i]);
                     return res;
                 }
-                if (args.length < 2) throw new Error("lcm requires at least 2 arguments");
+                if (node.args.length < 2) throw new Error("lcm requires at least 2 arguments");
                 let res = args[0];
-                for(let i=1; i<args.length; i++) res = this._lcm(res, args[i]);
+                for(let i=1; i<node.args.length; i++) res = this._lcm(res, args[i]);
                 return res;
             }
 
             if (node.funcName === 'factor' || node.funcName === 'ifactor') {
-                if (args.length !== 1) throw new Error("factor requires 1 argument");
+                if (node.args.length !== 1) throw new Error("factor requires 1 argument");
                 return this._factor(args[0]);
             }
 
             if (node.funcName === 'factorial') {
-                 if (args.length !== 1) throw new Error("factorial requires 1 argument");
+                 if (node.args.length !== 1) throw new Error("factorial requires 1 argument");
                  const n = args[0];
                  if (n instanceof Num && Number.isInteger(n.value) && n.value >= 0) {
                      return new Num(this._factorial(n.value));
@@ -711,7 +739,7 @@ class CAS {
             }
 
             if (node.funcName === 'fibonacci') {
-                 if (args.length !== 1) throw new Error("fibonacci requires 1 argument");
+                 if (node.args.length !== 1) throw new Error("fibonacci requires 1 argument");
                  const n = args[0];
                  if (n instanceof Num && Number.isInteger(n.value) && n.value >= 0) {
                      return new Num(this._fibonacci(n.value));
@@ -720,7 +748,7 @@ class CAS {
             }
 
             if (node.funcName === 'gamma') {
-                 if (args.length !== 1) throw new Error("gamma requires 1 argument");
+                 if (node.args.length !== 1) throw new Error("gamma requires 1 argument");
                  const z = args[0];
                  if (z instanceof Num) {
                      return new Num(this._gamma(z.value));
@@ -729,218 +757,218 @@ class CAS {
             }
 
             if (node.funcName === 'nCr') {
-                if (args.length !== 2) throw new Error("nCr requires 2 arguments");
+                if (node.args.length !== 2) throw new Error("nCr requires 2 arguments");
                 return this._nCr(args[0], args[1]);
             }
 
             if (node.funcName === 'nPr' || node.funcName === 'perm') {
-                if (args.length !== 2) throw new Error("nPr requires 2 arguments");
+                if (node.args.length !== 2) throw new Error("nPr requires 2 arguments");
                 return this._nPr(args[0], args[1]);
             }
 
             if (node.funcName === 'isPrime') {
-                if (args.length !== 1) throw new Error("isPrime requires 1 argument");
+                if (node.args.length !== 1) throw new Error("isPrime requires 1 argument");
                 return this._isPrime(args[0]);
             }
 
             if (node.funcName === 'nextprime') {
-                if (args.length !== 1) throw new Error("nextprime requires 1 argument");
+                if (node.args.length !== 1) throw new Error("nextprime requires 1 argument");
                 return this._nextprime(args[0]);
             }
 
             if (node.funcName === 'prevprime') {
-                if (args.length !== 1) throw new Error("prevprime requires 1 argument");
+                if (node.args.length !== 1) throw new Error("prevprime requires 1 argument");
                 return this._prevprime(args[0]);
             }
 
             if (node.funcName === 'trace') {
-                if (args.length !== 1) throw new Error("trace requires 1 argument");
+                if (node.args.length !== 1) throw new Error("trace requires 1 argument");
                 return this._trace(args[0]);
             }
 
             if (node.funcName === 'mean') {
-                if (args.length !== 1) throw new Error("mean requires 1 argument (list)");
+                if (node.args.length !== 1) throw new Error("mean requires 1 argument (list)");
                 return this._mean(args[0]);
             }
 
             if (node.funcName === 'variance' || node.funcName === 'var') {
-                if (args.length !== 1) throw new Error("variance requires 1 argument (list)");
+                if (node.args.length !== 1) throw new Error("variance requires 1 argument (list)");
                 return this._variance(args[0]);
             }
 
             if (node.funcName === 'std' || node.funcName === 'stddev') {
-                if (args.length !== 1) throw new Error("std requires 1 argument (list)");
+                if (node.args.length !== 1) throw new Error("std requires 1 argument (list)");
                 return this._std(args[0]);
             }
 
             if (node.funcName === 'cov') {
-                if (args.length !== 2) throw new Error("cov requires 2 arguments (list1, list2)");
+                if (node.args.length !== 2) throw new Error("cov requires 2 arguments (list1, list2)");
                 return this._cov(args[0], args[1]);
             }
 
             if (node.funcName === 'corr') {
-                if (args.length !== 2) throw new Error("corr requires 2 arguments (list1, list2)");
+                if (node.args.length !== 2) throw new Error("corr requires 2 arguments (list1, list2)");
                 return this._corr(args[0], args[1]);
             }
 
             if (node.funcName === 'median') {
-                if (args.length !== 1) throw new Error("median requires 1 argument (list)");
+                if (node.args.length !== 1) throw new Error("median requires 1 argument (list)");
                 return this._median(args[0]);
             }
 
             if (node.funcName === 'charpoly') {
-                if (args.length !== 2) throw new Error("charpoly requires 2 arguments: matrix, variable");
+                if (node.args.length !== 2) throw new Error("charpoly requires 2 arguments: matrix, variable");
                 return this._charpoly(args[0], args[1]);
             }
 
             if (node.funcName === 'linearRegression') {
-                if (args.length !== 1) throw new Error("linearRegression requires 1 argument (list of points)");
+                if (node.args.length !== 1) throw new Error("linearRegression requires 1 argument (list of points)");
                 return this._linearRegression(args[0]);
             }
 
             if (node.funcName === 'polyRegression') {
-                if (args.length < 2) throw new Error("polyRegression requires 2 arguments: data, degree");
+                if (node.args.length < 2) throw new Error("polyRegression requires 2 arguments: data, degree");
                 return this._polyRegression(args[0], args[1]);
             }
 
             if (node.funcName === 'expRegression') {
-                if (args.length !== 1) throw new Error("expRegression requires 1 argument: data");
+                if (node.args.length !== 1) throw new Error("expRegression requires 1 argument: data");
                 return this._expRegression(args[0]);
             }
 
             if (node.funcName === 'powerRegression') {
-                if (args.length !== 1) throw new Error("powerRegression requires 1 argument: data");
+                if (node.args.length !== 1) throw new Error("powerRegression requires 1 argument: data");
                 return this._powerRegression(args[0]);
             }
 
             if (node.funcName === 'logRegression') {
-                if (args.length !== 1) throw new Error("logRegression requires 1 argument: data");
+                if (node.args.length !== 1) throw new Error("logRegression requires 1 argument: data");
                 return this._logRegression(args[0]);
             }
 
             if (node.funcName === 'normalPDF') {
-                if (args.length !== 3) throw new Error("normalPDF requires 3 arguments: x, mu, sigma");
+                if (node.args.length !== 3) throw new Error("normalPDF requires 3 arguments: x, mu, sigma");
                 return this._normalPDF(args[0], args[1], args[2]);
             }
 
             if (node.funcName === 'binomialPDF') {
-                if (args.length !== 3) throw new Error("binomialPDF requires 3 arguments: k, n, p");
+                if (node.args.length !== 3) throw new Error("binomialPDF requires 3 arguments: k, n, p");
                 return this._binomialPDF(args[0], args[1], args[2]);
             }
 
             if (node.funcName === 'normalCDF') {
-                if (args.length !== 3) throw new Error("normalCDF requires 3 arguments: x, mu, sigma");
+                if (node.args.length !== 3) throw new Error("normalCDF requires 3 arguments: x, mu, sigma");
                 return this._normalCDF(args[0], args[1], args[2]);
             }
 
             if (node.funcName === 'invNorm') {
-                if (args.length !== 3) throw new Error("invNorm requires 3 arguments: area, mu, sigma");
+                if (node.args.length !== 3) throw new Error("invNorm requires 3 arguments: area, mu, sigma");
                 return this._invNorm(args[0], args[1], args[2]);
             }
 
             if (node.funcName === 'binomialCDF') {
-                if (args.length !== 3) throw new Error("binomialCDF requires 3 arguments: k, n, p");
+                if (node.args.length !== 3) throw new Error("binomialCDF requires 3 arguments: k, n, p");
                 return this._binomialCDF(args[0], args[1], args[2]);
             }
 
             if (node.funcName === 'poissonPDF') {
-                if (args.length !== 2) throw new Error("poissonPDF requires 2 arguments: k, lambda");
+                if (node.args.length !== 2) throw new Error("poissonPDF requires 2 arguments: k, lambda");
                 return this._poissonPDF(args[0], args[1]);
             }
 
             if (node.funcName === 'poissonCDF') {
-                if (args.length !== 2) throw new Error("poissonCDF requires 2 arguments: k, lambda");
+                if (node.args.length !== 2) throw new Error("poissonCDF requires 2 arguments: k, lambda");
                 return this._poissonCDF(args[0], args[1]);
             }
 
             if (node.funcName === 'exponentialPDF') {
-                if (args.length !== 2) throw new Error("exponentialPDF requires 2 arguments: x, lambda");
+                if (node.args.length !== 2) throw new Error("exponentialPDF requires 2 arguments: x, lambda");
                 return this._exponentialPDF(args[0], args[1]);
             }
 
             if (node.funcName === 'exponentialCDF') {
-                if (args.length !== 2) throw new Error("exponentialCDF requires 2 arguments: x, lambda");
+                if (node.args.length !== 2) throw new Error("exponentialCDF requires 2 arguments: x, lambda");
                 return this._exponentialCDF(args[0], args[1]);
             }
 
             if (node.funcName === 'geometricPDF') {
-                if (args.length !== 2) throw new Error("geometricPDF requires 2 arguments: k, p");
+                if (node.args.length !== 2) throw new Error("geometricPDF requires 2 arguments: k, p");
                 return this._geometricPDF(args[0], args[1]);
             }
 
             if (node.funcName === 'geometricCDF') {
-                if (args.length !== 2) throw new Error("geometricCDF requires 2 arguments: k, p");
+                if (node.args.length !== 2) throw new Error("geometricCDF requires 2 arguments: k, p");
                 return this._geometricCDF(args[0], args[1]);
             }
 
             if (node.funcName === 'chisquarePDF') {
-                if (args.length !== 2) throw new Error("chisquarePDF requires 2 arguments: x, k");
+                if (node.args.length !== 2) throw new Error("chisquarePDF requires 2 arguments: x, k");
                 return this._chisquarePDF(args[0], args[1]);
             }
 
             if (node.funcName === 'chisquareCDF') {
-                if (args.length !== 2) throw new Error("chisquareCDF requires 2 arguments: x, k");
+                if (node.args.length !== 2) throw new Error("chisquareCDF requires 2 arguments: x, k");
                 return this._chisquareCDF(args[0], args[1]);
             }
 
             if (node.funcName === 'invChiSquare') {
-                if (args.length !== 2) throw new Error("invChiSquare requires 2 arguments: area, k");
+                if (node.args.length !== 2) throw new Error("invChiSquare requires 2 arguments: area, k");
                 return this._invChiSquare(args[0], args[1]);
             }
 
             if (node.funcName === 'studentTPDF') {
-                if (args.length !== 2) throw new Error("studentTPDF requires 2 arguments: x, df");
+                if (node.args.length !== 2) throw new Error("studentTPDF requires 2 arguments: x, df");
                 return this._studentTPDF(args[0], args[1]);
             }
 
             if (node.funcName === 'studentTCDF') {
-                if (args.length !== 2) throw new Error("studentTCDF requires 2 arguments: x, df");
+                if (node.args.length !== 2) throw new Error("studentTCDF requires 2 arguments: x, df");
                 return this._studentTCDF(args[0], args[1]);
             }
 
             if (node.funcName === 'fPDF') {
-                if (args.length !== 3) throw new Error("fPDF requires 3 arguments: x, d1, d2");
+                if (node.args.length !== 3) throw new Error("fPDF requires 3 arguments: x, d1, d2");
                 return this._fPDF(args[0], args[1], args[2]);
             }
 
             if (node.funcName === 'fCDF') {
-                if (args.length !== 3) throw new Error("fCDF requires 3 arguments: x, d1, d2");
+                if (node.args.length !== 3) throw new Error("fCDF requires 3 arguments: x, d1, d2");
                 return this._fCDF(args[0], args[1], args[2]);
             }
 
             if (node.funcName === 'invT') {
-                if (args.length !== 2) throw new Error("invT requires 2 arguments: area, df");
+                if (node.args.length !== 2) throw new Error("invT requires 2 arguments: area, df");
                 return this._invT(args[0], args[1]);
             }
 
             if (node.funcName === 'compound') {
-                if (args.length !== 4) throw new Error("compound requires 4 arguments: P, r, n, t");
+                if (node.args.length !== 4) throw new Error("compound requires 4 arguments: P, r, n, t");
                 return this._compound(args[0], args[1], args[2], args[3]);
             }
 
             if (node.funcName === 'loan') {
-                if (args.length !== 3) throw new Error("loan requires 3 arguments: P, r, n");
+                if (node.args.length !== 3) throw new Error("loan requires 3 arguments: P, r, n");
                 return this._loan(args[0], args[1], args[2]);
             }
 
             if (node.funcName === 'npv') {
-                if (args.length !== 2) throw new Error("npv requires 2 arguments: rate, cash_flows");
+                if (node.args.length !== 2) throw new Error("npv requires 2 arguments: rate, cash_flows");
                 return this._npv(args[0], args[1]);
             }
 
             if (node.funcName === 'irr') {
-                if (args.length !== 1) throw new Error("irr requires 1 argument: cash_flows");
+                if (node.args.length !== 1) throw new Error("irr requires 1 argument: cash_flows");
                 return this._irr(args[0]);
             }
 
             if (node.funcName === 'dot') {
-                if (args.length !== 2) throw new Error("dot requires 2 arguments");
+                if (node.args.length !== 2) throw new Error("dot requires 2 arguments");
                 // dot(u, v) is u * v (Mul handles dot product for vectors)
                 return new Mul(args[0], args[1]).simplify();
             }
 
             if (node.funcName === 'norm') {
-                if (args.length !== 1) throw new Error("norm requires 1 argument");
+                if (node.args.length !== 1) throw new Error("norm requires 1 argument");
                 // L2 norm: sqrt(v . v)
                 const v = args[0];
                 const dot = new Mul(v, v).simplify();
@@ -948,42 +976,42 @@ class CAS {
             }
 
             if (node.funcName === 'grad') {
-                if (args.length !== 2) throw new Error("grad requires 2 arguments: expression and list of variables");
+                if (node.args.length !== 2) throw new Error("grad requires 2 arguments: expression and list of variables");
                 return this._grad(args[0], args[1]);
             }
 
             if (node.funcName === 'curl') {
-                if (args.length !== 2) throw new Error("curl requires 2 arguments: vector field and list of variables");
+                if (node.args.length !== 2) throw new Error("curl requires 2 arguments: vector field and list of variables");
                 return this._curl(args[0], args[1]);
             }
 
             if (node.funcName === 'divergence' || node.funcName === 'div') { // 'div' might conflict with division if not careful, but funcName is safe
-                 if (args.length !== 2) throw new Error("divergence requires 2 arguments: vector field and list of variables");
+                 if (node.args.length !== 2) throw new Error("divergence requires 2 arguments: vector field and list of variables");
                  return this._divergence(args[0], args[1]);
             }
 
             if (node.funcName === 'rem' || node.funcName === 'irem') {
-                if (args.length !== 2) throw new Error("rem requires 2 arguments");
+                if (node.args.length !== 2) throw new Error("rem requires 2 arguments");
                 return this._rem(args[0], args[1]);
             }
 
             if (node.funcName === 'quo') {
-                if (args.length !== 2) throw new Error("quo requires 2 arguments");
+                if (node.args.length !== 2) throw new Error("quo requires 2 arguments");
                 return this._quo(args[0], args[1]);
             }
 
             if (node.funcName === 'mod') {
-                if (args.length !== 2) throw new Error("mod requires 2 arguments");
+                if (node.args.length !== 2) throw new Error("mod requires 2 arguments");
                 return this._mod(args[0], args[1]);
             }
 
             if (node.funcName === 'partfrac') {
-                if (args.length !== 2) throw new Error("partfrac requires 2 arguments: expr, var");
+                if (node.args.length !== 2) throw new Error("partfrac requires 2 arguments: expr, var");
                 return this._partfrac(args[0], args[1]);
             }
 
             if (node.funcName === 'size' || node.funcName === 'dim' || node.funcName === 'length') {
-                if (args.length !== 1) throw new Error("size/dim requires 1 argument");
+                if (node.args.length !== 1) throw new Error("size/dim requires 1 argument");
                 if (args[0] instanceof Vec) {
                     return new Num(args[0].elements.length);
                 }
@@ -991,159 +1019,159 @@ class CAS {
             }
 
             if (node.funcName === 'concat') {
-                if (args.length < 2) throw new Error("concat requires at least 2 arguments");
+                if (node.args.length < 2) throw new Error("concat requires at least 2 arguments");
                 return this._concat(args);
             }
 
             if (node.funcName === 'append') {
-                if (args.length !== 2) throw new Error("append requires 2 arguments: list, element");
+                if (node.args.length !== 2) throw new Error("append requires 2 arguments: list, element");
                 return this._append(args[0], args[1]);
             }
 
             if (node.funcName === 'prepend') {
-                if (args.length !== 2) throw new Error("prepend requires 2 arguments: list, element");
+                if (node.args.length !== 2) throw new Error("prepend requires 2 arguments: list, element");
                 return this._prepend(args[0], args[1]);
             }
 
             if (node.funcName === 'approx' || node.funcName === 'evalf') {
-                if (args.length !== 1) throw new Error("approx requires 1 argument");
+                if (node.args.length !== 1) throw new Error("approx requires 1 argument");
                 return new Num(args[0].evaluateNumeric());
             }
 
             if (node.funcName === 'distance') {
-                if (args.length !== 2) throw new Error("distance requires 2 arguments");
+                if (node.args.length !== 2) throw new Error("distance requires 2 arguments");
                 return this._distance(args[0], args[1]);
             }
 
             if (node.funcName === 'midpoint') {
-                if (args.length !== 2) throw new Error("midpoint requires 2 arguments");
+                if (node.args.length !== 2) throw new Error("midpoint requires 2 arguments");
                 return this._midpoint(args[0], args[1]);
             }
 
             if (node.funcName === 'zTest') {
-                if (args.length !== 3) throw new Error("zTest requires 3 arguments: data, mu0, sigma");
+                if (node.args.length !== 3) throw new Error("zTest requires 3 arguments: data, mu0, sigma");
                 return this._zTest(args[0], args[1], args[2]);
             }
 
             if (node.funcName === 'euler' || node.funcName === 'phi') {
-                if (args.length !== 1) throw new Error("euler requires 1 argument");
+                if (node.args.length !== 1) throw new Error("euler requires 1 argument");
                 return this._euler(args[0]);
             }
 
             if (node.funcName === 'mode') {
-                if (args.length !== 1) throw new Error("mode requires 1 argument (list)");
+                if (node.args.length !== 1) throw new Error("mode requires 1 argument (list)");
                 return this._mode(args[0]);
             }
 
             if (node.funcName === 'arcLen') {
-                if (args.length !== 4) throw new Error("arcLen requires 4 arguments: expr, var, start, end");
+                if (node.args.length !== 4) throw new Error("arcLen requires 4 arguments: expr, var, start, end");
                 return this._arcLen(args[0], args[1], args[2], args[3]);
             }
 
             if (node.funcName === 'arg') {
-                if (args.length !== 1) throw new Error("arg requires 1 argument");
+                if (node.args.length !== 1) throw new Error("arg requires 1 argument");
                 return this._arg(args[0]);
             }
 
             if (node.funcName === 'degree') {
-                if (args.length !== 2) throw new Error("degree requires 2 arguments: expr, var");
+                if (node.args.length !== 2) throw new Error("degree requires 2 arguments: expr, var");
                 return this._degree(args[0], args[1]);
             }
             if (node.funcName === 'coeff') {
-                if (args.length !== 3) throw new Error("coeff requires 3 arguments: expr, var, degree");
+                if (node.args.length !== 3) throw new Error("coeff requires 3 arguments: expr, var, degree");
                 return this._coeff(args[0], args[1], args[2]);
             }
             if (node.funcName === 'symb2poly') {
-                if (args.length !== 2) throw new Error("symb2poly requires 2 arguments: expr, var");
+                if (node.args.length !== 2) throw new Error("symb2poly requires 2 arguments: expr, var");
                 return this._symb2poly(args[0], args[1]);
             }
             if (node.funcName === 'poly2symb') {
-                if (args.length !== 2) throw new Error("poly2symb requires 2 arguments: list, var");
+                if (node.args.length !== 2) throw new Error("poly2symb requires 2 arguments: list, var");
                 return this._poly2symb(args[0], args[1]);
             }
             if (node.funcName === 'seq') {
-                if (args.length !== 5) throw new Error("seq requires 5 arguments: expr, var, start, end, step");
+                if (node.args.length !== 5) throw new Error("seq requires 5 arguments: expr, var, start, end, step");
                 return this._seq(args[0], args[1], args[2], args[3], args[4]);
             }
             if (node.funcName === 'range') {
-                if (args.length !== 3) throw new Error("range requires 3 arguments: start, end, step");
+                if (node.args.length !== 3) throw new Error("range requires 3 arguments: start, end, step");
                 return this._range(args[0], args[1], args[2]);
             }
             if (node.funcName === 'sort') {
-                if (args.length !== 1) throw new Error("sort requires 1 argument: list");
+                if (node.args.length !== 1) throw new Error("sort requires 1 argument: list");
                 return this._sort(args[0]);
             }
             if (node.funcName === 'reverse') {
-                if (args.length !== 1) throw new Error("reverse requires 1 argument: list");
+                if (node.args.length !== 1) throw new Error("reverse requires 1 argument: list");
                 return this._reverse(args[0]);
             }
             if (node.funcName === 'diag') {
-                if (args.length !== 1) throw new Error("diag requires 1 argument: list");
+                if (node.args.length !== 1) throw new Error("diag requires 1 argument: list");
                 return this._diag(args[0]);
             }
             if (node.funcName === 'identity') {
-                if (args.length !== 1) throw new Error("identity requires 1 argument: n");
+                if (node.args.length !== 1) throw new Error("identity requires 1 argument: n");
                 return this._identity(args[0]);
             }
             if (node.funcName === 'laplace') {
-                if (args.length !== 3) throw new Error("laplace requires 3 arguments: expr, t, s");
+                if (node.args.length !== 3) throw new Error("laplace requires 3 arguments: expr, t, s");
                 return this._laplace(args[0], args[1], args[2]);
             }
             if (node.funcName === 'ilaplace') {
-                if (args.length !== 3) throw new Error("ilaplace requires 3 arguments: expr, s, t");
+                if (node.args.length !== 3) throw new Error("ilaplace requires 3 arguments: expr, s, t");
                 return this._ilaplace(args[0], args[1], args[2]);
             }
 
             if (node.funcName === 'kernel' || node.funcName === 'nullspace' || node.funcName === 'ker') {
-                if (args.length !== 1) throw new Error("kernel requires 1 argument");
+                if (node.args.length !== 1) throw new Error("kernel requires 1 argument");
                 return this._kernel(args[0].simplify());
             }
             if (node.funcName === 'basis') {
-                if (args.length !== 1) throw new Error("basis requires 1 argument");
+                if (node.args.length !== 1) throw new Error("basis requires 1 argument");
                 return this._basis(args[0].simplify());
             }
             if (node.funcName === 'eigenvals') {
-                if (args.length !== 1) throw new Error("eigenvals requires 1 argument");
+                if (node.args.length !== 1) throw new Error("eigenvals requires 1 argument");
                 return this._eigenvals(args[0].simplify());
             }
             if (node.funcName === 'eigenvects') {
-                if (args.length !== 1) throw new Error("eigenvects requires 1 argument");
+                if (node.args.length !== 1) throw new Error("eigenvects requires 1 argument");
                 return this._eigenvects(args[0].simplify());
             }
             if (node.funcName === 'gramschmidt') {
-                if (args.length !== 1) throw new Error("gramschmidt requires 1 argument (list of vectors)");
+                if (node.args.length !== 1) throw new Error("gramschmidt requires 1 argument (list of vectors)");
                 return this._gramschmidt(args[0].simplify());
             }
             if (node.funcName === 'lu') {
-                if (args.length !== 1) throw new Error("lu requires 1 argument");
+                if (node.args.length !== 1) throw new Error("lu requires 1 argument");
                 return this._lu(args[0].simplify());
             }
             if (node.funcName === 'qr') {
-                if (args.length !== 1) throw new Error("qr requires 1 argument");
+                if (node.args.length !== 1) throw new Error("qr requires 1 argument");
                 return this._qr(args[0].simplify());
             }
             if (node.funcName === 'cholesky') {
-                if (args.length !== 1) throw new Error("cholesky requires 1 argument");
+                if (node.args.length !== 1) throw new Error("cholesky requires 1 argument");
                 return this._cholesky(args[0].simplify());
             }
             if (node.funcName === 'desolve') {
-                if (args.length < 2) throw new Error("desolve requires at least 2 arguments");
+                if (node.args.length < 2) throw new Error("desolve requires at least 2 arguments");
                 return this._desolve(args[0], args[1]);
             }
 
             if (node.funcName === 'fourier') {
-                if (args.length < 3) throw new Error("fourier requires 3 arguments: expr, var, n, [L]");
+                if (node.args.length < 3) throw new Error("fourier requires 3 arguments: expr, var, n, [L]");
                 const expr = args[0];
                 const varNode = args[1];
                 const n = args[2];
-                const L = args.length > 3 ? args[3] : new Sym('pi');
+                const L = node.args.length > 3 ? args[3] : new Sym('pi');
                 if (!(varNode instanceof Sym)) throw new Error("Second argument to fourier must be a variable");
                 return this._fourier(expr, varNode, n, L);
             }
 
             if (node.funcName === 'slopefield') {
                  // slopefield(diffEq, x, y, [minX, maxX, minY, maxY])
-                 if (args.length < 3) throw new Error("slopefield requires at least 3 arguments: equation, x, y");
+                 if (node.args.length < 3) throw new Error("slopefield requires at least 3 arguments: equation, x, y");
                  const eq = args[0];
                  const xVar = args[1];
                  const yVar = args[2];
@@ -1155,7 +1183,7 @@ class CAS {
                  }
 
                  let min = -10, max = 10, yMin = -10, yMax = 10;
-                 if (args.length >= 7) {
+                 if (node.args.length >= 7) {
                      min = args[3].evaluateNumeric();
                      max = args[4].evaluateNumeric();
                      yMin = args[5].evaluateNumeric();
@@ -1179,7 +1207,7 @@ class CAS {
 
             if (node.funcName === 'vectorfield') {
                  // vectorfield([u, v], x, y, [minX, maxX, minY, maxY])
-                 if (args.length < 3) throw new Error("vectorfield requires at least 3 arguments: vector, x, y");
+                 if (node.args.length < 3) throw new Error("vectorfield requires at least 3 arguments: vector, x, y");
                  const vec = args[0];
                  const xVar = args[1];
                  const yVar = args[2];
@@ -1187,7 +1215,7 @@ class CAS {
                  if (!(vec instanceof Vec) || vec.elements.length !== 2) throw new Error("Vector field must be 2D vector [u, v]");
 
                  let min = -10, max = 10, yMin = -10, yMax = 10;
-                 if (args.length >= 7) {
+                 if (node.args.length >= 7) {
                      min = args[3].evaluateNumeric();
                      max = args[4].evaluateNumeric();
                      yMin = args[5].evaluateNumeric();
@@ -1211,13 +1239,13 @@ class CAS {
             }
 
             if (node.funcName === 'plotimplicit') {
-                 if (args.length < 3) throw new Error("plotimplicit requires at least 3 arguments: equation, x, y");
+                 if (node.args.length < 3) throw new Error("plotimplicit requires at least 3 arguments: equation, x, y");
                  const eq = args[0];
                  const xVar = args[1];
                  const yVar = args[2];
 
                  let xMin = -10, xMax = 10, yMin = -10, yMax = 10;
-                 if (args.length >= 7) {
+                 if (node.args.length >= 7) {
                      xMin = args[3].evaluateNumeric();
                      xMax = args[4].evaluateNumeric();
                      yMin = args[5].evaluateNumeric();
@@ -1247,7 +1275,7 @@ class CAS {
 
 
             if (node.funcName === 'molarMass') {
-                if (args.length !== 1) throw new Error("molarMass requires 1 argument (string formula)");
+                if (node.args.length !== 1) throw new Error("molarMass requires 1 argument (string formula)");
                 // Argument comes as a symbol (e.g. H2O) or string if we support string literals?
                 // The parser parses identifiers as Sym. So H2O is a Sym.
                 // Or "H2O" if we have string support? Current Lexer doesn't seem to support strings.
@@ -1262,7 +1290,7 @@ class CAS {
             }
 
             if (node.funcName === 'atomicWeight') {
-                if (args.length !== 1) throw new Error("atomicWeight requires 1 argument (symbol)");
+                if (node.args.length !== 1) throw new Error("atomicWeight requires 1 argument (symbol)");
                 let sym = "";
                 if (args[0] instanceof Sym) sym = args[0].name;
                 if (!sym) throw new Error("Invalid element symbol");
@@ -1270,7 +1298,7 @@ class CAS {
             }
 
             if (node.funcName === 'balance') {
-                if (args.length !== 1) throw new Error("balance requires 1 argument (equation string)");
+                if (node.args.length !== 1) throw new Error("balance requires 1 argument (equation string)");
                 // Try to extract string from Sym or just use toString
                 let eq = args[0].toString();
                 // If it was parsed as subtraction (A-B), reconstruct?
@@ -1287,48 +1315,48 @@ class CAS {
             }
 
             if (node.funcName === 'diagonalize') {
-                if (args.length !== 1) throw new Error("diagonalize requires 1 argument (matrix)");
+                if (node.args.length !== 1) throw new Error("diagonalize requires 1 argument (matrix)");
                 return this._diagonalize(args[0]);
             }
 
             if (node.funcName === 'tTest') {
-                if (args.length !== 2) throw new Error("tTest requires 2 arguments: data, mu0");
+                if (node.args.length !== 2) throw new Error("tTest requires 2 arguments: data, mu0");
                 return this._tTest(args[0], args[1]);
             }
 
             if (node.funcName === 'kron') {
-                if (args.length !== 2) throw new Error("kron requires 2 arguments");
+                if (node.args.length !== 2) throw new Error("kron requires 2 arguments");
                 return this._kron(args[0], args[1]);
             }
 
             if (node.funcName === 'svd') {
-                if (args.length !== 1) throw new Error("svd requires 1 argument");
+                if (node.args.length !== 1) throw new Error("svd requires 1 argument");
                 return this._svd(args[0]);
             }
 
             if (node.funcName === 'geoMean') {
-                if (args.length !== 1) throw new Error("geoMean requires 1 argument");
+                if (node.args.length !== 1) throw new Error("geoMean requires 1 argument");
                 return this._geoMean(args[0]);
             }
 
             if (node.funcName === 'harmMean') {
-                if (args.length !== 1) throw new Error("harmMean requires 1 argument");
+                if (node.args.length !== 1) throw new Error("harmMean requires 1 argument");
                 return this._harmMean(args[0]);
             }
 
             if (node.funcName === 'rms') {
-                if (args.length !== 1) throw new Error("rms requires 1 argument");
+                if (node.args.length !== 1) throw new Error("rms requires 1 argument");
                 return this._rms(args[0]);
             }
 
             if (node.funcName === 'mad') {
-                if (args.length !== 1) throw new Error("mad requires 1 argument");
+                if (node.args.length !== 1) throw new Error("mad requires 1 argument");
                 return this._mad(args[0]);
             }
 
             if (node.funcName === 'curvature') {
-                if (args.length < 2) throw new Error("curvature requires at least 2 arguments: expr, var, [point]");
-                const point = args.length > 2 ? args[2] : null;
+                if (node.args.length < 2) throw new Error("curvature requires at least 2 arguments: expr, var, [point]");
+                const point = node.args.length > 2 ? args[2] : null;
                 return this._curvature(args[0], args[1], point);
             }
 
@@ -1337,59 +1365,59 @@ class CAS {
             }
 
             if (node.funcName === 'cis') {
-                if (args.length !== 1) throw new Error("cis requires 1 argument (angle in degrees)");
+                if (node.args.length !== 1) throw new Error("cis requires 1 argument (angle in degrees)");
                 return this._cis(args[0]);
             }
 
             if (node.funcName === 'phasor') {
-                if (args.length !== 2) throw new Error("phasor requires 2 arguments: magnitude, angle(deg)");
+                if (node.args.length !== 2) throw new Error("phasor requires 2 arguments: magnitude, angle(deg)");
                 return this._phasor(args[0], args[1]);
             }
 
             if (node.funcName === 'toPolar') {
-                if (args.length !== 1) throw new Error("toPolar requires 1 argument");
+                if (node.args.length !== 1) throw new Error("toPolar requires 1 argument");
                 return this._toPolar(args[0]);
             }
 
             if (node.funcName === 'bernoulli') {
-                if (args.length !== 1) throw new Error("bernoulli requires 1 argument (n)");
+                if (node.args.length !== 1) throw new Error("bernoulli requires 1 argument (n)");
                 return this._bernoulli(args[0]);
             }
 
             if (node.funcName === 'harmonic') {
-                if (args.length !== 1) throw new Error("harmonic requires 1 argument (n)");
+                if (node.args.length !== 1) throw new Error("harmonic requires 1 argument (n)");
                 return this._harmonic(args[0]);
             }
 
             if (node.funcName === 'lineEquation') {
-                if (args.length !== 2) throw new Error("lineEquation requires 2 arguments: point1, point2");
+                if (node.args.length !== 2) throw new Error("lineEquation requires 2 arguments: point1, point2");
                 return this._lineEquation(args[0], args[1]);
             }
 
             if (node.funcName === 'circleEquation') {
-                if (args.length !== 2) throw new Error("circleEquation requires 2 arguments: center, radius");
+                if (node.args.length !== 2) throw new Error("circleEquation requires 2 arguments: center, radius");
                 return this._circleEquation(args[0], args[1]);
             }
 
             if (node.funcName === 'root') {
-                 if (args.length !== 2) throw new Error("root requires 2 arguments: x, n");
+                 if (node.args.length !== 2) throw new Error("root requires 2 arguments: x, n");
                  // root(x, n) -> x^(1/n)
                  return new Pow(args[0], new Div(new Num(1), args[1])).simplify();
             }
 
             if (node.funcName === 'cfrac') {
                  // cfrac(val, [depth])
-                 const depth = args.length > 1 ? args[1].evaluateNumeric() : 15;
+                 const depth = node.args.length > 1 ? args[1].evaluateNumeric() : 15;
                  return this._cfrac(args[0], depth);
             }
 
             if (node.funcName === 'isSquare') {
-                 if (args.length !== 1) throw new Error("isSquare requires 1 argument");
+                 if (node.args.length !== 1) throw new Error("isSquare requires 1 argument");
                  return this._isSquare(args[0]);
             }
 
             if (node.funcName === 'truthTable') {
-                 if (args.length !== 2) throw new Error("truthTable requires 2 arguments: expr, vars");
+                 if (node.args.length !== 2) throw new Error("truthTable requires 2 arguments: expr, vars");
                  return this._truthTable(args[0], args[1]);
             }
 
@@ -2432,6 +2460,26 @@ class CAS {
         }
 
         return new Num((h / 3) * sum);
+    }
+
+    _roots(poly, varNode) {
+        const sol = this._solve(poly, varNode);
+        const values = [];
+
+        const process = (s) => {
+            if (s instanceof Eq) values.push(s.right);
+            else if (s instanceof Expr && !(s instanceof Call && s.funcName === 'solve')) {
+                values.push(s);
+            }
+        };
+
+        if (sol instanceof Call && sol.funcName === 'set') {
+            sol.args.forEach(process);
+        } else {
+            process(sol);
+        }
+
+        return new Vec(values);
     }
 
     _solve(eq, varNode) {
@@ -5339,7 +5387,7 @@ class CAS {
 
         const findDiff = (node) => {
             if (node instanceof Call && node.funcName === 'diff') {
-                // Ensure order is 1 (args.length == 2 or args[2] == 1)
+                // Ensure order is 1 (node.args.length == 2 or args[2] == 1)
                 const validOrder = (node.args.length === 2) || (node.args.length === 3 && node.args[2] instanceof Num && node.args[2].value === 1);
                 if (!validOrder) return;
 
@@ -5401,7 +5449,7 @@ class CAS {
                 if (node.args.length === 2) {
                     const inner = node.args[0];
                     const outerVar = node.args[1];
-                    if (inner instanceof Call && inner.funcName === 'diff' && inner.args.length === 2) {
+                    if (inner instanceof Call && inner.funcName === 'diff' && inner.node.args.length === 2) {
                         const target = inner.args[0];
                         const innerVar = inner.args[1];
                         let isMatch = false;
