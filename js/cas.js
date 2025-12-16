@@ -2965,6 +2965,30 @@ class CAS {
                 return new Mul(new Num(-1), new Call('ln', [sum])).simplify();
             }
         }
+        // sec^2(x) -> tan(x)
+        if (expr instanceof Pow && expr.left instanceof Call && expr.left.funcName === 'sec' && expr.right instanceof Num && expr.right.value === 2) {
+             if (expr.left.args[0].toString() === varNode.toString()) return new Call('tan', [varNode]);
+        }
+        // csc^2(x) -> -cot(x)
+        if (expr instanceof Pow && expr.left instanceof Call && expr.left.funcName === 'csc' && expr.right instanceof Num && expr.right.value === 2) {
+             if (expr.left.args[0].toString() === varNode.toString()) return new Mul(new Num(-1), new Call('cot', [varNode]));
+        }
+        // sec(x)*tan(x) -> sec(x)
+        if (expr instanceof Mul) {
+             const check = (func1, func2) => {
+                 if (expr.left instanceof Call && expr.left.funcName === func1 && expr.right instanceof Call && expr.right.funcName === func2) {
+                     if (expr.left.args[0].toString() === varNode.toString() && expr.right.args[0].toString() === varNode.toString()) return true;
+                 }
+                 if (expr.right instanceof Call && expr.right.funcName === func1 && expr.left instanceof Call && expr.left.funcName === func2) {
+                     if (expr.right.args[0].toString() === varNode.toString() && expr.left.args[0].toString() === varNode.toString()) return true;
+                 }
+                 return false;
+             };
+
+             if (check('sec', 'tan')) return new Call('sec', [varNode]);
+             if (check('csc', 'cot')) return new Mul(new Num(-1), new Call('csc', [varNode]));
+        }
+
         return null;
     }
 
