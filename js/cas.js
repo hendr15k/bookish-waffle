@@ -1371,6 +1371,28 @@ class CAS {
                 return this._circleEquation(args[0], args[1]);
             }
 
+            if (node.funcName === 'root') {
+                 if (args.length !== 2) throw new Error("root requires 2 arguments: x, n");
+                 // root(x, n) -> x^(1/n)
+                 return new Pow(args[0], new Div(new Num(1), args[1])).simplify();
+            }
+
+            if (node.funcName === 'cfrac') {
+                 // cfrac(val, [depth])
+                 const depth = args.length > 1 ? args[1].evaluateNumeric() : 15;
+                 return this._cfrac(args[0], depth);
+            }
+
+            if (node.funcName === 'isSquare') {
+                 if (args.length !== 1) throw new Error("isSquare requires 1 argument");
+                 return this._isSquare(args[0]);
+            }
+
+            if (node.funcName === 'truthTable') {
+                 if (args.length !== 2) throw new Error("truthTable requires 2 arguments: expr, vars");
+                 return this._truthTable(args[0], args[1]);
+            }
+
             return new Call(node.funcName, args);
         }
 
@@ -1623,7 +1645,7 @@ class CAS {
     _product(expr, varNode, start, end) {
         if (!(varNode instanceof Sym)) throw new Error("Product variable must be a symbol");
         if (!(start instanceof Num) || !(end instanceof Num)) {
-            return new Call("product", [expr, varNode, start, end]);
+            return this._productSymbolic(expr, varNode, start, end);
         }
 
         let prod = new Num(1);
@@ -1632,6 +1654,52 @@ class CAS {
             prod = new Mul(prod, term).simplify();
         }
         return prod;
+    }
+
+    _productSymbolic(expr, varNode, start, end) {
+        expr = expr.expand().simplify();
+
+        // product(c, k, 1, n) = c^n
+        if (!this._dependsOn(expr, varNode)) {
+            const count = new Add(new Sub(end, start), new Num(1)).simplify();
+            return new Pow(expr, count).simplify();
+        }
+
+        // product(A*B) = product(A) * product(B)
+        if (expr instanceof Mul) {
+            return new Mul(
+                this._productSymbolic(expr.left, varNode, start, end),
+                this._productSymbolic(expr.right, varNode, start, end)
+            ).simplify();
+        }
+
+        // product(A/B) = product(A) / product(B)
+        if (expr instanceof Div) {
+            return new Div(
+                this._productSymbolic(expr.left, varNode, start, end),
+                this._productSymbolic(expr.right, varNode, start, end)
+            ).simplify();
+        }
+
+        // Normalize start to 1?
+        // product(f(k), k, 1, n)
+
+        // k -> n!
+        if (expr instanceof Sym && expr.name === varNode.name) {
+             if (start instanceof Num && start.value === 1) {
+                 return new Call('factorial', [end]);
+             }
+        }
+
+        // c^k -> c^(sum k) = c^(n(n+1)/2)
+        if (expr instanceof Pow && !this._dependsOn(expr.left, varNode)) {
+             // base^exponent
+             // product(b^f(k)) = b^sum(f(k))
+             const exponentSum = this._sumSymbolic(expr.right, varNode, start, end);
+             return new Pow(expr.left, exponentSum).simplify();
+        }
+
+        return new Call("product", [expr, varNode, start, end]);
     }
 
     _sumList(list) {
@@ -2374,6 +2442,61 @@ class CAS {
         // Handle Inequalities
         if (eq instanceof Lt || eq instanceof Gt || eq instanceof Le || eq instanceof Ge) {
             return this._solveInequality(eq, varNode);
+        }
+
+        // Handle Abs(A) = B  => A = B or A = -B
+        // Check if eq is Eq(abs(A), B) or abs(A) = B (implicitly A-B=0 if input was expression)
+        // If input was Eq, we have explicit Left/Right.
+        if (eq instanceof Eq) {
+            if (eq.left instanceof Call && eq.left.funcName === 'abs') {
+                const A = eq.left.args[0];
+                const B = eq.right;
+                if (!this._dependsOn(B, varNode)) { // B should be constant w.r.t var (or at least handle splitting)
+                    const eq1 = new Eq(A, B);
+                    const eq2 = new Eq(A, new Mul(new Num(-1), B));
+                    const sol1 = this._solve(eq1, varNode);
+                    const sol2 = this._solve(eq2, varNode);
+                    // Merge solutions
+                    const sols = [];
+                    const collect = (s) => {
+                        if (s instanceof Call && s.funcName === 'set') s.args.forEach(collect);
+                        else sols.push(s);
+                    };
+                    collect(sol1);
+                    collect(sol2);
+                    return new Call('set', sols);
+                }
+            }
+             // B = abs(A)?
+            if (eq.right instanceof Call && eq.right.funcName === 'abs') {
+                 const A = eq.right.args[0];
+                 const B = eq.left;
+                 if (!this._dependsOn(B, varNode)) {
+                    const eq1 = new Eq(A, B);
+                    const eq2 = new Eq(A, new Mul(new Num(-1), B));
+                    const sol1 = this._solve(eq1, varNode);
+                    const sol2 = this._solve(eq2, varNode);
+                    // Merge solutions
+                    const sols = [];
+                    const collect = (s) => {
+                        if (s instanceof Call && s.funcName === 'set') s.args.forEach(collect);
+                        else sols.push(s);
+                    };
+                    collect(sol1);
+                    collect(sol2);
+                    return new Call('set', sols);
+                 }
+            }
+        } else {
+            // Expression = 0
+            // Check if expression contains abs
+            // e.g. abs(x) - 5
+            if (eq instanceof Sub) {
+                if (eq.left instanceof Call && eq.left.funcName === 'abs') {
+                    // abs(A) - B = 0 -> abs(A) = B
+                    return this._solve(new Eq(eq.left, eq.right), varNode);
+                }
+            }
         }
 
         let expr;
@@ -7657,7 +7780,71 @@ class CAS {
 
         return new Eq(lhs, rhs);
     }
+    _cfrac(x, depth) {
+        x = x.simplify();
+        if (x instanceof Num) {
+            let val = x.value;
+            const res = [];
+            // Handle depth default
+            const d = (depth instanceof Num) ? depth.value : 15;
 
+            for(let i=0; i<d; i++) {
+                const a = Math.floor(val);
+                res.push(new Num(a));
+                if (Math.abs(val - a) < 1e-9) break;
+                val = 1 / (val - a);
+            }
+            return new Vec(res);
+        }
+        return new Call('cfrac', [x, depth]);
+    }
+
+    _isSquare(n) {
+        n = n.simplify();
+        if (n instanceof Num && Number.isInteger(n.value) && n.value >= 0) {
+            const sqrt = Math.sqrt(n.value);
+            if (Number.isInteger(sqrt)) return new Num(1);
+            return new Num(0);
+        }
+        return new Call('isSquare', [n]);
+    }
+
+    _truthTable(expr, vars) {
+        if (!(vars instanceof Vec)) throw new Error("Second argument to truthTable must be a list of variables");
+        const variables = vars.elements; // Array of Sym
+        const n = variables.length;
+        const numRows = 1 << n; // 2^n
+
+        const rows = [];
+        for(let i=0; i<numRows; i++) {
+            const row = [];
+            const subMap = [];
+
+            for(let j=0; j<n; j++) {
+                const val = (i >> (n - 1 - j)) & 1;
+                const numVal = new Num(val);
+                row.push(numVal);
+                subMap.push({ v: variables[j], val: numVal });
+            }
+
+            let current = expr;
+            for(const pair of subMap) {
+                current = current.substitute(pair.v, pair.val);
+            }
+            const res = current.simplify();
+
+            let resVal = res;
+            if (res instanceof Sym) {
+                if (res.name === 'true') resVal = new Num(1);
+                if (res.name === 'false') resVal = new Num(0);
+            }
+
+            row.push(resVal);
+            rows.push(new Vec(row));
+        }
+
+        return new Vec(rows);
+    }
 }
 
 // Export classes for Global/CommonJS environments
