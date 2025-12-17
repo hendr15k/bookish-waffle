@@ -282,10 +282,15 @@ class CAS {
 
                 // Check for standard integrals that are not handled by Expr.integrate
                 // 1. ArcTan form: 1/(u^2 + a^2) * u' -> (1/a)*atan(u/a)
+                // Also handles 1/(Ax^2 + Bx + C) by completing the square
                 const atanRes = this._integrateAtan(func, varNode);
                 if (atanRes) return atanRes;
 
-                // 2. Standard Trig Integrals: tan(x), sec(x), etc.
+                // 2. Inverse Hyperbolic / Trig with Sqrt: 1/sqrt(Q(x))
+                const invHypRes = this._integrateInverseHyperbolic(func, varNode);
+                if (invHypRes) return invHypRes;
+
+                // 3. Standard Trig Integrals: tan(x), sec(x), etc.
                 const trigRes = this._integrateTrig(func, varNode);
                 if (trigRes) return trigRes;
 
@@ -582,7 +587,7 @@ class CAS {
                 return this._taylor(expr, varNode, point, order.value);
             }
 
-            if (node.funcName === 'limit') {
+            if (node.funcName === 'limit' || node.funcName === 'lim') {
                 // limit(expr, var, point, [dir])
                 if (node.args.length < 3) throw new Error("limit requires 3 arguments: expression, variable, point");
                 const expr = args[0];
@@ -3041,54 +3046,180 @@ class CAS {
     }
 
     _integrateAtan(expr, varNode) {
-        // Look for 1/(u^2 + a^2) * u'
+        // Look for 1/(Ax^2 + Bx + C)
         // expr should be Div(..., ...) or Mul(Div..., ...)
 
         let num, den;
         if (expr instanceof Div) {
             num = expr.left;
             den = expr.right;
+        } else if (expr instanceof Mul) {
+            // c * 1/den or num/den
+            // This case is tricky without fully analyzing Mul structure
+            // Let's assume Div case first or simple Mul(c, Div(1, den))
+            // But simplification usually puts coeff in numerator if possible.
+            // If expr is Mul(c, Div(1, Q)), let's treat it as Div(c, Q)
+            if (expr.right instanceof Div && expr.right.left instanceof Num && expr.right.left.value === 1) {
+                num = expr.left;
+                den = expr.right.right;
+            } else if (expr.left instanceof Div && expr.left.left instanceof Num && expr.left.left.value === 1) {
+                num = expr.right;
+                den = expr.left.right;
+            } else {
+                return null;
+            }
         } else {
             return null;
         }
 
-        // Check denominator for u^2 + a^2 form
+        if (this._dependsOn(num, varNode)) return null;
+
+        // Check denominator for Ax^2 + Bx + C form
         const poly = this._getPolyCoeffs(den, varNode);
         if (poly && poly.maxDeg === 2) {
-             // A*x^2 + B*x + C
-             // We want form u^2 + a^2.
-             // If B != 0, it's not simple u^2 + a^2 unless we complete square (too complex for now).
-             // Assume B=0.
              const A = poly.coeffs[2];
              const B = poly.coeffs[1] || new Num(0);
              const C = poly.coeffs[0] || new Num(0);
 
-             if (B instanceof Num && B.value === 0) {
-                 // A*x^2 + C
-                 // We want A > 0 and C > 0 for standard atan.
-                 // If A*C < 0, it's partial fractions (ln) or atanh.
+             // Completing the square
+             // Ax^2 + Bx + C = A(x + B/2A)^2 + (C - B^2/4A)
+             // Let u = x + B/2A
+             // K = C - B^2/4A
+             // Integral 1 / (A(u^2 + K/A))
+             // If K/A > 0, it is atan.
+             // K/A = (4AC - B^2) / 4A^2.
+             // Sign depends on 4AC - B^2 (Discriminant of Q).
+             // If D = B^2 - 4AC < 0 => 4AC - B^2 > 0 => Atan.
+             // If D > 0 => Partial fractions (ln).
 
-                 const prodAC = new Mul(A, C).simplify();
-                 let isPos = false;
-                 if (prodAC instanceof Num && prodAC.value > 0) isPos = true;
+             const discriminant = new Sub(new Pow(B, new Num(2)), new Mul(new Num(4), new Mul(A, C))).simplify();
+             const discriminantVal = discriminant.evaluateNumeric();
 
-                 // If symbolic, we might assume positive unless proved otherwise?
-                 // But for x^2 - 1, A=1, C=-1 -> prod = -1 (negative).
-                 // We should SKIP if negative to allow partfrac to handle it.
-
-                 if (prodAC instanceof Num && prodAC.value <= 0) return null;
-
-                 if (!this._dependsOn(num, varNode)) {
-                      // Apply formula: 1/sqrt(AC) * atan(x * sqrt(A/C))
-                      const term1 = new Call('sqrt', [prodAC]).simplify();
-                      const term2 = new Call('sqrt', [new Div(A, C)]).simplify();
-
-                      const coeff = new Div(num, term1).simplify();
-                      const arg = new Mul(varNode, term2).simplify();
-
-                      return new Mul(coeff, new Call('atan', [arg])).simplify();
+             // Check if 4AC - B^2 > 0 (i.e. discriminant < 0)
+             let isAtan = false;
+             if (!isNaN(discriminantVal) && discriminantVal < 0) isAtan = true;
+             // If symbolic, we might optimistically assume atan if A, C > 0 and B=0
+             if (isNaN(discriminantVal)) {
+                 if (B instanceof Num && B.value === 0) {
+                     // Check AC > 0
+                     const AC = new Mul(A, C).simplify();
+                     const ACVal = AC.evaluateNumeric();
+                     if (!isNaN(ACVal) && ACVal > 0) isAtan = true;
                  }
              }
+
+             if (isAtan) {
+                 // Formula: integral dx / (Ax^2 + Bx + C)
+                 // let Delta = 4AC - B^2
+                 // = 2/sqrt(Delta) * atan((2Ax + B)/sqrt(Delta))
+
+                 const Delta = new Sub(new Mul(new Num(4), new Mul(A, C)), new Pow(B, new Num(2))).simplify();
+                 const sqrtDelta = new Call('sqrt', [Delta]).simplify();
+
+                 const argNum = new Add(new Mul(new Num(2), new Mul(A, varNode)), B).simplify();
+                 const arg = new Div(argNum, sqrtDelta).simplify();
+
+                 const coeff = new Div(new Num(2), sqrtDelta).simplify();
+
+                 return new Mul(num, new Mul(coeff, new Call('atan', [arg]))).simplify();
+             }
+        }
+        return null;
+    }
+
+    _integrateInverseHyperbolic(expr, varNode) {
+        // Look for 1/sqrt(Ax^2 + Bx + C)
+        // expr could be Div(1, sqrt(...)) or Div(c, sqrt(...)) or Mul(c, Div...)
+
+        let num, den;
+        if (expr instanceof Div) {
+            num = expr.left;
+            den = expr.right;
+        } else if (expr instanceof Mul) {
+             if (expr.right instanceof Div && expr.right.left instanceof Num && expr.right.left.value === 1) {
+                num = expr.left;
+                den = expr.right.right;
+            } else if (expr.left instanceof Div && expr.left.left instanceof Num && expr.left.left.value === 1) {
+                num = expr.right;
+                den = expr.left.right;
+            } else {
+                return null;
+            }
+        } else {
+            return null;
+        }
+
+        if (this._dependsOn(num, varNode)) return null;
+
+        if (den instanceof Call && den.funcName === 'sqrt') {
+            const inner = den.args[0];
+            const poly = this._getPolyCoeffs(inner, varNode);
+
+            if (poly && poly.maxDeg === 2) {
+                const A = poly.coeffs[2];
+                const B = poly.coeffs[1] || new Num(0);
+                const C = poly.coeffs[0] || new Num(0);
+
+                // Ax^2 + Bx + C
+                // Cases based on sign of A and Discriminant D = B^2 - 4AC
+
+                const AVal = A.evaluateNumeric();
+                if (isNaN(AVal)) return null; // Need to know sign of A
+
+                if (AVal > 0) {
+                    // Form: 1/sqrt(A) * asinh( (2Ax+B) / sqrt(4AC-B^2) )  if 4AC - B^2 > 0
+                    // Form: 1/sqrt(A) * acosh( (2Ax+B) / sqrt(B^2-4AC) )  if B^2 - 4AC > 0
+                    // Or simpler: 1/sqrt(A) * ln( 2sqrt(A)*sqrt(Q) + 2Ax + B )
+
+                    // Let's use the log form which covers both asinh/acosh usually
+                    // Result = (1/sqrt(A)) * ln( 2*sqrt(A)*sqrt(Ax^2+Bx+C) + 2Ax + B )
+
+                    const sqrtA = new Call('sqrt', [A]).simplify();
+                    const term1 = new Mul(new Num(2), new Mul(sqrtA, den)).simplify(); // 2*sqrt(A)*sqrt(Q)
+                    const term2 = new Add(new Mul(new Num(2), new Mul(A, varNode)), B).simplify(); // 2Ax + B
+
+                    const arg = new Add(term1, term2).simplify();
+                    const res = new Mul(new Div(num, sqrtA), new Call('ln', [arg])).simplify();
+
+                    // Optional: convert to asinh/acosh if possible for cleaner output?
+                    // asinh(x) = ln(x + sqrt(x^2+1))
+                    // acosh(x) = ln(x + sqrt(x^2-1))
+                    // If B=0, C=1, A=1 => ln(2*sqrt(x^2+1) + 2x) = ln(2) + asinh(x).
+                    // This matches.
+
+                    // Check if it simplifies to standard asinh/acosh
+                    if (B instanceof Num && B.value === 0) {
+                        if (C.evaluateNumeric() > 0) {
+                            // 1/sqrt(Ax^2 + C) = 1/sqrt(A) * asinh( x * sqrt(A/C) )
+                            const arg = new Mul(varNode, new Call('sqrt', [new Div(A, C)])).simplify();
+                            return new Mul(new Div(num, sqrtA), new Call('asinh', [arg])).simplify();
+                        } else if (C.evaluateNumeric() < 0) {
+                            // 1/sqrt(Ax^2 - C) = 1/sqrt(A) * acosh( x * sqrt(A/-C) )
+                            const negC = new Mul(new Num(-1), C).simplify();
+                            const arg = new Mul(varNode, new Call('sqrt', [new Div(A, negC)])).simplify();
+                            return new Mul(new Div(num, sqrtA), new Call('acosh', [arg])).simplify();
+                        }
+                    }
+
+                    return res;
+
+                } else if (AVal < 0) {
+                    // A < 0. Must be asin.
+                    // 1/sqrt(-A) * asin( (-2Ax - B) / sqrt(B^2 - 4AC) )
+                    // Requires B^2 - 4AC > 0 for real solution range.
+
+                    const negA = new Mul(new Num(-1), A).simplify();
+                    const sqrtNegA = new Call('sqrt', [negA]).simplify();
+
+                    const disc = new Sub(new Pow(B, new Num(2)), new Mul(new Num(4), new Mul(A, C))).simplify();
+                    const sqrtDisc = new Call('sqrt', [disc]).simplify();
+
+                    const argNum = new Sub(new Mul(new Mul(new Num(-2), A), varNode), B).simplify();
+                    const arg = new Div(argNum, sqrtDisc).simplify();
+
+                    return new Mul(new Div(num, sqrtNegA), new Call('asin', [arg])).simplify();
+                }
+            }
         }
         return null;
     }
