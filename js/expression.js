@@ -692,6 +692,8 @@ class Mul extends BinaryOp {
     integrate(varName) {
         if (this.left instanceof Num) return new Mul(this.left, this.right.integrate(varName));
         if (this.right instanceof Num) return new Mul(this.right, this.left.integrate(varName));
+        // If varName is not provided or invalid, default to generic Call
+        if (!varName) return new Call("integrate", [this]);
         return new Call("integrate", [this, varName]);
     }
     expand() {
@@ -1045,7 +1047,11 @@ class Div extends BinaryOp {
              // If den.diff(varName) is constant (does not depend on varName) and non-zero
              try {
                  const diff = den.diff(varName).simplify();
-                 if (!dependsOn(diff, varName) && !(diff instanceof Num && diff.value === 0)) {
+                 // Ensure we are not dividing by zero symbolic or numeric
+                 let isZero = false;
+                 if (diff instanceof Num && diff.value === 0) isZero = true;
+
+                 if (!isZero && !dependsOn(diff, varName)) {
                       // Result: c/a * ln(den)
                       const coeff = new Div(c, diff);
                       return new Mul(coeff, new Call("ln", [den]));
@@ -1907,12 +1913,23 @@ class Vec extends Expr {
     substitute(varName, value) { return new Vec(this.elements.map(e => e.substitute(varName, value))); }
     toLatex() {
         // Heuristic: check if elements are vectors (Matrix)
-        if (this.elements.length > 0 && this.elements[0] instanceof Vec) {
+        const isMatrix = this.elements.length > 0 && this.elements.every(e => e instanceof Vec);
+
+        if (isMatrix) {
             // Matrix
-            const rows = this.elements.map(row => row.elements.map(e => e.toLatex()).join(" & ")).join(" \\\\ ");
+            const rows = this.elements.map(row => {
+                if (row instanceof Vec) {
+                    return row.elements.map(e => e.toLatex()).join(" & ");
+                }
+                return row.toLatex();
+            }).join(" \\\\ ");
             return `\\begin{bmatrix} ${rows} \\end{bmatrix}`;
         }
-        return `\\begin{bmatrix} ${this.elements.map(e => e.toLatex()).join(" \\\\ ")} \\end{bmatrix}`; // Column vector default? Or row?
+        // Vector (Row or Column? Xcas [1,2] is row-like but usually displayed as column in LaTeX if we want vertical?)
+        // Standard convention for [a, b, c] is often row vector or just list.
+        // But for linear algebra tools, column vectors are standard for v.
+        // If we use \\\\ it becomes a column vector.
+        return `\\begin{bmatrix} ${this.elements.map(e => e.toLatex()).join(" \\\\ ")} \\end{bmatrix}`;
     }
 }
 
