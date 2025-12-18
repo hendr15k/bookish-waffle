@@ -1426,6 +1426,33 @@ class CAS {
                  return this._truthTable(args[0], args[1]);
             }
 
+            if (node.funcName === 'legendre') {
+                 if (node.args.length !== 2) throw new Error("legendre requires 2 arguments: n, x");
+                 return this._legendre(args[0], args[1]);
+            }
+            if (node.funcName === 'hermite') {
+                 if (node.args.length !== 2) throw new Error("hermite requires 2 arguments: n, x");
+                 return this._hermite(args[0], args[1]);
+            }
+            if (node.funcName === 'chebyshev') {
+                 if (node.args.length !== 2) throw new Error("chebyshev requires 2 arguments: n, x");
+                 return this._chebyshev(args[0], args[1]);
+            }
+            if (node.funcName === 'laguerre') {
+                 if (node.args.length !== 2) throw new Error("laguerre requires 2 arguments: n, x");
+                 return this._laguerre(args[0], args[1]);
+            }
+
+            if (node.funcName === 'pinv') {
+                if (node.args.length !== 1) throw new Error("pinv requires 1 argument (matrix)");
+                return this._pinv(args[0]);
+            }
+
+            if (node.funcName === 'cond') {
+                if (node.args.length !== 1) throw new Error("cond requires 1 argument (matrix)");
+                return this._cond(args[0]);
+            }
+
             return new Call(node.funcName, args);
         }
 
@@ -2843,16 +2870,34 @@ class CAS {
     }
 
     _fibonacci(n) {
-
+        if (n < 0) return 0; // Or handle negative logic F(-n) = (-1)^(n+1)F(n)
         if (n === 0) return 0;
         if (n === 1) return 1;
-        let a = 0, b = 1;
-        for (let i = 2; i <= n; i++) {
-            let temp = a + b;
-            a = b;
-            b = temp;
-        }
-        return b;
+        if (n === 2) return 1;
+
+        // O(log n) Fast Doubling
+        // F(2k) = F(k) * (2*F(k+1) - F(k))
+        // F(2k+1) = F(k+1)^2 + F(k)^2
+
+        // We compute pair (F(k), F(k+1))
+        const fib = (k) => {
+            if (k === 0) return [0, 1]; // F(0), F(1)
+            const p = Math.floor(k / 2);
+            const [fk, fk1] = fib(p);
+            // c = F(2p) = F(p)*(2F(p+1) - F(p))
+            const c = fk * (2 * fk1 - fk);
+            // d = F(2p+1) = F(p+1)^2 + F(p)^2
+            const d = fk1 * fk1 + fk * fk;
+
+            if (k % 2 === 0) {
+                return [c, d];
+            } else {
+                return [d, c + d];
+            }
+        };
+
+        const [fn, fn1] = fib(n);
+        return fn;
     }
 
     _gamma(z) {
@@ -8047,6 +8092,199 @@ class CAS {
         }
 
         return new Vec(rows);
+    }
+
+    _legendre(n, x) {
+        // P_n(x)
+        // P_0 = 1, P_1 = x
+        // (n+1)P_{n+1} = (2n+1)x P_n - n P_{n-1}
+        n = n.simplify();
+        if (!(n instanceof Num && Number.isInteger(n.value) && n.value >= 0)) {
+            return new Call('legendre', [n, x]);
+        }
+        const val = n.value;
+        if (val === 0) return new Num(1);
+        if (val === 1) return x;
+
+        let p_prev = new Num(1);
+        let p_curr = x;
+
+        for (let i = 1; i < val; i++) {
+            // P_{i+1} = ((2i+1)x P_i - i P_{i-1}) / (i+1)
+            const num = new Sub(
+                new Mul(new Mul(new Num(2 * i + 1), x), p_curr),
+                new Mul(new Num(i), p_prev)
+            );
+            const p_next = new Div(num, new Num(i + 1)).simplify();
+            p_prev = p_curr;
+            p_curr = p_next;
+        }
+        return p_curr;
+    }
+
+    _hermite(n, x) {
+        // Physicists' Hermite polynomials H_n(x)
+        // H_0 = 1, H_1 = 2x
+        // H_{n+1} = 2x H_n - 2n H_{n-1}
+        n = n.simplify();
+        if (!(n instanceof Num && Number.isInteger(n.value) && n.value >= 0)) {
+            return new Call('hermite', [n, x]);
+        }
+        const val = n.value;
+        if (val === 0) return new Num(1);
+        if (val === 1) return new Mul(new Num(2), x).simplify();
+
+        let h_prev = new Num(1);
+        let h_curr = new Mul(new Num(2), x).simplify();
+
+        for (let i = 1; i < val; i++) {
+            // H_{i+1} = 2x H_i - 2i H_{i-1}
+            const term1 = new Mul(new Mul(new Num(2), x), h_curr);
+            const term2 = new Mul(new Mul(new Num(2 * i), new Num(1)), h_prev); // i is number
+            const h_next = new Sub(term1, term2).simplify();
+            h_prev = h_curr;
+            h_curr = h_next;
+        }
+        return h_curr;
+    }
+
+    _chebyshev(n, x) {
+        // First kind T_n(x)
+        // T_0 = 1, T_1 = x
+        // T_{n+1} = 2x T_n - T_{n-1}
+        n = n.simplify();
+        if (!(n instanceof Num && Number.isInteger(n.value) && n.value >= 0)) {
+            return new Call('chebyshev', [n, x]);
+        }
+        const val = n.value;
+        if (val === 0) return new Num(1);
+        if (val === 1) return x;
+
+        let t_prev = new Num(1);
+        let t_curr = x;
+
+        for (let i = 1; i < val; i++) {
+            const term1 = new Mul(new Mul(new Num(2), x), t_curr);
+            const t_next = new Sub(term1, t_prev).simplify();
+            t_prev = t_curr;
+            t_curr = t_next;
+        }
+        return t_curr;
+    }
+
+    _laguerre(n, x) {
+        // L_n(x)
+        // L_0 = 1, L_1 = 1 - x
+        // (n+1)L_{n+1} = (2n+1-x)L_n - nL_{n-1}
+        n = n.simplify();
+        if (!(n instanceof Num && Number.isInteger(n.value) && n.value >= 0)) {
+            return new Call('laguerre', [n, x]);
+        }
+        const val = n.value;
+        if (val === 0) return new Num(1);
+        if (val === 1) return new Sub(new Num(1), x).simplify();
+
+        let l_prev = new Num(1);
+        let l_curr = new Sub(new Num(1), x).simplify();
+
+        for (let i = 1; i < val; i++) {
+            // L_{i+1} = ( (2i+1-x)L_i - i L_{i-1} ) / (i+1)
+            const factor = new Sub(new Num(2 * i + 1), x);
+            const term1 = new Mul(factor, l_curr);
+            const term2 = new Mul(new Num(i), l_prev);
+            const num = new Sub(term1, term2);
+            const l_next = new Div(num, new Num(i + 1)).simplify();
+            l_prev = l_curr;
+            l_curr = l_next;
+        }
+        return l_curr;
+    }
+
+    _pinv(matrix) {
+        if (!(matrix instanceof Vec)) throw new Error("pinv requires a matrix");
+        // Pseudo-inverse A^+ = V * S^+ * U^T
+        const [U, S, V] = this._svd(matrix).elements; // svd returns [U, S, V] (V is V, not V^T in my implementation return)
+
+        // S is diagonal matrix
+        // Construct S^+ (reciprocal of non-zero elements, transposed - but S is square/diag so transpose is same)
+        // Wait, if A is mxn, U is mxm, S is mxn, V is nxn.
+        // My SVD implementation returns U, S, V.
+        // S is a matrix.
+        // We need to invert diagonal elements.
+
+        const rows = S.elements.length;
+        const cols = S.elements[0].elements.length;
+
+        const S_plus_rows = [];
+        // S^+ should be nxm (transpose dimensions)
+        for(let r=0; r<cols; r++) { // New rows = old cols
+            const row = [];
+            for(let c=0; c<rows; c++) { // New cols = old rows
+                if (r === c) { // Diagonal element
+                     const val = S.elements[r].elements[c]; // S[r][r] since r==c
+                     // Invert if non-zero
+                     const numVal = val.evaluateNumeric();
+                     if (!isNaN(numVal) && Math.abs(numVal) > 1e-9) {
+                         row.push(new Div(new Num(1), val).simplify());
+                     } else {
+                         row.push(new Num(0));
+                     }
+                } else {
+                     row.push(new Num(0));
+                }
+            }
+            S_plus_rows.push(new Vec(row));
+        }
+        const S_plus = new Vec(S_plus_rows);
+
+        // A^+ = V * S^+ * U^T
+        // Check my SVD return: A = U * S * V^T
+        // So A^+ = (V^T)^-1 * S^+ * U^-1 = V * S^+ * U^T (since U, V orthogonal)
+
+        // My _svd returns V. Does it return V or V^T?
+        // Code: "Result: [U, S, V] (V, not V^T, following standard svd returns)"
+        // And "A = U * S * V^T" implies V contains eigenvectors of A^T A.
+        // And result says "Columns are eigenvectors".
+        // So V is indeed V.
+
+        const UT = this._trans(U);
+        const VSplus = new Mul(V, S_plus).simplify();
+        const res = new Mul(VSplus, UT).simplify();
+
+        return res;
+    }
+
+    _cond(matrix) {
+        if (!(matrix instanceof Vec)) throw new Error("cond requires a matrix");
+        // Condition number = max(sigma) / min(sigma)
+        // Use SVD
+        const svd = this._svd(matrix);
+        const S = svd.elements[1]; // Diagonal matrix
+
+        // Extract singular values
+        const sigmas = [];
+        const rows = S.elements.length;
+        const cols = S.elements[0].elements.length;
+
+        const minDim = Math.min(rows, cols);
+
+        for(let i=0; i<minDim; i++) {
+             sigmas.push(S.elements[i].elements[i]);
+        }
+
+        if (sigmas.length === 0) return new Num(0);
+
+        // SVD logic sorts eigenvalues descending => sigma0 is max.
+        // Last one is min.
+
+        const maxSigma = sigmas[0];
+        let minSigma = sigmas[sigmas.length - 1];
+
+        // Warning: minSigma might be 0.
+        const minVal = minSigma.evaluateNumeric();
+        if (Math.abs(minVal) < 1e-12) return new Sym('Infinity');
+
+        return new Div(maxSigma, minSigma).simplify();
     }
 }
 
