@@ -995,6 +995,16 @@ class CAS {
                  return this._divergence(args[0], args[1]);
             }
 
+            if (node.funcName === 'jacobian') {
+                 if (node.args.length !== 2) throw new Error("jacobian requires 2 arguments: vector, vars");
+                 return this._jacobian(args[0], args[1]);
+            }
+
+            if (node.funcName === 'hessian') {
+                 if (node.args.length !== 2) throw new Error("hessian requires 2 arguments: expr, vars");
+                 return this._hessian(args[0], args[1]);
+            }
+
             if (node.funcName === 'laplacian') {
                  // laplacian(expr, vars) = div(grad(expr))
                  if (node.args.length !== 2) throw new Error("laplacian requires 2 arguments: expression and list of variables");
@@ -1376,6 +1386,21 @@ class CAS {
                 return this._mad(args[0]);
             }
 
+            if (node.funcName === 'moment') {
+                 if (node.args.length !== 2) throw new Error("moment requires 2 arguments: list, k");
+                 return this._moment(args[0], args[1]);
+            }
+
+            if (node.funcName === 'skewness') {
+                 if (node.args.length !== 1) throw new Error("skewness requires 1 argument");
+                 return this._skewness(args[0]);
+            }
+
+            if (node.funcName === 'kurtosis') {
+                 if (node.args.length !== 1) throw new Error("kurtosis requires 1 argument");
+                 return this._kurtosis(args[0]);
+            }
+
             if (node.funcName === 'curvature') {
                 if (node.args.length < 2) throw new Error("curvature requires at least 2 arguments: expr, var, [point]");
                 const point = node.args.length > 2 ? args[2] : null;
@@ -1468,6 +1493,21 @@ class CAS {
             if (node.funcName === 'cond') {
                 if (node.args.length !== 1) throw new Error("cond requires 1 argument (matrix)");
                 return this._cond(args[0]);
+            }
+
+            if (node.funcName === 'isDiagonal') {
+                 if (node.args.length !== 1) throw new Error("isDiagonal requires 1 argument");
+                 return this._isDiagonal(args[0]);
+            }
+
+            if (node.funcName === 'isSymmetric') {
+                 if (node.args.length !== 1) throw new Error("isSymmetric requires 1 argument");
+                 return this._isSymmetric(args[0]);
+            }
+
+            if (node.funcName === 'isOrthogonal') {
+                 if (node.args.length !== 1) throw new Error("isOrthogonal requires 1 argument");
+                 return this._isOrthogonal(args[0]);
             }
 
             return new Call(node.funcName, args);
@@ -5037,6 +5077,38 @@ class CAS {
         return new Num(1);
     }
 
+    _jacobian(vector, vars) {
+        if (!(vector instanceof Vec)) throw new Error("First argument to jacobian must be a vector of expressions");
+        if (!(vars instanceof Vec)) throw new Error("Second argument to jacobian must be a vector of variables");
+
+        const rows = [];
+        for (const expr of vector.elements) {
+            const row = [];
+            for (const v of vars.elements) {
+                row.push(expr.diff(v).simplify());
+            }
+            rows.push(new Vec(row));
+        }
+        return new Vec(rows);
+    }
+
+    _hessian(expr, vars) {
+        if (!(vars instanceof Vec)) throw new Error("Second argument to hessian must be a vector of variables");
+
+        const rows = [];
+        for (const v1 of vars.elements) {
+            const row = [];
+            for (const v2 of vars.elements) {
+                // d^2 f / (dx_i dx_j)
+                const d1 = expr.diff(v1).simplify();
+                const d2 = d1.diff(v2).simplify();
+                row.push(d2);
+            }
+            rows.push(new Vec(row));
+        }
+        return new Vec(rows);
+    }
+
     _potential(field, vars) {
         const isCons = this._conservative(field, vars);
         if (isCons.value === 0) throw new Error("Field is not conservative");
@@ -7725,6 +7797,40 @@ class CAS {
         return new Call('mad', [list]);
     }
 
+    _moment(list, k) {
+        if (!(list instanceof Vec)) throw new Error("First argument to moment must be a list");
+        if (!(k instanceof Num)) throw new Error("Second argument to moment must be a number");
+
+        const mean = this._mean(list);
+        let sum = new Num(0);
+        const n = list.elements.length;
+        for(const x of list.elements) {
+            const diff = new Sub(x, mean);
+            sum = new Add(sum, new Pow(diff, k));
+        }
+        return new Div(sum.simplify(), new Num(n)).simplify();
+    }
+
+    _skewness(list) {
+        // mu3 / sigma^3
+        const m3 = this._moment(list, new Num(3));
+        const m2 = this._moment(list, new Num(2)); // Variance (population)
+        // skewness is usually sample skewness or population?
+        // Moment gives population moment.
+        // g1 = m3 / m2^(3/2)
+        const sigma = new Call('sqrt', [m2]);
+        const sigma3 = new Pow(sigma, new Num(3));
+        return new Div(m3, sigma3).simplify();
+    }
+
+    _kurtosis(list) {
+        // mu4 / sigma^4
+        const m4 = this._moment(list, new Num(4));
+        const m2 = this._moment(list, new Num(2));
+        const sigma4 = new Pow(m2, new Num(2)); // (sigma^2)^2
+        return new Div(m4, sigma4).simplify();
+    }
+
     _curvature(expr, varNode, point) {
         // kappa = |y''| / (1 + y'^2)^(3/2)
         const d1 = expr.diff(varNode).simplify();
@@ -8347,6 +8453,71 @@ class CAS {
         if (Math.abs(minVal) < 1e-12) return new Sym('Infinity');
 
         return new Div(maxSigma, minSigma).simplify();
+    }
+
+    _isDiagonal(matrix) {
+        if (!(matrix instanceof Vec)) throw new Error("Argument must be a matrix");
+        const rows = matrix.elements.length;
+        if (rows === 0) return new Num(1);
+        const cols = matrix.elements[0].elements.length;
+        if (rows !== cols) return new Num(0); // Must be square
+
+        for (let i = 0; i < rows; i++) {
+            for (let j = 0; j < cols; j++) {
+                if (i !== j) {
+                    const val = matrix.elements[i].elements[j].evaluateNumeric();
+                    if (isNaN(val) || Math.abs(val) > 1e-10) {
+                        // Check symbolic zero?
+                        const s = matrix.elements[i].elements[j].simplify();
+                        if (!(s instanceof Num && s.value === 0)) return new Num(0);
+                    }
+                }
+            }
+        }
+        return new Num(1);
+    }
+
+    _isSymmetric(matrix) {
+        if (!(matrix instanceof Vec)) throw new Error("Argument must be a matrix");
+        const rows = matrix.elements.length;
+        if (rows === 0) return new Num(1);
+        const cols = matrix.elements[0].elements.length;
+        if (rows !== cols) return new Num(0); // Must be square
+
+        const T = this._trans(matrix);
+        // Compare matrix and T
+        for (let i = 0; i < rows; i++) {
+            for (let j = 0; j < cols; j++) {
+                const diff = new Sub(matrix.elements[i].elements[j], T.elements[i].elements[j]).simplify();
+                if (diff instanceof Num && diff.value === 0) continue;
+                // If not numeric zero, maybe symbolic zero?
+                return new Num(0);
+            }
+        }
+        return new Num(1);
+    }
+
+    _isOrthogonal(matrix) {
+        if (!(matrix instanceof Vec)) throw new Error("Argument must be a matrix");
+        const rows = matrix.elements.length;
+        if (rows === 0) return new Num(1);
+        const cols = matrix.elements[0].elements.length;
+        if (rows !== cols) return new Num(0); // Must be square
+
+        // A^T * A = I
+        const T = this._trans(matrix);
+        const P = new Mul(T, matrix).simplify();
+        const I = this._identity(new Num(rows));
+
+        // Compare P and I
+        for (let i = 0; i < rows; i++) {
+            for (let j = 0; j < cols; j++) {
+                const diff = new Sub(P.elements[i].elements[j], I.elements[i].elements[j]).simplify();
+                if (diff instanceof Num && Math.abs(diff.value) < 1e-9) continue;
+                return new Num(0);
+            }
+        }
+        return new Num(1);
     }
 }
 

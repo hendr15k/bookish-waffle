@@ -162,6 +162,16 @@ window.HELP_DATA = {
         "syntax": "conservative(field, vars)",
         "examples": ["conservative([-y, x], [x, y])"]
     },
+    "jacobian": {
+        "description": "Jacobian matrix of a vector function.",
+        "syntax": "jacobian(vector, vars)",
+        "examples": ["jacobian([x^2*y, x+y], [x, y])"]
+    },
+    "hessian": {
+        "description": "Hessian matrix of a scalar function.",
+        "syntax": "hessian(expr, vars)",
+        "examples": ["hessian(x^3 + y^3 - 3xy, [x, y])"]
+    },
 
     // --- Linear Algebra ---
     "det": {
@@ -254,6 +264,9 @@ window.HELP_DATA = {
         "syntax": "kron(A, B)",
         "examples": ["kron([[1, 2]], [[0, 1]])"]
     },
+    "isDiagonal": { "description": "Checks if matrix is diagonal.", "syntax": "isDiagonal(matrix)", "examples": ["isDiagonal(identity(3))"] },
+    "isSymmetric": { "description": "Checks if matrix is symmetric.", "syntax": "isSymmetric(matrix)", "examples": ["isSymmetric([[1, 2], [2, 1]])"] },
+    "isOrthogonal": { "description": "Checks if matrix is orthogonal.", "syntax": "isOrthogonal(matrix)", "examples": ["isOrthogonal([[0, -1], [1, 0]])"] },
 
     // --- Statistics ---
     "mean": {
@@ -433,6 +446,9 @@ window.HELP_DATA = {
     "harmMean": { "description": "Harmonic Mean.", "syntax": "harmMean(list)", "examples": ["harmMean([1, 2, 4])"] },
     "rms": { "description": "Root Mean Square.", "syntax": "rms(list)", "examples": ["rms([1, -1])"] },
     "mad": { "description": "Mean Absolute Deviation.", "syntax": "mad(list)", "examples": ["mad([1, 2, 3])"] },
+    "moment": { "description": "k-th Central Moment.", "syntax": "moment(list, k)", "examples": ["moment([1, 2, 3], 2)"] },
+    "skewness": { "description": "Skewness of a dataset.", "syntax": "skewness(list)", "examples": ["skewness([1, 2, 3, 10])"] },
+    "kurtosis": { "description": "Kurtosis of a dataset.", "syntax": "kurtosis(list)", "examples": ["kurtosis([1, 2, 3])"] },
     "binomialCDF": { "description": "Binomial Cumulative Probability.", "syntax": "binomialCDF(k, n, p)", "examples": ["binomialCDF(2, 5, 0.5)"] },
     "poissonCDF": { "description": "Poisson Cumulative Probability.", "syntax": "poissonCDF(k, lambda)", "examples": ["poissonCDF(3, 5)"] },
     "exponentialPDF": { "description": "Exponential PDF.", "syntax": "exponentialPDF(x, lambda)", "examples": ["exponentialPDF(1, 0.5)"] },
