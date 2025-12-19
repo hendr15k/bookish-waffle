@@ -381,27 +381,37 @@ class Add extends BinaryOp {
 
         if (l instanceof Num && r instanceof Num) return new Num(l.value + r.value);
 
-        // Fraction addition: Num + Div (e.g., 1 + 1/2) or Div + Div (e.g., 1/2 + 1/3)
-        // Convert Num to Div(Num, 1) and combine
-        // ONLY if all components are numeric numbers. If any denominator is symbolic, do not merge.
-        // This preserves partial fraction decompositions.
+        // Symbolic Fraction addition
+        // Combine if same denominator: A/C + B/C -> (A+B)/C
+        const getDenom = (e) => (e instanceof Div) ? e.right : new Num(1);
+        const getNum = (e) => (e instanceof Div) ? e.left : e;
 
-        const isNumericDiv = (expr) => (expr instanceof Div && expr.left instanceof Num && expr.right instanceof Num);
-        const isNumericNum = (expr) => (expr instanceof Num);
+        if (l instanceof Div || r instanceof Div) {
+            const d1 = getDenom(l);
+            const d2 = getDenom(r);
 
-        if ((isNumericDiv(l) && isNumericDiv(r)) ||
-            (isNumericNum(l) && isNumericDiv(r)) ||
-            (isNumericDiv(l) && isNumericNum(r))) {
+            // Check for identical denominators
+            if (d1.toString() === d2.toString()) {
+                const n1 = getNum(l);
+                const n2 = getNum(r);
+                return new Div(new Add(n1, n2).simplify(), d1).simplify();
+            }
 
-            const n1 = (l instanceof Div) ? l.left.value : l.value;
-            const d1 = (l instanceof Div) ? l.right.value : 1;
-            const n2 = (r instanceof Div) ? r.left.value : r.value;
-            const d2 = (r instanceof Div) ? r.right.value : 1;
+            // Combine if both are purely numeric fractions (existing logic)
+            const isNumericDiv = (expr) => (expr instanceof Div && expr.left instanceof Num && expr.right instanceof Num);
+            const isNumericNum = (expr) => (expr instanceof Num);
 
-            if (d1 !== 0 && d2 !== 0) {
-                 const newNum = n1 * d2 + n2 * d1;
-                 const newDen = d1 * d2;
-                 return new Div(new Num(newNum), new Num(newDen)).simplify();
+            if ((isNumericDiv(l) || isNumericNum(l)) && (isNumericDiv(r) || isNumericNum(r))) {
+                 const n1Val = (l instanceof Div) ? l.left.value : l.value;
+                 const d1Val = (l instanceof Div) ? l.right.value : 1;
+                 const n2Val = (r instanceof Div) ? r.left.value : r.value;
+                 const d2Val = (r instanceof Div) ? r.right.value : 1;
+
+                 if (d1Val !== 0 && d2Val !== 0) {
+                      const newNum = n1Val * d2Val + n2Val * d1Val;
+                      const newDen = d1Val * d2Val;
+                      return new Div(new Num(newNum), new Num(newDen)).simplify();
+                 }
             }
         }
 
@@ -475,23 +485,37 @@ class Sub extends BinaryOp {
         if (l instanceof Num && r instanceof Num) return new Num(l.value - r.value);
         if (l instanceof Num && l.value === 0) return new Mul(new Num(-1), r).simplify();
 
-        // Fraction subtraction
-        const isNumericDiv = (expr) => (expr instanceof Div && expr.left instanceof Num && expr.right instanceof Num);
-        const isNumericNum = (expr) => (expr instanceof Num);
+        // Symbolic Fraction subtraction
+        // Combine if same denominator: A/C - B/C -> (A-B)/C
+        const getDenom = (e) => (e instanceof Div) ? e.right : new Num(1);
+        const getNum = (e) => (e instanceof Div) ? e.left : e;
 
-        if ((isNumericDiv(l) && isNumericDiv(r)) ||
-            (isNumericNum(l) && isNumericDiv(r)) ||
-            (isNumericDiv(l) && isNumericNum(r))) {
+        if (l instanceof Div || r instanceof Div) {
+            const d1 = getDenom(l);
+            const d2 = getDenom(r);
 
-            const n1 = (l instanceof Div) ? l.left.value : l.value;
-            const d1 = (l instanceof Div) ? l.right.value : 1;
-            const n2 = (r instanceof Div) ? r.left.value : r.value;
-            const d2 = (r instanceof Div) ? r.right.value : 1;
+            // Check for identical denominators
+            if (d1.toString() === d2.toString()) {
+                const n1 = getNum(l);
+                const n2 = getNum(r);
+                return new Div(new Sub(n1, n2).simplify(), d1).simplify();
+            }
 
-            if (d1 !== 0 && d2 !== 0) {
-                 const newNum = n1 * d2 - n2 * d1;
-                 const newDen = d1 * d2;
-                 return new Div(new Num(newNum), new Num(newDen)).simplify();
+            // Combine if both are purely numeric fractions
+            const isNumericDiv = (expr) => (expr instanceof Div && expr.left instanceof Num && expr.right instanceof Num);
+            const isNumericNum = (expr) => (expr instanceof Num);
+
+            if ((isNumericDiv(l) || isNumericNum(l)) && (isNumericDiv(r) || isNumericNum(r))) {
+                 const n1Val = (l instanceof Div) ? l.left.value : l.value;
+                 const d1Val = (l instanceof Div) ? l.right.value : 1;
+                 const n2Val = (r instanceof Div) ? r.left.value : r.value;
+                 const d2Val = (r instanceof Div) ? r.right.value : 1;
+
+                 if (d1Val !== 0 && d2Val !== 0) {
+                      const newNum = n1Val * d2Val - n2Val * d1Val;
+                      const newDen = d1Val * d2Val;
+                      return new Div(new Num(newNum), new Num(newDen)).simplify();
+                 }
             }
         }
 
@@ -1143,6 +1167,31 @@ class Pow extends BinaryOp {
             if (rem === 1) return l; // i
             if (rem === 2) return new Num(-1);
             if (rem === 3) return new Mul(new Num(-1), l); // -i
+        }
+
+        // Matrix Power M^n
+        if (l instanceof Vec && r instanceof Num && Number.isInteger(r.value) && r.value >= 0) {
+             const rows = l.elements.length;
+             // Check square matrix
+             if (rows > 0 && l.elements[0] instanceof Vec && l.elements[0].elements.length === rows) {
+                 const n = r.value;
+                 // Identity
+                 const idRows = [];
+                 for(let i=0; i<rows; i++) {
+                     const row = [];
+                     for(let j=0; j<rows; j++) row.push(new Num(i===j?1:0));
+                     idRows.push(new Vec(row));
+                 }
+                 let res = new Vec(idRows);
+                 if (n === 0) return res;
+
+                 let base = l;
+                 // Binary Exponentiation or just simple loop
+                 for(let i=0; i<n; i++) {
+                     res = new Mul(res, base).simplify();
+                 }
+                 return res;
+             }
         }
 
         if (r instanceof Num && r.value === 0) return new Num(1);

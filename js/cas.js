@@ -995,6 +995,13 @@ class CAS {
                  return this._divergence(args[0], args[1]);
             }
 
+            if (node.funcName === 'laplacian') {
+                 // laplacian(expr, vars) = div(grad(expr))
+                 if (node.args.length !== 2) throw new Error("laplacian requires 2 arguments: expression and list of variables");
+                 const grad = this._grad(args[0], args[1]);
+                 return this._divergence(grad, args[1]);
+            }
+
             if (node.funcName === 'rem' || node.funcName === 'irem') {
                 if (node.args.length !== 2) throw new Error("rem requires 2 arguments");
                 return this._rem(args[0], args[1]);
@@ -1327,6 +1334,16 @@ class CAS {
             if (node.funcName === 'tTest') {
                 if (node.args.length !== 2) throw new Error("tTest requires 2 arguments: data, mu0");
                 return this._tTest(args[0], args[1]);
+            }
+
+            if (node.funcName === 'tTest2') {
+                if (node.args.length !== 2) throw new Error("tTest2 requires 2 arguments: data1, data2");
+                return this._tTest2(args[0], args[1]);
+            }
+
+            if (node.funcName === 'chiSquareTest') {
+                if (node.args.length !== 2) throw new Error("chiSquareTest requires 2 arguments: observed, expected");
+                return this._chiSquareTest(args[0], args[1]);
             }
 
             if (node.funcName === 'kron') {
@@ -7406,6 +7423,51 @@ class CAS {
         // Users can look up table or we add tCDF later.
 
         return new Vec([t, df]);
+    }
+
+    _tTest2(data1, data2) {
+        // Two-sample t-test (independent, equal variance assumed for simplicity or Welch's)
+        // Using Welch's t-test by default as it's safer
+        if (!(data1 instanceof Vec) || !(data2 instanceof Vec)) throw new Error("Data must be lists");
+
+        const n1 = new Num(data1.elements.length);
+        const n2 = new Num(data2.elements.length);
+        const m1 = this._mean(data1);
+        const m2 = this._mean(data2);
+        const v1 = this._variance(data1);
+        const v2 = this._variance(data2);
+
+        const num = new Sub(m1, m2).simplify();
+        const denSq = new Add(new Div(v1, n1), new Div(v2, n2)).simplify();
+        const t = new Div(num, new Call('sqrt', [denSq])).simplify();
+
+        // Welch-Satterthwaite equation for df
+        // df = (v1/n1 + v2/n2)^2 / [ (v1/n1)^2/(n1-1) + (v2/n2)^2/(n2-1) ]
+        const term1 = new Div(v1, n1);
+        const term2 = new Div(v2, n2);
+        const dfNum = new Pow(new Add(term1, term2), new Num(2));
+        const dfDen1 = new Div(new Pow(term1, new Num(2)), new Sub(n1, new Num(1)));
+        const dfDen2 = new Div(new Pow(term2, new Num(2)), new Sub(n2, new Num(1)));
+        const df = new Div(dfNum, new Add(dfDen1, dfDen2)).simplify();
+
+        return new Vec([t, df]);
+    }
+
+    _chiSquareTest(observed, expected) {
+        // Goodness of Fit
+        // chi2 = sum( (O-E)^2 / E )
+        if (!(observed instanceof Vec) || !(expected instanceof Vec)) throw new Error("Arguments must be lists");
+        if (observed.elements.length !== expected.elements.length) throw new Error("Lists must be equal length");
+
+        let sum = new Num(0);
+        for(let i=0; i<observed.elements.length; i++) {
+            const O = observed.elements[i];
+            const E = expected.elements[i];
+            const diff = new Sub(O, E);
+            const term = new Div(new Pow(diff, new Num(2)), E);
+            sum = new Add(sum, term).simplify();
+        }
+        return sum;
     }
 
     _polyRegression(data, order) {
