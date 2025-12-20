@@ -1333,6 +1333,10 @@ class Call extends Expr {
 
         if (this.funcName === 'sqrt') {
             const arg = simpleArgs[0];
+            // sqrt(x^2) -> abs(x)
+            if (arg instanceof Pow && arg.right instanceof Num && arg.right.value === 2) {
+                return new Call('abs', [arg.left]);
+            }
             if (arg instanceof Num) {
                 if (arg.value >= 0) {
                     const sqrtVal = Math.sqrt(arg.value);
@@ -1357,6 +1361,8 @@ class Call extends Expr {
 
         if (this.funcName === 'sin') {
             const arg = simpleArgs[0];
+            // sin(asin(x)) -> x
+            if (arg instanceof Call && arg.funcName === 'asin') return arg.args[0];
             const val = arg.evaluateNumeric();
             if (!isNaN(val)) {
                 if (Math.abs(val) < 1e-10) return new Num(0);
@@ -1377,6 +1383,8 @@ class Call extends Expr {
         }
         if (this.funcName === 'cos') {
             const arg = simpleArgs[0];
+            // cos(acos(x)) -> x
+            if (arg instanceof Call && arg.funcName === 'acos') return arg.args[0];
             const val = arg.evaluateNumeric();
             if (!isNaN(val)) {
                 if (Math.abs(val) < 1e-10) return new Num(1);
@@ -1394,6 +1402,8 @@ class Call extends Expr {
         }
         if (this.funcName === 'tan') {
             const arg = simpleArgs[0];
+            // tan(atan(x)) -> x
+            if (arg instanceof Call && arg.funcName === 'atan') return arg.args[0];
             const val = arg.evaluateNumeric();
             if (!isNaN(val)) {
                 if (Math.abs(val) < 1e-10) return new Num(0);
@@ -1415,6 +1425,8 @@ class Call extends Expr {
         }
         if (this.funcName === 'asin') {
             const arg = simpleArgs[0];
+            // asin(sin(x)) -> x (simplified, ignoring domain issues for now)
+            if (arg instanceof Call && arg.funcName === 'sin') return arg.args[0];
             if (arg instanceof Num && arg.value === 0) return new Num(0);
             if (arg instanceof Num && arg.value === 1) return new Div(new Sym('pi'), new Num(2)).simplify();
             if (arg instanceof Num && arg.value === -1) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(2)).simplify();
@@ -1423,6 +1435,8 @@ class Call extends Expr {
         }
         if (this.funcName === 'acos') {
             const arg = simpleArgs[0];
+            // acos(cos(x)) -> x
+            if (arg instanceof Call && arg.funcName === 'cos') return arg.args[0];
             if (arg instanceof Num && arg.value === 1) return new Num(0);
             if (arg instanceof Num && arg.value === 0) return new Div(new Sym('pi'), new Num(2)).simplify();
             if (arg instanceof Num && arg.value === -1) return new Sym('pi');
@@ -1431,6 +1445,8 @@ class Call extends Expr {
         }
         if (this.funcName === 'atan') {
             const arg = simpleArgs[0];
+            // atan(tan(x)) -> x
+            if (arg instanceof Call && arg.funcName === 'tan') return arg.args[0];
             if (arg instanceof Num && arg.value === 0) return new Num(0);
             if (arg instanceof Num && arg.value === 1) return new Div(new Sym('pi'), new Num(4)).simplify();
             if (arg instanceof Num && arg.value === -1) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(4)).simplify();
@@ -1487,6 +1503,8 @@ class Call extends Expr {
 
         if (this.funcName === 'ln') {
             const arg = simpleArgs[0];
+            // ln(exp(x)) -> x
+            if (arg instanceof Call && arg.funcName === 'exp') return arg.args[0];
             if (arg instanceof Num && arg.value === 1) return new Num(0);
             if (arg instanceof Sym && arg.name === 'e') return new Num(1);
         }
@@ -1513,6 +1531,8 @@ class Call extends Expr {
         }
         if (this.funcName === 'exp') {
             const arg = simpleArgs[0];
+            // exp(ln(x)) -> x
+            if (arg instanceof Call && arg.funcName === 'ln') return arg.args[0];
             if (arg instanceof Num && arg.value === 0) return new Num(1);
             if (arg instanceof Num && arg.value === 1) return new Sym('e');
         }
@@ -1715,6 +1735,31 @@ class Call extends Expr {
             if (this.funcName === 'csch') return new Call('ln', [new Call('tanh', [new Div(varName, new Num(2))])]);
             if (this.funcName === 'coth') return new Call('ln', [new Call('sinh', [varName])]);
             if (this.funcName === 'exp') return this;
+            if (this.funcName === 'ln') return new Sub(new Mul(varName, new Call('ln', [varName])), varName);
+            if (this.funcName === 'log') return new Div(new Sub(new Mul(varName, new Call('ln', [varName])), varName), new Call('ln', [new Num(10)]));
+
+            // Inverse Trig Integrals
+            // integrate(asin(x)) = x*asin(x) + sqrt(1-x^2)
+            if (this.funcName === 'asin') {
+                return new Add(
+                    new Mul(varName, new Call('asin', [varName])),
+                    new Call('sqrt', [new Sub(new Num(1), new Pow(varName, new Num(2)))])
+                );
+            }
+            // integrate(acos(x)) = x*acos(x) - sqrt(1-x^2)
+            if (this.funcName === 'acos') {
+                return new Sub(
+                    new Mul(varName, new Call('acos', [varName])),
+                    new Call('sqrt', [new Sub(new Num(1), new Pow(varName, new Num(2)))])
+                );
+            }
+            // integrate(atan(x)) = x*atan(x) - 0.5*ln(1+x^2)
+            if (this.funcName === 'atan') {
+                return new Sub(
+                    new Mul(varName, new Call('atan', [varName])),
+                    new Mul(new Num(0.5), new Call('ln', [new Add(new Num(1), new Pow(varName, new Num(2)))]))
+                );
+            }
         }
         return new Call("integrate", [this, varName]);
     }
