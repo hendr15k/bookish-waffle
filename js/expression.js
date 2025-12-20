@@ -1579,7 +1579,57 @@ class Call extends Expr {
         }
         if (this.funcName === 'round') {
             const arg = simpleArgs[0];
-            if (arg instanceof Num) return new Num(Math.round(arg.value));
+            const decimals = simpleArgs.length > 1 ? simpleArgs[1] : null;
+            if (arg instanceof Num) {
+                if (decimals instanceof Num) {
+                     const factor = Math.pow(10, decimals.value);
+                     return new Num(Math.round(arg.value * factor) / factor);
+                }
+                if (!decimals) return new Num(Math.round(arg.value));
+            }
+        }
+        if (this.funcName === 'min' || this.funcName === 'max') {
+            const allNumeric = simpleArgs.every(a => a instanceof Num);
+            if (allNumeric) {
+                const vals = simpleArgs.map(a => a.value);
+                if (this.funcName === 'min') return new Num(Math.min(...vals));
+                if (this.funcName === 'max') return new Num(Math.max(...vals));
+            }
+            // Flatten nested min/max if same type? min(min(a,b), c) -> min(a,b,c)
+            const flatArgs = [];
+            for(const a of simpleArgs) {
+                if (a instanceof Call && a.funcName === this.funcName) {
+                    flatArgs.push(...a.args);
+                } else {
+                    flatArgs.push(a);
+                }
+            }
+            if (flatArgs.length !== simpleArgs.length) {
+                return new Call(this.funcName, flatArgs).simplify();
+            }
+        }
+        if (this.funcName === 'piecewise') {
+            // piecewise(cond1, val1, cond2, val2, ..., [default])
+            for(let i=0; i<simpleArgs.length; i+=2) {
+                if (i + 1 >= simpleArgs.length) {
+                    // Default case (last argument)
+                    return simpleArgs[i];
+                }
+                const cond = simpleArgs[i];
+                const val = simpleArgs[i+1];
+                // Check if cond is true/false
+                if (cond instanceof Num) {
+                    if (cond.value !== 0) return val; // True -> return val
+                    // False -> continue to next case
+                } else if (cond instanceof Sym && (cond.name === 'true' || cond.name === 'false')) {
+                    if (cond.name === 'true') return val;
+                } else {
+                    // Symbolic condition, cannot simplify further branches easily without assuming false
+                    // But we can reconstruct the piecewise with remaining args
+                    return new Call('piecewise', simpleArgs.slice(i));
+                }
+            }
+            return new Num(NaN); // No cases matched
         }
         if (this.funcName === 'abs') {
             const arg = simpleArgs[0];
@@ -1642,7 +1692,22 @@ class Call extends Expr {
         if (this.funcName === 'sign') return Math.sign(argsVal[0]);
         if (this.funcName === 'floor') return Math.floor(argsVal[0]);
         if (this.funcName === 'ceil') return Math.ceil(argsVal[0]);
-        if (this.funcName === 'round') return Math.round(argsVal[0]);
+        if (this.funcName === 'round') {
+            if (argsVal.length > 1 && !isNaN(argsVal[1])) {
+                const factor = Math.pow(10, argsVal[1]);
+                return Math.round(argsVal[0] * factor) / factor;
+            }
+            return Math.round(argsVal[0]);
+        }
+        if (this.funcName === 'min') return Math.min(...argsVal);
+        if (this.funcName === 'max') return Math.max(...argsVal);
+        if (this.funcName === 'piecewise') {
+             for(let i=0; i<argsVal.length; i+=2) {
+                 if (i + 1 >= argsVal.length) return argsVal[i]; // Default
+                 if (argsVal[i] !== 0) return argsVal[i+1];
+             }
+             return NaN;
+        }
         if (this.funcName === 'erf') {
              // Approximation (same logic as simplify or just call it)
              // But evaluateNumeric returns a number, not Expr.
@@ -1711,6 +1776,27 @@ class Call extends Expr {
         }
         if (this.funcName === 'sqrt') return new Div(u.diff(varName), new Mul(new Num(2), new Call('sqrt', [u])));
         if (this.funcName === 'abs') return new Mul(new Call('sign', [u]), u.diff(varName));
+        if (this.funcName === 'min' || this.funcName === 'max') {
+             // Derivative of min(f, g) is f' * step(g-f) + g' * step(f-g) roughly (at intersections undefined)
+             // We can return derivative of the evaluated piecewise if possible, but structure is dynamic.
+             // Simplest: piecewise(diff(f), f<g, diff(g), g<=f)
+             // For now, symbolic.
+             return new Call('diff', [this, varName]);
+        }
+        if (this.funcName === 'piecewise') {
+            const newArgs = [];
+            for(let i=0; i<this.args.length; i++) {
+                // Odd indices are values, Even are conditions.
+                // deriv(piecewise) = piecewise(cond1, diff(val1), cond2, diff(val2))
+                // Conditions remain same (ignoring Dirac deltas at boundaries)
+                if (i % 2 === 1 || (i === this.args.length - 1 && this.args.length % 2 === 1)) {
+                    newArgs.push(this.args[i].diff(varName));
+                } else {
+                    newArgs.push(this.args[i]);
+                }
+            }
+            return new Call('piecewise', newArgs).simplify();
+        }
         if (this.funcName === 'erf') {
             // d/dx erf(u) = 2/sqrt(pi) * e^(-u^2) * u'
             const coeff = new Div(new Num(2), new Call('sqrt', [new Sym('pi')]));
@@ -1951,6 +2037,19 @@ class Call extends Expr {
         }
         if (this.funcName === 'approx') {
              return argsTex[0];
+        }
+
+        if (this.funcName === 'piecewise') {
+            let s = "\\begin{cases} ";
+            for(let i=0; i<argsTex.length; i+=2) {
+                if (i + 1 >= argsTex.length) {
+                    s += argsTex[i] + " & \\text{otherwise}";
+                } else {
+                    s += argsTex[i+1] + " & \\text{if } " + argsTex[i] + " \\\\ ";
+                }
+            }
+            s += " \\end{cases}";
+            return s;
         }
 
         return `\\text{${this.funcName}}\\left(${argsTex.join(", ")}\\right)`;
