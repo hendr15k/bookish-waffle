@@ -1510,6 +1510,65 @@ class CAS {
                  return this._isOrthogonal(args[0]);
             }
 
+            if (node.funcName === 'collect') {
+                if (node.args.length !== 2) throw new Error("collect requires 2 arguments: expr, var");
+                return this._collect(args[0], args[1]);
+            }
+
+            if (node.funcName === 'matrix') {
+                // matrix(rows, cols, expr, var1, var2)
+                // or matrix(rows, cols, func) if we supported lambda
+                // or matrix(rows, cols, element) -> fill
+                if (node.args.length === 5) {
+                    return this._matrixGen(args[0], args[1], args[2], args[3], args[4]);
+                }
+                // Fallback to zeros/ones-like behavior or just generic constructor if 3 args?
+                // matrix(r, c, val) -> fill
+                if (node.args.length === 3) {
+                    const r = args[0];
+                    const c = args[1];
+                    const val = args[2];
+                    if (r instanceof Num && c instanceof Num) {
+                        // Create matrix filled with val
+                        const rows = r.value;
+                        const cols = c.value;
+                        const m = [];
+                        for(let i=0; i<rows; i++) {
+                            const row = [];
+                            for(let j=0; j<cols; j++) row.push(val);
+                            m.push(new Vec(row));
+                        }
+                        return new Vec(m);
+                    }
+                }
+                // If just matrix([[1,2]]) -> return Vec
+                if (node.args.length === 1 && args[0] instanceof Vec) return args[0];
+
+                throw new Error("matrix command usage: matrix(rows, cols, expr, i, j) or matrix(rows, cols, fillValue)");
+            }
+
+            if (node.funcName === 'min' || node.funcName === 'max') {
+                // Handle list argument
+                if (node.args.length === 1 && args[0] instanceof Vec) {
+                    return this._minMaxList(args[0], node.funcName);
+                }
+                // Check if any arg is a Vec, if so, map?
+                // min([1,2], [3,4]) -> [1, 2] elementwise?
+                // Standard CAS usually treats min(list) as reduction.
+                // Call handles varargs min(a,b,c).
+                return new Call(node.funcName, args).simplify();
+            }
+
+            if (node.funcName === 'ceil' || node.funcName === 'floor') {
+                if (node.args.length !== 1) throw new Error(`${node.funcName} requires 1 argument`);
+                return new Call(node.funcName, args).simplify();
+            }
+
+            if (node.funcName === 'round') {
+                // round(x, [n])
+                return new Call(node.funcName, args).simplify();
+            }
+
             return new Call(node.funcName, args);
         }
 
@@ -8565,6 +8624,66 @@ class CAS {
             }
         }
         return new Num(1);
+    }
+
+    _collect(expr, varNode) {
+        if (!(varNode instanceof Sym)) throw new Error("collect: second argument must be a variable");
+        const poly = this._getPolyCoeffs(expr, varNode);
+        if (poly) {
+            // Reconstruct polynomial from coefficients
+            let res = new Num(0);
+            // poly.coeffs keys are degrees (strings)
+            for (const d in poly.coeffs) {
+                const deg = parseInt(d);
+                const coeff = poly.coeffs[d];
+                let term;
+                if (deg === 0) term = coeff;
+                else if (deg === 1) term = new Mul(coeff, varNode);
+                else term = new Mul(coeff, new Pow(varNode, new Num(deg)));
+                res = new Add(res, term);
+            }
+            return res.simplify();
+        }
+        return new Call('collect', [expr, varNode]);
+    }
+
+    _matrixGen(rowsNode, colsNode, expr, var1, var2) {
+        if (!(rowsNode instanceof Num) || !(colsNode instanceof Num)) throw new Error("matrix dimensions must be numbers");
+        if (!(var1 instanceof Sym) || !(var2 instanceof Sym)) throw new Error("matrix variables must be symbols");
+
+        const rows = rowsNode.value;
+        const cols = colsNode.value;
+        const mat = [];
+
+        for(let i=0; i<rows; i++) {
+            const row = [];
+            for(let j=0; j<cols; j++) {
+                // Substitute index variables (0-based)
+                // Use temp substitution to avoid collision
+                // But simplified substitution should work if i, j are standard
+                let val = expr.substitute(var1, new Num(i)).substitute(var2, new Num(j));
+                // If var1 == var2, first sub removes both? No, Expr.substitute is specific.
+                val = val.simplify();
+                row.push(val);
+            }
+            mat.push(new Vec(row));
+        }
+        return new Vec(mat);
+    }
+
+    _minMaxList(list, type) {
+        // list is Vec
+        if (list.elements.length === 0) return new Num(NaN);
+
+        // If all numeric, return numeric min/max
+        const allNumeric = list.elements.every(e => e instanceof Num);
+        if (allNumeric) {
+            const vals = list.elements.map(e => e.value);
+            return new Num(type === 'min' ? Math.min(...vals) : Math.max(...vals));
+        }
+
+        // Return symbolic min(a,b,c...) unpacked
+        return new Call(type, list.elements).simplify();
     }
 }
 
