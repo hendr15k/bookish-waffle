@@ -553,6 +553,21 @@ class Sub extends BinaryOp {
              }
         }
 
+        // sec^2(x) - tan^2(x) -> 1
+        // csc^2(x) - cot^2(x) -> 1
+        // tan^2(x) - sec^2(x) -> -1
+        // cot^2(x) - csc^2(x) -> -1
+        if (l instanceof Pow && r instanceof Pow && l.right instanceof Num && l.right.value === 2 && r.right instanceof Num && r.right.value === 2) {
+             if (l.left instanceof Call && r.left instanceof Call && l.left.args[0].toString() === r.left.args[0].toString()) {
+                 const f1 = l.left.funcName;
+                 const f2 = r.left.funcName;
+                 if (f1 === 'sec' && f2 === 'tan') return new Num(1);
+                 if (f1 === 'csc' && f2 === 'cot') return new Num(1);
+                 if (f1 === 'tan' && f2 === 'sec') return new Num(-1);
+                 if (f1 === 'cot' && f2 === 'csc') return new Num(-1);
+             }
+        }
+
         return new Sub(l, r);
     }
     evaluateNumeric() { return this.left.evaluateNumeric() - this.right.evaluateNumeric(); }

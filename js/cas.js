@@ -3120,7 +3120,54 @@ class CAS {
                 return new Mul(new Num(-1), new Call('ln', [sum])).simplify();
             }
         }
+
+        // Helper to match func(var)^2
+        const isTrigSq = (node, func) => {
+            if (node instanceof Pow && node.right instanceof Num && node.right.value === 2) {
+                if (node.left instanceof Call && node.left.funcName === func) {
+                    if (node.left.args.length === 1 && node.left.args[0].toString() === varNode.toString()) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
+
         // sec^2(x) -> tan(x)
+        if (isTrigSq(expr, 'sec')) {
+            return new Call('tan', [varNode]);
+        }
+
+        // csc^2(x) -> -cot(x)
+        if (isTrigSq(expr, 'csc')) {
+            return new Mul(new Num(-1), new Call('cot', [varNode])).simplify();
+        }
+
+        // sec(x)tan(x) -> sec(x)
+        // csc(x)cot(x) -> -csc(x)
+        if (expr instanceof Mul) {
+            const l = expr.left;
+            const r = expr.right;
+            const isCall = (n, name) => (n instanceof Call && n.funcName === name && n.args.length === 1 && n.args[0].toString() === varNode.toString());
+
+            if ((isCall(l, 'sec') && isCall(r, 'tan')) || (isCall(l, 'tan') && isCall(r, 'sec'))) {
+                return new Call('sec', [varNode]);
+            }
+
+            if ((isCall(l, 'csc') && isCall(r, 'cot')) || (isCall(l, 'cot') && isCall(r, 'csc'))) {
+                return new Mul(new Num(-1), new Call('csc', [varNode])).simplify();
+            }
+        }
+
+        // 1/cos(x)^2 -> tan(x)
+        if (expr instanceof Div && expr.left instanceof Num && expr.left.value === 1) {
+            if (isTrigSq(expr.right, 'cos')) {
+                return new Call('tan', [varNode]);
+            }
+            if (isTrigSq(expr.right, 'sin')) {
+                return new Mul(new Num(-1), new Call('cot', [varNode])).simplify();
+            }
+        }
         if (expr instanceof Pow && expr.left instanceof Call && expr.left.funcName === 'sec' && expr.right instanceof Num && expr.right.value === 2) {
              if (expr.left.args[0].toString() === varNode.toString()) return new Call('tan', [varNode]);
         }
