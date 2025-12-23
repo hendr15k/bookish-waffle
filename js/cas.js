@@ -667,6 +667,36 @@ class CAS {
                 return this._cross(args[0], args[1]);
             }
 
+            if (node.funcName === 'primeFactors') {
+                if (node.args.length !== 1) throw new Error("primeFactors requires 1 argument");
+                return this._primeFactors(args[0]);
+            }
+
+            if (node.funcName === 'angle') {
+                if (node.args.length !== 2) throw new Error("angle requires 2 arguments: u, v");
+                return this._angle(args[0], args[1]);
+            }
+
+            if (node.funcName === 'projection') {
+                if (node.args.length !== 2) throw new Error("projection requires 2 arguments: u, v");
+                return this._projection(args[0], args[1]);
+            }
+
+            if (node.funcName === 'toSpherical') {
+                if (node.args.length !== 1) throw new Error("toSpherical requires 1 argument: vector [x, y, z]");
+                return this._toSpherical(args[0]);
+            }
+
+            if (node.funcName === 'toCylindrical') {
+                if (node.args.length !== 1) throw new Error("toCylindrical requires 1 argument: vector [x, y, z]");
+                return this._toCylindrical(args[0]);
+            }
+
+            if (node.funcName === 'cbrt') {
+                if (node.args.length !== 1) throw new Error("cbrt requires 1 argument");
+                return new Pow(args[0], new Div(new Num(1), new Num(3))).simplify();
+            }
+
             if (node.funcName === 'trans' || node.funcName === 'transpose' || node.funcName === 'tran') {
                 if (node.args.length !== 1) throw new Error("trans requires 1 argument");
                 return this._trans(args[0]);
@@ -4059,17 +4089,95 @@ class CAS {
 
     _cross(v1, v2) {
         if (!(v1 instanceof Vec) || !(v2 instanceof Vec)) throw new Error("cross requires two vectors");
-        // Assume 3D vectors
-        if (v1.elements.length !== 3 || v2.elements.length !== 3) throw new Error("cross requires 3D vectors");
 
-        const a1 = v1.elements[0], a2 = v1.elements[1], a3 = v1.elements[2];
-        const b1 = v2.elements[0], b2 = v2.elements[1], b3 = v2.elements[2];
+        let u = v1.elements;
+        let v = v2.elements;
+
+        if (u.length === 2 && v.length === 2) {
+            u = [u[0], u[1], new Num(0)];
+            v = [v[0], v[1], new Num(0)];
+        }
+
+        if (u.length !== 3 || v.length !== 3) throw new Error("cross requires 3D vectors (or 2D)");
+
+        const a1 = u[0], a2 = u[1], a3 = u[2];
+        const b1 = v[0], b2 = v[1], b3 = v[2];
 
         const c1 = new Sub(new Mul(a2, b3), new Mul(a3, b2));
         const c2 = new Sub(new Mul(a3, b1), new Mul(a1, b3));
         const c3 = new Sub(new Mul(a1, b2), new Mul(a2, b1));
 
         return new Vec([c1.simplify(), c2.simplify(), c3.simplify()]);
+    }
+
+    _primeFactors(n) {
+        n = n.simplify();
+        if (!(n instanceof Num)) throw new Error("primeFactors requires a number");
+        let val = n.value;
+        if (!Number.isInteger(val)) throw new Error("primeFactors requires an integer");
+        if (val < 2) return new Vec([]);
+
+        const factors = [];
+        let d = 2;
+        while (d * d <= val) {
+            while (val % d === 0) {
+                factors.push(new Num(d));
+                val = Math.floor(val / d);
+            }
+            d++;
+        }
+        if (val > 1) factors.push(new Num(val));
+        return new Vec(factors);
+    }
+
+    _angle(u, v) {
+        // angle = acos( (u . v) / (|u|*|v|) )
+        const dot = this._recursiveEval(new Call('dot', [u, v])).simplify();
+        const normU = this._recursiveEval(new Call('norm', [u])).simplify();
+        const normV = this._recursiveEval(new Call('norm', [v])).simplify();
+
+        const cosTheta = new Div(dot, new Mul(normU, normV)).simplify();
+        return new Call('acos', [cosTheta]).simplify();
+    }
+
+    _projection(u, v) {
+        // proj_v(u) = (u . v) / (v . v) * v
+        const dotUV = this._recursiveEval(new Call('dot', [u, v])).simplify();
+        const dotVV = this._recursiveEval(new Call('dot', [v, v])).simplify();
+
+        const factor = new Div(dotUV, dotVV).simplify();
+        return new Mul(factor, v).simplify();
+    }
+
+    _toSpherical(v) {
+        if (!(v instanceof Vec) || v.elements.length !== 3) throw new Error("toSpherical requires a 3D vector");
+        const [x, y, z] = v.elements;
+
+        // r = sqrt(x^2 + y^2 + z^2)
+        const rSq = new Add(new Add(new Pow(x, new Num(2)), new Pow(y, new Num(2))), new Pow(z, new Num(2))).simplify();
+        const r = new Call('sqrt', [rSq]).simplify();
+
+        // theta = acos(z / r)  (polar angle from z-axis)
+        const theta = new Call('acos', [new Div(z, r)]).simplify();
+
+        // phi = arg(x + iy)
+        const phi = this._arg(new Add(x, new Mul(new Sym('i'), y))).simplify();
+
+        return new Vec([r, theta, phi]);
+    }
+
+    _toCylindrical(v) {
+        if (!(v instanceof Vec) || v.elements.length !== 3) throw new Error("toCylindrical requires a 3D vector");
+        const [x, y, z] = v.elements;
+
+        // r = sqrt(x^2 + y^2)
+        const rSq = new Add(new Pow(x, new Num(2)), new Pow(y, new Num(2))).simplify();
+        const r = new Call('sqrt', [rSq]).simplify();
+
+        // theta = arg(x + iy)
+        const theta = this._arg(new Add(x, new Mul(new Sym('i'), y))).simplify();
+
+        return new Vec([r, theta, z]);
     }
 
     _trans(matrix) {
@@ -5390,10 +5498,27 @@ class CAS {
     _arg(z) {
         z = z.simplify();
 
+        // Check for 0 (undefined usually, or 0)
+        if (z instanceof Num && z.value === 0) return new Num(0);
+
         if (z instanceof Num) {
              if (z.value >= 0) return new Num(0);
-             return new Num(Math.PI);
+             return new Sym('pi');
         }
+
+        // Handle complex parts
+        const parts = this._getComplexParts(z);
+        const re = parts.re;
+        const im = parts.im;
+
+        const reVal = re.evaluateNumeric();
+        const imVal = im.evaluateNumeric();
+
+        if (!isNaN(reVal) && !isNaN(imVal)) {
+            const val = Math.atan2(imVal, reVal);
+            return new Num(val);
+        }
+
         return new Call('arg', [z]);
     }
 
