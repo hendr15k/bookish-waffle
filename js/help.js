@@ -323,6 +323,10 @@ window.HELP_DATA = {
     "studentTCDF": { "description": "Student's t-distribution CDF.", "syntax": "studentTCDF(t, df)", "examples": ["studentTCDF(2.0, 10)"] },
     "zTest": { "description": "One-sample Z-test. Returns [z, p].", "syntax": "zTest(data, mu0, sigma)", "examples": ["zTest([1,2,3], 0, 1)"] },
     "tTest": { "description": "One-sample T-test. Returns [t, df].", "syntax": "tTest(data, mu0)", "examples": ["tTest([1,2,3], 0)"] },
+    "zInterval": { "description": "Z Confidence Interval. Returns [min, max].", "syntax": "zInterval(data, sigma, level)", "examples": ["zInterval([1,2,3], 1, 0.95)"] },
+    "tInterval": { "description": "T Confidence Interval. Returns [min, max].", "syntax": "tInterval(data, level)", "examples": ["tInterval([1,2,3], 0.95)"] },
+    "propTest": { "description": "One Proportion Z-Test. Returns [z, p].", "syntax": "propTest(successes, n, p0)", "examples": ["propTest(45, 100, 0.5)"] },
+    "propTest2": { "description": "Two Proportion Z-Test. Returns [z, p].", "syntax": "propTest2(x1, n1, x2, n2)", "examples": ["propTest2(40, 100, 50, 100)"] },
 
     // --- Plotting ---
     "plot": {
