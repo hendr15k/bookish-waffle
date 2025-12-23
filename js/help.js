@@ -417,6 +417,9 @@ window.HELP_DATA = {
     "euler": { "description": "Euler's totient function (phi).", "syntax": "euler(n)", "examples": ["euler(10)"] },
     "fibonacci": { "description": "nth Fibonacci number.", "syntax": "fibonacci(n)", "examples": ["fibonacci(10)"] },
     "gamma": { "description": "Gamma function.", "syntax": "gamma(z)", "examples": ["gamma(0.5)"] },
+    "beta": { "description": "Beta function B(x, y).", "syntax": "beta(x, y)", "examples": ["beta(2, 3)"] },
+    "zeta": { "description": "Riemann Zeta function.", "syntax": "zeta(s)", "examples": ["zeta(2)", "zeta(4)"] },
+    "lambertw": { "description": "Lambert W function (product log).", "syntax": "lambertw(x)", "examples": ["lambertw(1)", "lambertw(e)"] },
 
     // --- Calculus Extras ---
     "minimize": { "description": "Finds local minimum.", "syntax": "minimize(f, x)", "examples": ["minimize(x^2-4x, x)"] },

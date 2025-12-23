@@ -1666,6 +1666,26 @@ class Call extends Expr {
              if (arg instanceof Sym && arg.name === 'i') return new Mul(new Num(-1), arg);
         }
 
+        if (this.funcName === 'lambertw') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) {
+                if (arg.value === 0) return new Num(0);
+                if (Math.abs(arg.value - Math.E) < 1e-9) return new Num(1);
+                if (Math.abs(arg.value + 1/Math.E) < 1e-9) return new Num(-1);
+            }
+            if (arg instanceof Sym && arg.name === 'e') return new Num(1);
+        }
+
+        if (this.funcName === 'zeta') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) {
+                if (arg.value === 0) return new Num(-0.5);
+                if (arg.value === 1) return new Sym('Infinity');
+                if (arg.value === 2) return new Div(new Pow(new Sym('pi'), new Num(2)), new Num(6)).simplify();
+                if (arg.value === 4) return new Div(new Pow(new Sym('pi'), new Num(4)), new Num(90)).simplify();
+            }
+        }
+
         return new Call(this.funcName, simpleArgs);
     }
     evaluateNumeric() {
@@ -1740,10 +1760,41 @@ class Call extends Expr {
              const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
              return sign * y;
         }
+        if (this.funcName === 'gamma') {
+            return math_gamma(argsVal[0]);
+        }
+        if (this.funcName === 'factorial') {
+            return math_gamma(argsVal[0] + 1);
+        }
+        if (this.funcName === 'beta') {
+            return math_beta(argsVal[0], argsVal[1]);
+        }
+        if (this.funcName === 'zeta') {
+            return math_zeta(argsVal[0]);
+        }
+        if (this.funcName === 'lambertw') {
+            return math_lambertw(argsVal[0]);
+        }
         return NaN; // Unknown
     }
     diff(varName) {
         const u = this.args[0];
+        if (this.funcName === 'lambertw') {
+            // W'(x) = W(x) / (x * (1 + W(x)))
+            // if x=0, limit is 1.
+            // But if u is 0? W(0)=0. denom = 0 * 1 = 0.
+            // Diff of W(x) at x=0 is 1. (x=0 -> W=0 -> limit W/x = 1)
+            // But formula gives 0/0.
+            // Using exp(W)*W' = 1 -> W' = exp(-W)/(1+W)
+            // Or W' = W / (x(1+W))
+            // The formula W' = exp(-W)/(1+W) is better for x=0.
+            // W(0) = 0. exp(0)/(1+0) = 1. Correct.
+            // W = lambertw(u)
+            const W = new Call('lambertw', [u]);
+            const num = new Call('exp', [new Mul(new Num(-1), W)]);
+            const den = new Add(new Num(1), W);
+            return new Mul(new Div(num, den), u.diff(varName));
+        }
         if (this.funcName === 'sin') return new Mul(new Call('cos', [u]), u.diff(varName));
         if (this.funcName === 'cos') return new Mul(new Mul(new Num(-1), new Call('sin', [u])), u.diff(varName));
         if (this.funcName === 'tan') return new Mul(new Div(new Num(1), new Pow(new Call('cos', [u]), new Num(2))), u.diff(varName));
@@ -2617,6 +2668,66 @@ class Continue extends Expr {
     toString() { return `continue`; }
     simplify() { return this; }
     toLatex() { return `\\text{continue}`; }
+}
+
+// --- Numeric Helpers ---
+
+function math_gamma(z) {
+    if (z < 0.5) {
+        return Math.PI / (Math.sin(Math.PI * z) * math_gamma(1 - z));
+    }
+    return Math.exp(math_logGamma(z));
+}
+
+function math_logGamma(z) {
+    if (z < 0.5) {
+        return Math.log(Math.PI / (Math.sin(Math.PI * z) * math_gamma(1 - z)));
+    }
+    const g = 7;
+    const C = [0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+    let x = C[0];
+    for (let i = 1; i < g + 2; i++) x += C[i] / (z - 1 + i);
+    const t = z - 1 + g + 0.5;
+    return 0.5 * Math.log(2 * Math.PI) + (z - 0.5) * Math.log(t) - t + Math.log(x);
+}
+
+function math_beta(a, b) {
+    // exp(lgamma(a) + lgamma(b) - lgamma(a+b)) to avoid overflow
+    return Math.exp(math_logGamma(a) + math_logGamma(b) - math_logGamma(a + b));
+}
+
+function math_zeta(s) {
+    if (s === 1) return Infinity;
+    if (s < 0) {
+        // Reflection: zeta(s) = 2^s * pi^(s-1) * sin(pi*s/2) * gamma(1-s) * zeta(1-s)
+        return Math.pow(2, s) * Math.pow(Math.PI, s - 1) * Math.sin(Math.PI * s / 2) * math_gamma(1 - s) * math_zeta(1 - s);
+    }
+
+    // Simple series for s > 1
+    if (s > 1) {
+        let sum = 0;
+        let limit = 100000; // Increased precision
+        for (let i = 1; i <= limit; i++) {
+            sum += Math.pow(i, -s);
+        }
+        return sum;
+    }
+    return NaN; // Not implemented for critical strip yet
+}
+
+function math_lambertw(x) {
+    // Halley's method
+    if (x < -1/Math.E) return NaN;
+    let w = Math.log(x + 1); // Initial guess
+    if (x > 1) w = Math.log(x) - Math.log(Math.log(x));
+
+    for (let i = 0; i < 10; i++) {
+        const ew = Math.exp(w);
+        const wew = w * ew;
+        const wewx = wew - x;
+        w = w - wewx / (ew * (w + 1) - (w + 2) * wewx / (2 * w + 2));
+    }
+    return w;
 }
 
 // Export classes for Global/CommonJS environments
