@@ -672,8 +672,18 @@ class Mul extends BinaryOp {
         }
 
         if (l instanceof Num && r instanceof Num) return new Num(l.value * r.value);
-        if (l instanceof Num && l.value === 0) return new Num(0);
-        if (r instanceof Num && r.value === 0) return new Num(0);
+        // Check for 0 * Infinity
+        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === '-Infinity');
+        const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
+
+        if (l instanceof Num && l.value === 0) {
+            if (isInf(r) || isNegInf(r)) return new Sym("NaN");
+            return new Num(0);
+        }
+        if (r instanceof Num && r.value === 0) {
+            if (isInf(l) || isNegInf(l)) return new Sym("NaN");
+            return new Num(0);
+        }
         if (l instanceof Num && l.value === 1) return r;
         if (r instanceof Num && r.value === 1) return l;
 

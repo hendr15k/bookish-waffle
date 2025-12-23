@@ -3641,14 +3641,46 @@ class CAS {
     _limit(expr, varNode, point, depth = 0, dir = 0) {
         if (depth > 5) return new Call("limit", [expr, varNode, point]);
 
+        // Check for Indeterminate form NaN (from 0*Inf)
+        // If expr is Mul, convert to Div
+        if (expr instanceof Mul) {
+            const val = expr.substitute(varNode, point).simplify();
+            if (val instanceof Sym && val.name === 'NaN') {
+                // 0 * Inf -> Transform to Div
+                // f * g -> f / (1/g) or g / (1/f)
+                // Prefer keeping log or simpler term in numerator
+                // Heuristic: If one is exp or trig, keep in num?
+                // Let's try 1st / (1/2nd)
+                // If right is 1/x (Div(1,x)), 1/right is x.
+                // 1/ (1/x) -> x.
+                // if expr.right is Div(1, x).
+                // den = new Div(1, Div(1, x)) -> simplifies to x.
+                // so newExpr = num / den = x / x.
+
+                const num = expr.left;
+                const den = new Div(new Num(1), expr.right).simplify();
+                const newExpr = new Div(num, den).simplify(); // Simplify here!
+                return this._limit(newExpr, varNode, point, depth + 1, dir);
+            }
+        }
+
         if (expr instanceof Div) {
             let num = expr.left.substitute(varNode, point).simplify();
             let den = expr.right.substitute(varNode, point).simplify();
 
             // Handle Num or zero-value Num from simplification
             const isZero = (n) => (n instanceof Num && n.value === 0);
+            const isInf = (n) => (n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity'));
+            const isNegInf = (n) => (n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right));
+            const isInfinite = (n) => isInf(n) || isNegInf(n);
 
             if (isZero(num) && isZero(den)) {
+                 const diffNum = expr.left.diff(varNode).simplify();
+                 const diffDen = expr.right.diff(varNode).simplify();
+                 return this._limit(new Div(diffNum, diffDen), varNode, point, depth + 1, dir);
+            }
+
+            if (isInfinite(num) && isInfinite(den)) {
                  const diffNum = expr.left.diff(varNode).simplify();
                  const diffDen = expr.right.diff(varNode).simplify();
                  return this._limit(new Div(diffNum, diffDen), varNode, point, depth + 1, dir);
