@@ -1358,6 +1358,30 @@ class CAS {
                 return this._tTest(args[0], args[1]);
             }
 
+            if (node.funcName === 'zInterval') {
+                 // zInterval(data, sigma, level)
+                 if (node.args.length !== 3) throw new Error("zInterval requires 3 arguments: data, sigma, level");
+                 return this._zInterval(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'tInterval') {
+                 // tInterval(data, level)
+                 if (node.args.length !== 2) throw new Error("tInterval requires 2 arguments: data, level");
+                 return this._tInterval(args[0], args[1]);
+            }
+
+            if (node.funcName === 'propTest') {
+                 // propTest(successes, n, p0)
+                 if (node.args.length !== 3) throw new Error("propTest requires 3 arguments: x, n, p0");
+                 return this._propTest(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'propTest2') {
+                 // propTest2(x1, n1, x2, n2)
+                 if (node.args.length !== 4) throw new Error("propTest2 requires 4 arguments: x1, n1, x2, n2");
+                 return this._propTest2(args[0], args[1], args[2], args[3]);
+            }
+
             if (node.funcName === 'tTest2') {
                 if (node.args.length !== 2) throw new Error("tTest2 requires 2 arguments: data1, data2");
                 return this._tTest2(args[0], args[1]);
@@ -2912,6 +2936,80 @@ class CAS {
 
             if (diff instanceof Num && diff.value === 0 && !(a instanceof Num && a.value === 0)) {
                 return new Div(new Mul(new Num(-1), b), a).simplify();
+            }
+
+            // Attempt Trigonometric Solving
+            // sin(u) = c, cos(u) = c, tan(u) = c
+            // expr is LHS-RHS, so sin(u) - c = 0 => sin(u) = c
+            // We look for form Func(Arg) - Const or Const - Func(Arg)
+            let funcTerm = null;
+            let constTerm = new Num(0);
+            let sign = 1;
+
+            if (expr instanceof Sub) {
+                if (expr.left instanceof Call && !this._dependsOn(expr.right, varNode)) {
+                    funcTerm = expr.left;
+                    constTerm = expr.right;
+                } else if (expr.right instanceof Call && !this._dependsOn(expr.left, varNode)) {
+                    funcTerm = expr.right;
+                    constTerm = expr.left; // Const - Func = 0 => Func = Const
+                }
+            } else if (expr instanceof Add) {
+                if (expr.left instanceof Call && !this._dependsOn(expr.right, varNode)) {
+                    funcTerm = expr.left;
+                    constTerm = new Mul(new Num(-1), expr.right).simplify(); // Func = -Const
+                } else if (expr.right instanceof Call && !this._dependsOn(expr.left, varNode)) {
+                    funcTerm = expr.right;
+                    constTerm = new Mul(new Num(-1), expr.left).simplify();
+                }
+            } else if (expr instanceof Call) {
+                funcTerm = expr; // Func = 0
+            }
+
+            if (funcTerm && (funcTerm.funcName === 'sin' || funcTerm.funcName === 'cos' || funcTerm.funcName === 'tan')) {
+                const arg = funcTerm.args[0];
+                if (this._dependsOn(arg, varNode)) {
+                    // sin(arg) = C
+                    const C = constTerm;
+                    let solutions = [];
+                    const pi = new Sym('pi');
+
+                    if (funcTerm.funcName === 'sin') {
+                        // arg = asin(C)
+                        // arg = pi - asin(C)
+                        const asinC = new Call('asin', [C]).simplify();
+                        const sol1 = this._solve(new Eq(arg, asinC), varNode);
+                        const sol2 = this._solve(new Eq(arg, new Sub(pi, asinC)), varNode);
+                        solutions.push(sol1);
+                        solutions.push(sol2);
+                    } else if (funcTerm.funcName === 'cos') {
+                        // arg = acos(C)
+                        // arg = -acos(C)
+                        const acosC = new Call('acos', [C]).simplify();
+                        const sol1 = this._solve(new Eq(arg, acosC), varNode);
+                        const sol2 = this._solve(new Eq(arg, new Mul(new Num(-1), acosC)), varNode);
+                        solutions.push(sol1);
+                        solutions.push(sol2);
+                    } else if (funcTerm.funcName === 'tan') {
+                        // arg = atan(C)
+                        const atanC = new Call('atan', [C]).simplify();
+                        const sol1 = this._solve(new Eq(arg, atanC), varNode);
+                        solutions.push(sol1);
+                    }
+
+                    // Flatten solutions if they returned sets
+                    const flatSols = [];
+                    const process = (s) => {
+                        if (s instanceof Call && s.funcName === 'set') s.args.forEach(process);
+                        else if (s instanceof Expr && !(s instanceof Call && s.funcName === 'solve')) flatSols.push(s);
+                    };
+                    solutions.forEach(process);
+
+                    if (flatSols.length > 0) {
+                        if (flatSols.length === 1) return flatSols[0];
+                        return new Call('set', flatSols);
+                    }
+                }
             }
 
         } catch (e) {
@@ -7754,6 +7852,72 @@ class CAS {
         const df = new Div(dfNum, new Add(dfDen1, dfDen2)).simplify();
 
         return new Vec([t, df]);
+    }
+
+    _zInterval(data, sigma, level) {
+         if (!(data instanceof Vec)) throw new Error("Data must be a list");
+         const n = new Num(data.elements.length);
+         const mean = this._mean(data);
+         const alpha = new Div(new Sub(new Num(1), level), new Num(2)).simplify();
+         // critical z: area = 1 - alpha
+         const area = new Sub(new Num(1), alpha).simplify();
+         const zCrit = this._invNorm(area, new Num(0), new Num(1));
+
+         const ME = new Mul(zCrit, new Div(sigma, new Call('sqrt', [n]))).simplify();
+         return new Vec([new Sub(mean, ME).simplify(), new Add(mean, ME).simplify()]);
+    }
+
+    _tInterval(data, level) {
+         if (!(data instanceof Vec)) throw new Error("Data must be a list");
+         const n = new Num(data.elements.length);
+         const mean = this._mean(data);
+         const s = this._std(data);
+         const df = new Sub(n, new Num(1));
+
+         const alpha = new Div(new Sub(new Num(1), level), new Num(2)).simplify();
+         const area = new Sub(new Num(1), alpha).simplify();
+         const tCrit = this._invT(area, df);
+
+         const ME = new Mul(tCrit, new Div(s, new Call('sqrt', [n]))).simplify();
+         return new Vec([new Sub(mean, ME).simplify(), new Add(mean, ME).simplify()]);
+    }
+
+    _propTest(x, n, p0) {
+        // One proportion z-test
+        // z = (p_hat - p0) / sqrt(p0(1-p0)/n)
+        const pHat = new Div(x, n).simplify();
+        const num = new Sub(pHat, p0).simplify();
+        const denSq = new Div(new Mul(p0, new Sub(new Num(1), p0)), n).simplify();
+        const z = new Div(num, new Call('sqrt', [denSq])).simplify();
+
+        // Calculate p-value (two-tailed)
+        // p = 2 * (1 - normalCDF(abs(z)))
+        const absZ = new Call('abs', [z]).simplify();
+        const prob = this._normalCDF(absZ, new Num(0), new Num(1));
+        const pVal = new Mul(new Num(2), new Sub(new Num(1), prob)).simplify();
+
+        return new Vec([z, pVal]);
+    }
+
+    _propTest2(x1, n1, x2, n2) {
+         // Two proportion z-test
+         // p_pool = (x1+x2)/(n1+n2)
+         // z = (p1 - p2) / sqrt( p_pool(1-p_pool)(1/n1 + 1/n2) )
+         const p1 = new Div(x1, n1).simplify();
+         const p2 = new Div(x2, n2).simplify();
+         const pPool = new Div(new Add(x1, x2), new Add(n1, n2)).simplify();
+
+         const num = new Sub(p1, p2).simplify();
+         const qPool = new Sub(new Num(1), pPool).simplify();
+         const factor = new Add(new Div(new Num(1), n1), new Div(new Num(1), n2)).simplify();
+         const denSq = new Mul(new Mul(pPool, qPool), factor).simplify();
+         const z = new Div(num, new Call('sqrt', [denSq])).simplify();
+
+         const absZ = new Call('abs', [z]).simplify();
+         const prob = this._normalCDF(absZ, new Num(0), new Num(1));
+         const pVal = new Mul(new Num(2), new Sub(new Num(1), prob)).simplify();
+
+         return new Vec([z, pVal]);
     }
 
     _chiSquareTest(observed, expected) {
