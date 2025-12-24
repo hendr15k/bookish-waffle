@@ -70,8 +70,18 @@ window.HELP_DATA = {
         "syntax": "cfrac(val, [depth])",
         "examples": ["cfrac(1.2)", "cfrac(pi, 5)"]
     },
+    "completeSquare": {
+        "description": "Completes the square for a quadratic polynomial.",
+        "syntax": "completeSquare(expr, var)",
+        "examples": ["completeSquare(x^2 + 6x + 10, x)"]
+    },
 
     // --- Calculus ---
+    "analyze": {
+        "description": "Analyzes a function (roots, extrema, inflection points, etc).",
+        "syntax": "analyze(f, x)",
+        "examples": ["analyze(x^3 - 3x, x)"]
+    },
     "diff": {
         "description": "Calculates the derivative of an expression.",
         "syntax": "diff(expr, var, [order])",
