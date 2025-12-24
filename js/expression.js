@@ -1696,10 +1696,71 @@ class Call extends Expr {
             }
         }
 
+        if (this.funcName === 'heaviside') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) {
+                if (arg.value < 0) return new Num(0);
+                if (arg.value > 0) return new Num(1);
+                // Heaviside(0) depends on convention. Standard in many CAS is 1/2 or undefined.
+                // We return 0.5
+                return new Num(0.5);
+            }
+        }
+
+        if (this.funcName === 'dirac') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) {
+                if (arg.value !== 0) return new Num(0);
+                return new Sym("Infinity");
+            }
+        }
+
+        if (this.funcName === 'sinc') {
+            // sinc(x) = sin(x)/x
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) {
+                if (arg.value === 0) return new Num(1); // Limit
+                return new Num(Math.sin(arg.value) / arg.value);
+            }
+        }
+
+        if (this.funcName === 'rect') {
+            // rect(x) = 1 if |x|<0.5, 0.5 if |x|=0.5, 0 else
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) {
+                const abs = Math.abs(arg.value);
+                if (abs < 0.5) return new Num(1);
+                if (Math.abs(abs - 0.5) < 1e-15) return new Num(0.5);
+                return new Num(0);
+            }
+        }
+
         return new Call(this.funcName, simpleArgs);
     }
     evaluateNumeric() {
         const argsVal = this.args.map(a => a.evaluateNumeric());
+        if (this.funcName === 'heaviside') {
+            const v = argsVal[0];
+            if (v < 0) return 0;
+            if (v > 0) return 1;
+            return 0.5;
+        }
+        if (this.funcName === 'dirac') {
+            const v = argsVal[0];
+            if (v === 0) return Infinity;
+            return 0;
+        }
+        if (this.funcName === 'sinc') {
+            const v = argsVal[0];
+            if (Math.abs(v) < 1e-15) return 1;
+            return Math.sin(v) / v;
+        }
+        if (this.funcName === 'rect') {
+            const v = Math.abs(argsVal[0]);
+            if (v < 0.5) return 1;
+            if (Math.abs(v - 0.5) < 1e-15) return 0.5;
+            return 0;
+        }
         if (this.funcName === 'sin') return Math.sin(argsVal[0]);
         if (this.funcName === 'cos') return Math.cos(argsVal[0]);
         if (this.funcName === 'tan') return Math.tan(argsVal[0]);
@@ -1789,6 +1850,31 @@ class Call extends Expr {
     }
     diff(varName) {
         const u = this.args[0];
+        if (this.funcName === 'heaviside') {
+            // diff(heaviside(u)) = dirac(u) * u'
+            return new Mul(new Call('dirac', [u]), u.diff(varName));
+        }
+        if (this.funcName === 'dirac') {
+            // diff(dirac(u)) = dirac(u, 1) * u' ? Or symbolic
+            // We don't support distributional derivatives fully yet.
+            // Standard: dirac'(x)
+            return new Call('diff', [this, varName]);
+        }
+        if (this.funcName === 'sinc') {
+            // diff(sin(x)/x) = (x*cos(x) - sin(x)) / x^2
+            const num = new Sub(new Mul(u, new Call('cos', [u])), new Call('sin', [u]));
+            const den = new Pow(u, new Num(2));
+            return new Mul(new Div(num, den), u.diff(varName));
+        }
+        if (this.funcName === 'rect') {
+            // diff(rect(t)) = dirac(t+0.5) - dirac(t-0.5)
+            // rect(t) = H(t+0.5) - H(t-0.5)
+            const t = u;
+            const term1 = new Call('dirac', [new Add(t, new Num(0.5))]);
+            const term2 = new Call('dirac', [new Sub(t, new Num(0.5))]);
+            return new Mul(new Sub(term1, term2), u.diff(varName));
+        }
+
         if (this.funcName === 'lambertw') {
             // W'(x) = W(x) / (x * (1 + W(x)))
             // if x=0, limit is 1.
@@ -1921,6 +2007,13 @@ class Call extends Expr {
                     new Mul(varName, new Call('atan', [varName])),
                     new Mul(new Num(0.5), new Call('ln', [new Add(new Num(1), new Pow(varName, new Num(2)))]))
                 );
+            }
+            if (this.funcName === 'dirac') {
+                return new Call('heaviside', [varName]);
+            }
+            if (this.funcName === 'heaviside') {
+                // x * H(x) (Ramp function)
+                return new Mul(varName, new Call('heaviside', [varName]));
             }
         }
         return new Call("integrate", [this, varName]);
