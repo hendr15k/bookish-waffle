@@ -405,6 +405,18 @@ class CAS {
                  return this._maximize(args[0], args[1]);
             }
 
+            if (node.funcName === 'analyze') {
+                 if (node.args.length !== 2) throw new Error("analyze requires 2 arguments: expr, variable");
+                 if (!(args[1] instanceof Sym)) throw new Error("Second argument to analyze must be a variable");
+                 return this._analyze(args[0], args[1]);
+            }
+
+            if (node.funcName === 'completeSquare') {
+                 if (node.args.length !== 2) throw new Error("completeSquare requires 2 arguments: expr, variable");
+                 if (!(args[1] instanceof Sym)) throw new Error("Second argument to completeSquare must be a variable");
+                 return this._completeSquare(args[0], args[1]);
+            }
+
             if (node.funcName === 'resultant') {
                  if (node.args.length !== 3) throw new Error("resultant requires 3 arguments: poly1, poly2, variable");
                  return this._resultant(args[0], args[1], args[2]);
@@ -2371,6 +2383,87 @@ class CAS {
 
     _maximize(expr, varNode) {
         return this._optimize(expr, varNode, 'max');
+    }
+
+    _analyze(expr, varNode) {
+        const results = [];
+
+        // Helper to format
+        const label = (txt, val) => {
+            return new Eq(new Sym(txt), val);
+        };
+
+        // 1. Function
+        results.push(label("Function", expr));
+
+        // 2. Roots (Zeros)
+        try {
+            const roots = this._roots(expr, varNode);
+            results.push(label("Roots", roots));
+        } catch(e) {
+            results.push(label("Roots", new Sym("Error")));
+        }
+
+        // 3. Y-Intercept
+        try {
+            const yInt = expr.substitute(varNode, new Num(0)).simplify();
+            results.push(label("Y_Intercept", yInt));
+        } catch(e) { }
+
+        // 4. Limits
+        try {
+            const limInf = this._limit(expr, varNode, new Sym("Infinity"));
+            const limNegInf = this._limit(expr, varNode, new Mul(new Num(-1), new Sym("Infinity")));
+            results.push(label("Lim_Inf", limInf));
+            results.push(label("Lim_NegInf", limNegInf));
+        } catch(e) {}
+
+        // 5. Derivative
+        const deriv = expr.diff(varNode).simplify();
+        results.push(label("Derivative", deriv));
+
+        // 6. Critical Points (Extrema candidates)
+        try {
+            const crit = this._roots(deriv, varNode);
+            results.push(label("Critical_Points", crit));
+        } catch(e) {}
+
+        // 7. Second Derivative
+        const deriv2 = deriv.diff(varNode).simplify();
+        results.push(label("Second_Deriv", deriv2));
+
+        // 8. Inflection Points candidates
+        try {
+            const inf = this._roots(deriv2, varNode);
+            results.push(label("Inflection_Pts", inf));
+        } catch(e) {}
+
+        return new Vec(results);
+    }
+
+    _completeSquare(expr, varNode) {
+        expr = expr.expand().simplify();
+        const poly = this._getPolyCoeffs(expr, varNode);
+
+        if (!poly || poly.maxDeg !== 2) {
+            throw new Error("completeSquare requires a quadratic polynomial");
+        }
+
+        // ax^2 + bx + c
+        const a = poly.coeffs[2];
+        const b = poly.coeffs[1] || new Num(0);
+        const c = poly.coeffs[0] || new Num(0);
+
+        // a(x + b/(2a))^2 + (c - b^2/4a)
+
+        const term1_inner = new Add(varNode, new Div(b, new Mul(new Num(2), a)));
+        const term1 = new Mul(a, new Pow(term1_inner, new Num(2)));
+
+        const b2 = new Pow(b, new Num(2));
+        const four_a = new Mul(new Num(4), a);
+        const term2 = new Sub(c, new Div(b2, four_a));
+
+        return new Add(term1, term2).simplify();
     }
 
     _optimize(expr, varNode, type) {
