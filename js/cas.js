@@ -449,13 +449,13 @@ class CAS {
                 return this._nIntegrate(args[0], args[1], args[2], args[3]);
             }
 
-            if (node.funcName === 'minimize') {
+            if (node.funcName === 'minimize' || node.funcName === 'fmin') {
                  if (node.args.length !== 2) throw new Error("minimize requires 2 arguments: expr, variable");
                  if (!(args[1] instanceof Sym)) throw new Error("Second argument to minimize must be a variable");
                  return this._minimize(args[0], args[1]);
             }
 
-            if (node.funcName === 'maximize') {
+            if (node.funcName === 'maximize' || node.funcName === 'fmax') {
                  if (node.args.length !== 2) throw new Error("maximize requires 2 arguments: expr, variable");
                  if (!(args[1] instanceof Sym)) throw new Error("Second argument to maximize must be a variable");
                  return this._maximize(args[0], args[1]);
@@ -1250,6 +1250,14 @@ class CAS {
             if (node.funcName === 'ilaplace') {
                 if (node.args.length !== 3) throw new Error("ilaplace requires 3 arguments: expr, s, t");
                 return this._ilaplace(args[0], args[1], args[2]);
+            }
+            if (node.funcName === 'ztrans') {
+                if (node.args.length !== 3) throw new Error("ztrans requires 3 arguments: expr, n, z");
+                return this._ztrans(args[0], args[1], args[2]);
+            }
+            if (node.funcName === 'iztrans') {
+                if (node.args.length !== 3) throw new Error("iztrans requires 3 arguments: expr, z, n");
+                return this._iztrans(args[0], args[1], args[2]);
             }
 
             if (node.funcName === 'kernel' || node.funcName === 'nullspace' || node.funcName === 'ker') {
@@ -7544,6 +7552,184 @@ class CAS {
     }
 
     // --- Calculus Extras ---
+
+    _ztrans(expr, n, z) {
+        expr = expr.expand().simplify();
+
+        if (expr instanceof Add) {
+            return new Add(this._ztrans(expr.left, n, z), this._ztrans(expr.right, n, z)).simplify();
+        }
+        if (expr instanceof Sub) {
+            return new Sub(this._ztrans(expr.left, n, z), this._ztrans(expr.right, n, z)).simplify();
+        }
+        if (expr instanceof Mul) {
+            if (!this._dependsOn(expr.left, n)) return new Mul(expr.left, this._ztrans(expr.right, n, z)).simplify();
+            if (!this._dependsOn(expr.right, n)) return new Mul(expr.right, this._ztrans(expr.left, n, z)).simplify();
+        }
+
+        // Table
+        // 1 -> z / (z-1)
+        if (expr instanceof Num && expr.value === 1) {
+            return new Div(z, new Sub(z, new Num(1))).simplify();
+        }
+        if (!this._dependsOn(expr, n)) {
+            // c -> c * z / (z-1)
+            const Z = new Div(z, new Sub(z, new Num(1)));
+            return new Mul(expr, Z).simplify();
+        }
+
+        // n -> z / (z-1)^2
+        if (expr instanceof Sym && expr.name === n.name) {
+            return new Div(z, new Pow(new Sub(z, new Num(1)), new Num(2))).simplify();
+        }
+
+        // a^n -> z / (z-a)
+        if (expr instanceof Pow && expr.left instanceof Sym && expr.right instanceof Sym && expr.right.name === n.name) {
+            const a = expr.left; // Assume a does not depend on n
+            return new Div(z, new Sub(z, a)).simplify();
+        }
+        if (expr instanceof Pow && expr.right instanceof Sym && expr.right.name === n.name) {
+             const a = expr.left;
+             if (!this._dependsOn(a, n)) {
+                 return new Div(z, new Sub(z, a)).simplify();
+             }
+        }
+
+        // sin(an) -> z*sin(a) / (z^2 - 2z*cos(a) + 1)
+        // cos(an) -> z(z-cos(a)) / (z^2 - 2z*cos(a) + 1)
+        if (expr instanceof Call && (expr.funcName === 'sin' || expr.funcName === 'cos')) {
+            const arg = expr.args[0];
+            const poly = this._getPolyCoeffs(arg, n);
+            let a = new Num(1);
+            if (poly && poly.maxDeg === 1) {
+                a = poly.coeffs[1]; // a*n
+            } else {
+                return new Call('ztrans', [expr, n, z]);
+            }
+
+            const den = new Add(new Sub(new Pow(z, new Num(2)), new Mul(new Num(2), new Mul(z, new Call('cos', [a])))), new Num(1));
+
+            if (expr.funcName === 'sin') {
+                const num = new Mul(z, new Call('sin', [a]));
+                return new Div(num, den).simplify();
+            }
+            if (expr.funcName === 'cos') {
+                const num = new Mul(z, new Sub(z, new Call('cos', [a])));
+                return new Div(num, den).simplify();
+            }
+        }
+
+        return new Call('ztrans', [expr, n, z]);
+    }
+
+    _iztrans(expr, z, n) {
+        // Inverse Z-Transform using Partial Fractions
+        // F(z) -> PFD F(z)/z -> sum A/(z-p)
+        // inv(A * z / (z-p)) -> A * p^n
+
+        // Try to factor out z? Or decompose F(z)/z.
+        // My _partfrac handles expr w.r.t var.
+        const F_div_z = new Div(expr, z).simplify();
+        const pf = this._partfrac(F_div_z, z);
+
+        if (pf instanceof Call && pf.funcName === 'partfrac' && pf.toString() === F_div_z.toString()) {
+             // Failed decomposition
+             return new Call('iztrans', [expr, z, n]);
+        }
+
+        // pf is sum of terms like A/(z-p)
+        // We want to transform back to F(z) form: A*z / (z-p)
+        // So multiply pf by z
+        const F_expanded = new Mul(z, pf).expand().simplify();
+
+        // Linearity
+        const terms = [];
+        const collect = (node) => {
+            if (node instanceof Add) { collect(node.left); collect(node.right); }
+            else if (node instanceof Sub) { collect(node.left); collect(new Mul(new Num(-1), node.right)); }
+            else terms.push(node);
+        };
+        collect(F_expanded);
+
+        let result = new Num(0);
+        for(const term of terms) {
+            // Check form A * z / (z - p)
+            // term is simplified.
+            // e.g. z / (z-1) -> 1
+            // e.g. z / (z-a) -> a^n
+            // e.g. k*z / (z-a) -> k*a^n
+
+            // Extract coefficient independent of z?
+            // This is hard to pattern match generally on simplified expression.
+            // But usually we get k * z * (z-p)^-1
+            // or k * z / (z-p)^m
+
+            // Let's rely on basic patterns:
+            // 1. k (constant) -> k * delta(n) (impulse) -- but standard z-trans usually 1 -> delta.
+            // Wait, ztrans(1) = z/(z-1).
+            // ztrans(delta(n)) = 1.
+            // So if term is constant k, inv is k * dirac(n)?
+            // Usually we deal with causal sequences.
+
+            // Pattern: k * z / (z-a)^m
+            // m=1: k * a^n
+            // m=2: n * a^(n-1) ? z/(z-1)^2 -> n.  az/(z-a)^2 -> n a^n.
+            // z/(z-a)^2 -> n * a^(n-1)
+
+            // Let's handle simple case z/(z-a)
+            // Check if term has z in numerator and (z-a) in denominator
+            if (!this._dependsOn(term, z)) {
+                // Constant C -> C * delta(n)
+                // result += C * dirac(n)
+                result = new Add(result, new Mul(term, new Call('dirac', [n])));
+                continue;
+            }
+
+            // Simple pattern matching for Div
+            if (term instanceof Div || (term instanceof Mul && (term.left instanceof Div || term.right instanceof Div))) {
+                 // Try to match k * z / (z-p)
+                 // divide term by z, see if it is k/(z-p)
+                 const ratio = new Div(term, z).simplify(); // Should be k/(z-p)
+                 // Check if ratio denominator is linear z-p
+                 if (ratio instanceof Div) {
+                     const num = ratio.left;
+                     const den = ratio.right;
+                     const polyDen = this._getPolyCoeffs(den, z);
+                     if (polyDen && polyDen.maxDeg === 1 && !this._dependsOn(num, z)) {
+                         // den = c1*z + c0 = c1(z + c0/c1)
+                         // form: num / (c1(z - p)) -> (num/c1) / (z - p)
+                         // p = -c0/c1
+                         const c1 = polyDen.coeffs[1];
+                         const c0 = polyDen.coeffs[0] || new Num(0);
+                         const p = new Div(new Mul(new Num(-1), c0), c1).simplify();
+                         const k = new Div(num, c1).simplify();
+
+                         // inv( k * z / (z-p) ) = k * p^n
+                         // if p=1, k
+                         let inv;
+                         if (p instanceof Num && p.value === 1) inv = k;
+                         else inv = new Mul(k, new Pow(p, n));
+
+                         result = new Add(result, inv);
+                         continue;
+                     }
+                     // Check (z-p)^2
+                     // z/(z-1)^2 -> n
+                     if (polyDen && polyDen.maxDeg === 2) {
+                         // Check square (z-p)^2 = z^2 - 2pz + p^2
+                         // We can also use partial fraction on ratio (which failed earlier if we are here?)
+                         // ratio is k/(z-p)^2 ?
+                         // This requires identifying square.
+                     }
+                 }
+            }
+
+            // Fallback
+            result = new Add(result, new Call('iztrans', [term, z, n]));
+        }
+
+        return result.simplify();
+    }
 
     _laplace(expr, t, s) {
         // Simple table-based Laplace Transform

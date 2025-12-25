@@ -1530,8 +1530,11 @@ class Call extends Expr {
             const arg = simpleArgs[0];
             // ln(exp(x)) -> x
             if (arg instanceof Call && arg.funcName === 'exp') return arg.args[0];
-            if (arg instanceof Num && arg.value === 1) return new Num(0);
+            // ln(e^x) -> x
+            if (arg instanceof Pow && arg.left instanceof Sym && arg.left.name === 'e') return arg.right;
+            // ln(e) -> 1
             if (arg instanceof Sym && arg.name === 'e') return new Num(1);
+            if (arg instanceof Num && arg.value === 1) return new Num(0);
         }
         if (this.funcName === 'log') {
             const arg = simpleArgs[0];
