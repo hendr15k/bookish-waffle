@@ -236,6 +236,11 @@ class CAS {
                 return res;
             }
 
+            if (node.funcName === 'implicitDiff') {
+                if (node.args.length !== 3) throw new Error("implicitDiff requires 3 arguments: equation, depVar(y), indepVar(x)");
+                return this._implicitDiff(args[0], args[1], args[2]);
+            }
+
             if (node.funcName === 'integrate' || node.funcName === 'int') {
                 if (node.args.length < 2) throw new Error("integrate requires at least 2 arguments");
                 const func = args[0];
@@ -272,6 +277,57 @@ class CAS {
 
                     // If integration failed (returned a Call to integrate), return symbolic definite integral
                     if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
+                        // Check for Abs in Definite Integral
+                        // integrate(abs(expr), x, a, b)
+                        if (func instanceof Call && func.funcName === 'abs') {
+                            const inner = func.args[0];
+                            // Find roots of inner expression
+                            const roots = this._roots(inner, varNode);
+                            // Filter roots within [lower, upper]
+                            const validRoots = [];
+                            const a = lower.evaluateNumeric();
+                            const b = upper.evaluateNumeric();
+
+                            if (!isNaN(a) && !isNaN(b)) {
+                                if (roots instanceof Vec) {
+                                    for(const r of roots.elements) {
+                                        const rVal = r.evaluateNumeric();
+                                        if (!isNaN(rVal) && rVal > Math.min(a,b) && rVal < Math.max(a,b)) {
+                                            validRoots.push(rVal);
+                                        }
+                                    }
+                                }
+
+                                if (validRoots.length > 0) {
+                                    validRoots.sort((u,v) => u-v);
+                                    let sum = new Num(0);
+                                    let prev = lower;
+
+                                    for(const r of validRoots) {
+                                        const rNum = new Num(r);
+                                        // Integrate from prev to r
+                                        // Check sign in midpoint
+                                        const mid = (prev.evaluateNumeric() + r) / 2;
+                                        const valAtMid = inner.substitute(varNode, new Num(mid)).evaluateNumeric();
+                                        const integrand = valAtMid >= 0 ? inner : new Mul(new Num(-1), inner);
+
+                                        const part = this.evaluate(new Call('integrate', [integrand, varNode, prev, rNum]));
+                                        sum = new Add(sum, part);
+                                        prev = rNum;
+                                    }
+
+                                    // Last segment
+                                    const mid = (prev.evaluateNumeric() + b) / 2;
+                                    const valAtMid = inner.substitute(varNode, new Num(mid)).evaluateNumeric();
+                                    const integrand = valAtMid >= 0 ? inner : new Mul(new Num(-1), inner);
+                                    const part = this.evaluate(new Call('integrate', [integrand, varNode, prev, upper]));
+                                    sum = new Add(sum, part);
+
+                                    return sum.simplify();
+                                }
+                            }
+                        }
+
                         return new Call('integrate', args);
                     }
 
@@ -1069,6 +1125,16 @@ class CAS {
                 return this._mod(args[0], args[1]);
             }
 
+            if (node.funcName === 'modInverse') {
+                if (node.args.length !== 2) throw new Error("modInverse requires 2 arguments: a, m");
+                return this._modInverse(args[0], args[1]);
+            }
+
+            if (node.funcName === 'modPow') {
+                if (node.args.length !== 3) throw new Error("modPow requires 3 arguments: base, exp, mod");
+                return this._modPow(args[0], args[1], args[2]);
+            }
+
             if (node.funcName === 'partfrac') {
                 if (node.args.length !== 2) throw new Error("partfrac requires 2 arguments: expr, var");
                 return this._partfrac(args[0], args[1]);
@@ -1510,6 +1576,11 @@ class CAS {
             if (node.funcName === 'circleEquation') {
                 if (node.args.length !== 2) throw new Error("circleEquation requires 2 arguments: center, radius");
                 return this._circleEquation(args[0], args[1]);
+            }
+
+            if (node.funcName === 'planeEquation') {
+                if (node.args.length !== 3) throw new Error("planeEquation requires 3 arguments: p1, p2, p3");
+                return this._planeEquation(args[0], args[1], args[2]);
             }
 
             if (node.funcName === 'root') {
@@ -2429,6 +2500,23 @@ class CAS {
         }
 
         return new Vec(solutions);
+    }
+
+    _implicitDiff(eq, depVar, indepVar) {
+        if (!(depVar instanceof Sym) || !(indepVar instanceof Sym)) throw new Error("Variables must be symbols");
+
+        // Normalize F(x, y) = 0
+        let F = eq;
+        if (eq instanceof Eq) {
+            F = new Sub(eq.left, eq.right).simplify();
+        }
+
+        // dy/dx = - (dF/dx) / (dF/dy)
+        // Partial derivatives
+        const Fx = F.diff(indepVar).simplify();
+        const Fy = F.diff(depVar).simplify();
+
+        return new Mul(new Num(-1), new Div(Fx, Fy)).simplify();
     }
 
     _minimize(expr, varNode) {
@@ -5606,6 +5694,47 @@ class CAS {
         return new Call('mod', [a, b]);
     }
 
+    _modInverse(a, m) {
+        if (a instanceof Num && m instanceof Num) {
+             let n = a.value;
+             let mod = m.value;
+
+             // Extended Euclidean Algorithm
+             let t = 0, newt = 1;
+             let r = mod, newr = n;
+
+             while (newr !== 0) {
+                 const quotient = Math.floor(r / newr);
+                 [t, newt] = [newt, t - quotient * newt];
+                 [r, newr] = [newr, r - quotient * newr];
+             }
+
+             if (r > 1) throw new Error("a is not invertible");
+             if (t < 0) t = t + mod;
+
+             return new Num(t);
+        }
+        return new Call('modInverse', [a, m]);
+    }
+
+    _modPow(base, exp, mod) {
+        if (base instanceof Num && exp instanceof Num && mod instanceof Num) {
+             let res = 1n;
+             let b = BigInt(Math.floor(base.value));
+             let e = BigInt(Math.floor(exp.value));
+             let m = BigInt(Math.floor(mod.value));
+
+             b = b % m;
+             while (e > 0n) {
+                 if (e % 2n === 1n) res = (res * b) % m;
+                 e = e / 2n;
+                 b = (b * b) % m;
+             }
+             return new Num(Number(res));
+        }
+        return new Call('modPow', [base, exp, mod]);
+    }
+
     _distance(p1, p2) {
         if (!(p1 instanceof Vec) || !(p2 instanceof Vec)) throw new Error("distance requires two points (vectors)");
         if (p1.elements.length !== p2.elements.length) throw new Error("Dimension mismatch");
@@ -8713,6 +8842,47 @@ class CAS {
         // (x - cx)^2 + (y - cy)^2 = r^2
         const lhs = new Add(new Pow(new Sub(x, cx), new Num(2)), new Pow(new Sub(y, cy), new Num(2))).simplify();
         const rhs = new Pow(r, new Num(2)).simplify();
+
+        return new Eq(lhs, rhs);
+    }
+
+    _planeEquation(p1, p2, p3) {
+        if (!(p1 instanceof Vec) || !(p2 instanceof Vec) || !(p3 instanceof Vec)) throw new Error("Points must be vectors");
+        if (p1.elements.length !== 3) throw new Error("Points must be 3D");
+
+        // Vectors u = p2 - p1, v = p3 - p1
+        const u = new Vec([
+            new Sub(p2.elements[0], p1.elements[0]),
+            new Sub(p2.elements[1], p1.elements[1]),
+            new Sub(p2.elements[2], p1.elements[2])
+        ]).simplify();
+
+        const v = new Vec([
+            new Sub(p3.elements[0], p1.elements[0]),
+            new Sub(p3.elements[1], p1.elements[1]),
+            new Sub(p3.elements[2], p1.elements[2])
+        ]).simplify();
+
+        // Normal n = u x v
+        const n = this._cross(u, v);
+
+        // Equation: n . (r - p1) = 0 => nx*x + ny*y + nz*z = n . p1
+        const nx = n.elements[0];
+        const ny = n.elements[1];
+        const nz = n.elements[2];
+
+        const x = new Sym('x');
+        const y = new Sym('y');
+        const z = new Sym('z');
+
+        const lhs = new Add(new Add(new Mul(nx, x), new Mul(ny, y)), new Mul(nz, z)).simplify();
+
+        // rhs = n . p1
+        const rhs = new Add(new Add(
+            new Mul(nx, p1.elements[0]),
+            new Mul(ny, p1.elements[1])),
+            new Mul(nz, p1.elements[2])
+        ).simplify();
 
         return new Eq(lhs, rhs);
     }

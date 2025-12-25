@@ -35,6 +35,16 @@ window.HELP_DATA = {
         "syntax": "mod(a, b)",
         "examples": ["mod(10, 3)", "mod(x^3, x-1)"]
     },
+    "modInverse": {
+        "description": "Modular multiplicative inverse.",
+        "syntax": "modInverse(a, m)",
+        "examples": ["modInverse(3, 11)"]
+    },
+    "modPow": {
+        "description": "Modular exponentiation (base^exp mod m).",
+        "syntax": "modPow(base, exp, m)",
+        "examples": ["modPow(2, 10, 1000)"]
+    },
     "nCr": {
         "description": "Binomial coefficient (combinations).",
         "syntax": "nCr(n, k)",
@@ -70,6 +80,16 @@ window.HELP_DATA = {
         "syntax": "cfrac(val, [depth])",
         "examples": ["cfrac(1.2)", "cfrac(pi, 5)"]
     },
+    "circleEquation": {
+        "description": "Finds circle equation from center and radius.",
+        "syntax": "circleEquation(center, radius)",
+        "examples": ["circleEquation([0, 0], 5)"]
+    },
+    "planeEquation": {
+        "description": "Finds plane equation from 3 points.",
+        "syntax": "planeEquation(p1, p2, p3)",
+        "examples": ["planeEquation([1,0,0], [0,1,0], [0,0,1])"]
+    },
     "completeSquare": {
         "description": "Completes the square for a quadratic polynomial.",
         "syntax": "completeSquare(expr, var)",
@@ -86,6 +106,11 @@ window.HELP_DATA = {
         "description": "Calculates the derivative of an expression.",
         "syntax": "diff(expr, var, [order])",
         "examples": ["diff(sin(x), x)", "diff(x^3, x, 2)"]
+    },
+    "implicitDiff": {
+        "description": "Calculates implicit derivative dy/dx.",
+        "syntax": "implicitDiff(eq, y, x)",
+        "examples": ["implicitDiff(x^2 + y^2 = 1, y, x)"]
     },
     "integrate": {
         "description": "Calculates the integral.",
