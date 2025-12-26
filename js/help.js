@@ -98,9 +98,24 @@ window.HELP_DATA = {
 
     // --- Calculus ---
     "analyze": {
-        "description": "Analyzes a function (roots, extrema, inflection points, etc).",
+        "description": "Analyzes a function (roots, extrema, asymptotes, inflection points).",
         "syntax": "analyze(f, x)",
         "examples": ["analyze(x^3 - 3x, x)"]
+    },
+    "extrema": {
+        "description": "Finds local extrema (minima/maxima) of a function.",
+        "syntax": "extrema(f, x)",
+        "examples": ["extrema(x^3 - 3x, x)"]
+    },
+    "stationary_points": {
+        "description": "Finds stationary points (f'(x) = 0).",
+        "syntax": "stationary_points(f, x)",
+        "examples": ["stationary_points(x^3 - 3x, x)"]
+    },
+    "asymptotes": {
+        "description": "Finds vertical and horizontal asymptotes.",
+        "syntax": "asymptotes(f, x)",
+        "examples": ["asymptotes((x^2-1)/(x-2), x)"]
     },
     "diff": {
         "description": "Calculates the derivative of an expression.",

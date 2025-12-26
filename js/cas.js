@@ -467,6 +467,24 @@ class CAS {
                  return this._analyze(args[0], args[1]);
             }
 
+            if (node.funcName === 'extrema') {
+                 if (node.args.length !== 2) throw new Error("extrema requires 2 arguments: expr, variable");
+                 if (!(args[1] instanceof Sym)) throw new Error("Second argument to extrema must be a variable");
+                 return this._extrema(args[0], args[1]);
+            }
+
+            if (node.funcName === 'stationary_points') {
+                 if (node.args.length !== 2) throw new Error("stationary_points requires 2 arguments: expr, variable");
+                 if (!(args[1] instanceof Sym)) throw new Error("Second argument to stationary_points must be a variable");
+                 return this._stationary_points(args[0], args[1]);
+            }
+
+            if (node.funcName === 'asymptotes') {
+                 if (node.args.length !== 2) throw new Error("asymptotes requires 2 arguments: expr, variable");
+                 if (!(args[1] instanceof Sym)) throw new Error("Second argument to asymptotes must be a variable");
+                 return this._asymptotes(args[0], args[1]);
+            }
+
             if (node.funcName === 'completeSquare') {
                  if (node.args.length !== 2) throw new Error("completeSquare requires 2 arguments: expr, variable");
                  if (!(args[1] instanceof Sym)) throw new Error("Second argument to completeSquare must be a variable");
@@ -2290,39 +2308,65 @@ class CAS {
             }
         }
 
-        // 2. Polynomial Logic via Roots / Critical Points
-        // Roots of P(x) = 0
-        const rootsRes = this._solve(expr, varNode);
-        let roots = [];
+        // 2. Polynomial / Rational Logic via Roots and Poles
+        // Zeros: Roots of P(x) = 0
+        // Poles: Roots of Q(x) = 0 where expr = P/Q
+        // Critical Points = Zeros U Poles
 
-        if (rootsRes instanceof Call && rootsRes.funcName === 'set') {
-            roots = rootsRes.args;
-        } else if (rootsRes instanceof Expr && !(rootsRes instanceof Call && rootsRes.funcName === 'solve')) {
-            roots = [rootsRes];
+        // Find Zeros
+        const zerosRes = this._solve(expr, varNode);
+        let zeros = [];
+        if (zerosRes instanceof Call && zerosRes.funcName === 'set') {
+            zeros = zerosRes.args;
+        } else if (zerosRes instanceof Expr && !(zerosRes instanceof Call && zerosRes.funcName === 'solve')) {
+            zeros = [zerosRes];
         }
 
-        // Filter valid numeric roots
-        const numRoots = [];
-        for (const r of roots) {
+        // Find Poles (Singularities)
+        let poles = [];
+        if (expr instanceof Div) {
+            const polesRes = this._solve(expr.right, varNode);
+            if (polesRes instanceof Call && polesRes.funcName === 'set') {
+                poles = polesRes.args;
+            } else if (polesRes instanceof Expr && !(polesRes instanceof Call && polesRes.funcName === 'solve')) {
+                poles = [polesRes];
+            }
+        }
+
+        // Collect all critical points with type
+        const criticalPoints = [];
+
+        for (const r of zeros) {
             const val = r.evaluateNumeric();
-            if (!isNaN(val)) numRoots.push({ val: val, node: r });
+            if (!isNaN(val)) criticalPoints.push({ val: val, node: r, type: 'zero' });
+        }
+        for (const r of poles) {
+            const val = r.evaluateNumeric();
+            if (!isNaN(val)) criticalPoints.push({ val: val, node: r, type: 'pole' });
         }
 
-        // Sort roots
-        numRoots.sort((a, b) => a.val - b.val);
+        // Sort
+        criticalPoints.sort((a, b) => a.val - b.val);
 
         // Deduplicate
-        const uniqueRoots = [];
-        if (numRoots.length > 0) {
-            uniqueRoots.push(numRoots[0]);
-            for(let i=1; i<numRoots.length; i++) {
-                if (Math.abs(numRoots[i].val - numRoots[i-1].val) > 1e-9) {
-                    uniqueRoots.push(numRoots[i]);
+        const uniquePoints = [];
+        if (criticalPoints.length > 0) {
+            uniquePoints.push(criticalPoints[0]);
+            for(let i=1; i<criticalPoints.length; i++) {
+                const diff = Math.abs(criticalPoints[i].val - uniquePoints[uniquePoints.length-1].val);
+                if (diff < 1e-9) {
+                    // Duplicate/Collision
+                    // Pole overrides Zero
+                    if (criticalPoints[i].type === 'pole') {
+                        uniquePoints[uniquePoints.length-1] = criticalPoints[i];
+                    }
+                } else {
+                    uniquePoints.push(criticalPoints[i]);
                 }
             }
         }
 
-        if (uniqueRoots.length === 0) {
+        if (uniquePoints.length === 0) {
             // No roots (or only complex/unknown).
             // Test one point (0 or any)
             const testVal = expr.substitute(varNode, new Num(0)).evaluateNumeric();
@@ -2337,28 +2381,62 @@ class CAS {
             return holds ? new Sym('true') : new Sym('false'); // Or Empty set / All reals
         }
 
+        // Handle case where we have points but they are all poles/zeros.
+        // If the only points are poles, we still test intervals.
+        // But what if `poles` are not found because `expr` structure isn't `Div`?
+        // Fallback check for Mul(..., Pow(..., -1))
+        if (poles.length === 0 && expr instanceof Mul) {
+             const findDenom = (node) => {
+                 if (node instanceof Pow && node.right instanceof Num && node.right.value < 0) return node.left;
+                 if (node instanceof Mul) {
+                     const d1 = findDenom(node.left);
+                     if (d1) return d1;
+                     return findDenom(node.right);
+                 }
+                 return null;
+             };
+             const den = findDenom(expr);
+             if (den) {
+                 const polesRes = this._solve(den, varNode);
+                 let morePoles = [];
+                 if (polesRes instanceof Call && polesRes.funcName === 'set') {
+                     morePoles = polesRes.args;
+                 } else if (polesRes instanceof Expr && !(polesRes instanceof Call && polesRes.funcName === 'solve')) {
+                     morePoles = [polesRes];
+                 }
+                 for (const r of morePoles) {
+                     const val = r.evaluateNumeric();
+                     if (!isNaN(val)) {
+                         // Add to uniquePoints and re-sort
+                         uniquePoints.push({ val: val, node: r, type: 'pole' });
+                     }
+                 }
+                 uniquePoints.sort((a, b) => a.val - b.val);
+                 // Dedupe again? (Simplified logic: assume adding poles didn't duplicate zeros exactly, or sort handles order)
+             }
+        }
+
         // Test Intervals
-        // Intervals: (-inf, r0), (r0, r1), ..., (rn, inf)
-        // Test points: r0 - 1, (r0+r1)/2, rn + 1
+        // Intervals: (-inf, p0), (p0, p1), ..., (pn, inf)
         const intervals = [];
-        // (-inf, r0)
+        // (-inf, p0)
         intervals.push({
-            check: uniqueRoots[0].val - 1,
-            cond: (x) => new Lt(x, uniqueRoots[0].node)
+            check: uniquePoints[0].val - 1,
+            cond: (x) => new Lt(x, uniquePoints[0].node)
         });
 
-        for(let i=0; i<uniqueRoots.length - 1; i++) {
-            const mid = (uniqueRoots[i].val + uniqueRoots[i+1].val) / 2;
+        for(let i=0; i<uniquePoints.length - 1; i++) {
+            const mid = (uniquePoints[i].val + uniquePoints[i+1].val) / 2;
             intervals.push({
                 check: mid,
-                cond: (x) => new And(new Gt(x, uniqueRoots[i].node), new Lt(x, uniqueRoots[i+1].node))
+                cond: (x) => new And(new Gt(x, uniquePoints[i].node), new Lt(x, uniquePoints[i+1].node))
             });
         }
 
-        // (rn, inf)
+        // (pn, inf)
         intervals.push({
-            check: uniqueRoots[uniqueRoots.length - 1].val + 1,
-            cond: (x) => new Gt(x, uniqueRoots[uniqueRoots.length - 1].node)
+            check: uniquePoints[uniquePoints.length - 1].val + 1,
+            cond: (x) => new Gt(x, uniquePoints[uniquePoints.length - 1].node)
         });
 
         // Collect valid intervals
@@ -2378,20 +2456,11 @@ class CAS {
 
         // Handle Equality at roots for >= and <=
         if (type === 'ge' || type === 'le') {
-            // Check roots themselves (usually valid for P(x)=0)
-            // But if P(x) is undefined at root (e.g. rational), we should be careful.
-            // Assuming polynomial here, roots are valid.
-            // We can merge intervals if they touch.
-            // e.g. x < 2 OR x > 2 AND include 2 -> All Reals
-            // My interval logic produces strict inequalities.
-            // If we have x < 2 AND x > 2 AND 2 is valid, we can merge.
-            // For now, let's just OR them.
-            // Ideally: x <= 2 OR x >= 3
-            // If I have (x < 2) and (2 < x < 3) and roots 2,3 are valid.
-            // Merging logic is complex.
-            // Simple approach: Return "Or(validConds) OR (Eq(x, r) for all r)" ?
-            for(const r of uniqueRoots) {
-                validConds.push(new Eq(varNode, r.node));
+            // Only include points that are 'zero', not 'pole'
+            for(const pt of uniquePoints) {
+                if (pt.type === 'zero') {
+                    validConds.push(new Eq(varNode, pt.node));
+                }
             }
         }
 
@@ -2560,33 +2629,92 @@ class CAS {
             results.push(label("Y_Intercept", yInt));
         } catch(e) { }
 
-        // 4. Limits
+        // 4. Extrema
         try {
-            const limInf = this._limit(expr, varNode, new Sym("Infinity"));
-            const limNegInf = this._limit(expr, varNode, new Mul(new Num(-1), new Sym("Infinity")));
-            results.push(label("Lim_Inf", limInf));
-            results.push(label("Lim_NegInf", limNegInf));
+            const extr = this._extrema(expr, varNode);
+            results.push(label("Extrema", extr));
         } catch(e) {}
 
-        // 5. Derivative
-        const deriv = expr.diff(varNode).simplify();
-        results.push(label("Derivative", deriv));
-
-        // 6. Critical Points (Extrema candidates)
+        // 5. Asymptotes
         try {
-            const crit = this._roots(deriv, varNode);
-            results.push(label("Critical_Points", crit));
+            const asym = this._asymptotes(expr, varNode);
+            results.push(label("Asymptotes", asym));
         } catch(e) {}
 
-        // 7. Second Derivative
-        const deriv2 = deriv.diff(varNode).simplify();
-        results.push(label("Second_Deriv", deriv2));
-
-        // 8. Inflection Points candidates
+        // 6. Inflection Points candidates
         try {
+            const deriv = expr.diff(varNode).simplify();
+            const deriv2 = deriv.diff(varNode).simplify();
             const inf = this._roots(deriv2, varNode);
             results.push(label("Inflection_Pts", inf));
         } catch(e) {}
+
+        return new Vec(results);
+    }
+
+    _extrema(expr, varNode) {
+        // Find critical points: f'(x) = 0
+        const deriv = expr.diff(varNode).simplify();
+        const roots = this._roots(deriv, varNode);
+        const points = (roots instanceof Vec) ? roots.elements : [roots];
+
+        const deriv2 = deriv.diff(varNode).simplify();
+        const results = [];
+
+        for (const pt of points) {
+            try {
+                // Classify
+                const val2 = deriv2.substitute(varNode, pt).evaluateNumeric();
+                let type = "unknown";
+                if (!isNaN(val2)) {
+                    if (val2 > 0) type = "min";
+                    else if (val2 < 0) type = "max";
+                    else type = "saddle"; // or inflection
+                }
+
+                // Get value
+                const val = expr.substitute(varNode, pt).simplify();
+                results.push(new Vec([pt, val, new Sym(type)]));
+            } catch(e) {}
+        }
+        return new Vec(results);
+    }
+
+    _stationary_points(expr, varNode) {
+        const deriv = expr.diff(varNode).simplify();
+        return this._roots(deriv, varNode);
+    }
+
+    _asymptotes(expr, varNode) {
+        const results = [];
+
+        // Vertical Asymptotes: Roots of denominator
+        if (expr instanceof Div) {
+            const den = expr.right;
+            const poles = this._roots(den, varNode);
+            const pList = (poles instanceof Vec) ? poles.elements : [poles];
+
+            for(const p of pList) {
+                // Check limit?
+                results.push(new Eq(varNode, p));
+            }
+        }
+
+        // Horizontal Asymptotes: Limit at Infinity
+        const limInf = this._limit(expr, varNode, new Sym("Infinity"));
+        if (!(limInf instanceof Sym && (limInf.name === "Infinity" || limInf.name === "NaN" || limInf.name === "-Infinity"))) {
+             const y = new Sym('y');
+             results.push(new Eq(y, limInf));
+        }
+
+        const limNegInf = this._limit(expr, varNode, new Mul(new Num(-1), new Sym("Infinity")));
+        if (!(limNegInf instanceof Sym && (limNegInf.name === "Infinity" || limNegInf.name === "NaN" || limNegInf.name === "-Infinity"))) {
+             // Avoid duplicate if same as limInf
+             if (limNegInf.toString() !== limInf.toString()) {
+                 const y = new Sym('y');
+                 results.push(new Eq(y, limNegInf));
+             }
+        }
 
         return new Vec(results);
     }
@@ -2945,8 +3073,18 @@ class CAS {
             expr = eq.simplify();
         }
 
+        // Handle Rational Equation P/Q = 0 => P = 0
+        if (expr instanceof Div) {
+            return this._solve(expr.left, varNode);
+        }
+
         // Expand to ensure polynomial form for identification
         expr = expr.expand().simplify();
+
+        // Re-check Div after expansion/simplification
+        if (expr instanceof Div) {
+            return this._solve(expr.left, varNode);
+        }
 
         try {
             // Try factoring FIRST if degree > 2, before expanding?
