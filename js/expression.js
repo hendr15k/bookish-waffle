@@ -1298,6 +1298,28 @@ class Pow extends BinaryOp {
         if (r instanceof Num && r.value === 1) return l;
         if (l instanceof Num && r instanceof Num) return new Num(Math.pow(l.value, r.value));
 
+        // Rational Exponents: n ^ (a/b)
+        if (l instanceof Num && r instanceof Div && r.left instanceof Num && r.right instanceof Num) {
+             const base = l.value;
+             const num = r.left.value;
+             const den = r.right.value;
+             // Try to evaluate
+             // Handle negative base for odd roots
+             if (base < 0 && den % 2 !== 0) {
+                 const val = Math.pow(-base, num/den);
+                 if (Math.abs(val - Math.round(val)) < 1e-9) {
+                     const res = Math.round(val);
+                     // If num is even, result is positive. If num is odd, result is negative.
+                     return new Num((num % 2 === 0) ? res : -res);
+                 }
+             } else if (base >= 0) {
+                 const val = Math.pow(base, num/den);
+                 if (Math.abs(val - Math.round(val)) < 1e-9) {
+                     return new Num(Math.round(val));
+                 }
+             }
+        }
+
         // Infinity Powers
         const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
         const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);

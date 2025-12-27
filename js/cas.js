@@ -813,6 +813,21 @@ class CAS {
                 return this._divisors(args[0]);
             }
 
+            if (node.funcName === 'union') {
+                if (node.args.length !== 2) throw new Error("union requires 2 arguments (lists)");
+                return this._union(args[0], args[1]);
+            }
+
+            if (node.funcName === 'intersect') {
+                if (node.args.length !== 2) throw new Error("intersect requires 2 arguments (lists)");
+                return this._intersect(args[0], args[1]);
+            }
+
+            if (node.funcName === 'setdiff') {
+                if (node.args.length !== 2) throw new Error("setdiff requires 2 arguments (lists)");
+                return this._setdiff(args[0], args[1]);
+            }
+
             if (node.funcName === 'clear') {
                 return { type: 'action', name: 'clear', toString: () => "Cleared", toLatex: () => "\\text{Cleared}" };
             }
@@ -4510,6 +4525,64 @@ class CAS {
             return new Vec(res);
         }
         return new Call('divisors', [n]);
+    }
+
+    _union(l1, l2) {
+        if (l1 instanceof Vec && l2 instanceof Vec) {
+            const seen = new Set();
+            const res = [];
+            const add = (list) => {
+                for(const e of list.elements) {
+                    const s = e.toString();
+                    if (!seen.has(s)) {
+                        seen.add(s);
+                        res.push(e);
+                    }
+                }
+            };
+            add(l1);
+            add(l2);
+            return this._sort(new Vec(res));
+        }
+        return new Call('union', [l1, l2]);
+    }
+
+    _intersect(l1, l2) {
+        if (l1 instanceof Vec && l2 instanceof Vec) {
+            const s1 = new Set();
+            for(const e of l1.elements) s1.add(e.toString());
+
+            const res = [];
+            const seen = new Set(); // Prevent duplicates in result
+            for(const e of l2.elements) {
+                const s = e.toString();
+                if (s1.has(s) && !seen.has(s)) {
+                    seen.add(s);
+                    res.push(e);
+                }
+            }
+            return this._sort(new Vec(res));
+        }
+        return new Call('intersect', [l1, l2]);
+    }
+
+    _setdiff(l1, l2) {
+        if (l1 instanceof Vec && l2 instanceof Vec) {
+            const s2 = new Set();
+            for(const e of l2.elements) s2.add(e.toString());
+
+            const res = [];
+            const seen = new Set();
+            for(const e of l1.elements) {
+                const s = e.toString();
+                if (!s2.has(s) && !seen.has(s)) {
+                    seen.add(s);
+                    res.push(e);
+                }
+            }
+            return this._sort(new Vec(res));
+        }
+        return new Call('setdiff', [l1, l2]);
     }
 
     _cross(v1, v2) {
