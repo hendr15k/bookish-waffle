@@ -486,6 +486,9 @@ window.HELP_DATA = {
     // --- List & Matrix Tools ---
     "seq": { "description": "Generate a sequence.", "syntax": "seq(expr, var, start, end, step)", "examples": ["seq(k^2, k, 1, 5, 1)"] },
     "range": { "description": "Generate a range of numbers.", "syntax": "range(start, end, step)", "examples": ["range(0, 10, 2)"] },
+    "union": { "description": "Union of two lists.", "syntax": "union(list1, list2)", "examples": ["union([1,2], [2,3])"] },
+    "intersect": { "description": "Intersection of two lists.", "syntax": "intersect(list1, list2)", "examples": ["intersect([1,2], [2,3])"] },
+    "setdiff": { "description": "Set difference of two lists.", "syntax": "setdiff(list1, list2)", "examples": ["setdiff([1,2], [2,3])"] },
     "sort": { "description": "Sorts a list.", "syntax": "sort(list)", "examples": ["sort([3, 1, 2])"] },
     "reverse": { "description": "Reverses a list.", "syntax": "reverse(list)", "examples": ["reverse([1, 2, 3])"] },
     "size": { "description": "Size of a list or vector.", "syntax": "size(list)", "examples": ["size([1, 2, 3])"] },
