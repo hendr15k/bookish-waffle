@@ -1238,7 +1238,42 @@ class Div extends BinaryOp {
 }
 
 class Pow extends BinaryOp {
-    toString() { return `(${this.left}^${this.right})`; }
+    toString() {
+        const leftStr = this.left.toString();
+        // If left is a function call like cos(x), don't wrap in parens if unnecessary
+        // but current logic wraps everything in parens.
+        // Users want cos(x)^2 not (cos(x)^2).
+        // Check if left is Call?
+        // Actually, just removing outer parens might be unsafe if context requires them (like 2*(x^2)).
+        // But the user complained about simplifier output "Got (cos(x)^2)".
+        // If Pow.toString returns "(...)", then Simplify returns Pow, so it prints "(...)".
+        // Let's remove outer parens. Precedence handling usually belongs to the parent (Mul, Add)
+        // or we need a precedence argument in toString(precedence).
+        // Since we don't have precedence passing, removing outer parens is risky for "2*x^2" -> "2*x^2" (fine)
+        // "x^2 + 1" -> "x^2 + 1" (fine).
+        // "(x+1)^2" -> "(x+1)^2" (left handles its own parens if needed).
+        // So `return "${this.left}^${this.right}"` might be better, but need to check left/right precedence.
+
+        let l = this.left.toString();
+        let r = this.right.toString();
+
+        // Wrap left if it's an operator with lower precedence than Pow
+        if (this.left instanceof Add || this.left instanceof Sub || this.left instanceof Mul || this.left instanceof Div) {
+            l = `(${l})`;
+        }
+        // Also wrap if left is negative number?
+        if (this.left instanceof Num && this.left.value < 0) {
+            l = `(${l})`;
+        }
+
+        // Wrap right if complex? usually right is evaluated first?
+        // x^(a+b) needs parens
+        if (this.right instanceof Add || this.right instanceof Sub || this.right instanceof Mul || this.right instanceof Div) {
+            r = `(${r})`;
+        }
+
+        return `${l}^${r}`;
+    }
     substitute(varName, value) {
         // If we are substituting the whole power expression
         if (this.toString() === varName.toString()) return value; // Heuristic check
@@ -1471,7 +1506,12 @@ class Call extends Expr {
         this.funcName = funcName;
         this.args = args;
     }
-    toString() { return `${this.funcName}(${this.args.join(", ")})`; }
+    toString() {
+        if (this.funcName === 'set') {
+            return `{${this.args.join(", ")}}`;
+        }
+        return `${this.funcName}(${this.args.join(", ")})`;
+    }
     simplify() {
         const simpleArgs = this.args.map(a => a.simplify());
 
