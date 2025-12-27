@@ -1226,9 +1226,17 @@ class CAS {
                 return this._mode(args[0]);
             }
 
-            if (node.funcName === 'arcLen') {
+            if (node.funcName === 'arcLen' || node.funcName === 'arcLength') {
                 if (node.args.length !== 4) throw new Error("arcLen requires 4 arguments: expr, var, start, end");
                 return this._arcLen(args[0], args[1], args[2], args[3]);
+            }
+
+            if (node.funcName === 'volume_solid' || node.funcName === 'volumeSolid') {
+                // volume_solid(expr, var, a, b, [axis])
+                // axis: 'x' (default, disc) or 'y' (shell, assumes expr is y=f(x))
+                if (node.args.length < 4) throw new Error("volume_solid requires at least 4 arguments: expr, var, start, end");
+                const axis = node.args.length > 4 ? args[4] : new Sym('x');
+                return this._volumeSolid(args[0], args[1], args[2], args[3], axis);
             }
 
             if (node.funcName === 'arg') {
@@ -1630,10 +1638,23 @@ class CAS {
                  return new Pow(args[0], new Div(new Num(1), args[1])).simplify();
             }
 
-            if (node.funcName === 'cfrac') {
+            if (node.funcName === 'cfrac' || node.funcName === 'cf' || node.funcName === 'continued_fraction') {
                  // cfrac(val, [depth])
                  const depth = node.args.length > 1 ? args[1].evaluateNumeric() : 15;
                  return this._cfrac(args[0], depth);
+            }
+
+            if (node.funcName === 'sturm') {
+                 if (node.args.length !== 2) throw new Error("sturm requires 2 arguments: poly, var");
+                 return this._sturm(args[0], args[1]);
+            }
+
+            if (node.funcName === 'num_real_roots' || node.funcName === 'numRealRoots') {
+                 // num_real_roots(poly, var, [a, b])
+                 if (node.args.length < 2) throw new Error("num_real_roots requires at least 2 arguments");
+                 const a = node.args.length > 2 ? args[2] : new Mul(new Num(-1), new Sym('Infinity'));
+                 const b = node.args.length > 3 ? args[3] : new Sym('Infinity');
+                 return this._numRealRoots(args[0], args[1], a, b);
             }
 
             if (node.funcName === 'isSquare') {
@@ -4815,8 +4836,8 @@ class CAS {
         // Safety counter
         let limit = degA - degB + 5;
         while (degA >= degB && limit-- > 0) {
-             const ltR = pR.coeffs[degA];
-             const ltB = pB.coeffs[degB];
+             const ltR = pR.coeffs[degA] || new Num(0);
+             const ltB = pB.coeffs[degB] || new Num(0);
 
              // term = (lc(R)/lc(B)) * x^(degR - degB)
              const coeff = new Div(ltR, ltB).simplify();
@@ -7619,6 +7640,9 @@ class CAS {
         }
         if (!foundAny) trueMaxDeg = 0;
 
+        // Ensure maxDeg exists in coeffs
+        if (!coeffs[trueMaxDeg]) coeffs[trueMaxDeg] = new Num(0);
+
         return { coeffs, maxDeg: trueMaxDeg };
     }
 
@@ -9665,6 +9689,107 @@ class CAS {
 
         // Return symbolic min(a,b,c...) unpacked
         return new Call(type, list.elements).simplify();
+    }
+
+    _volumeSolid(expr, varNode, a, b, axis) {
+        if (!(varNode instanceof Sym)) throw new Error("Variable must be a symbol");
+
+        let integrand;
+        let axisName = 'x';
+        if (axis instanceof Sym) axisName = axis.name;
+        if (axis instanceof Num && axis.value === 0) axisName = 'x';
+
+        if (axisName === 'x' || axisName === 'X') {
+            integrand = new Mul(new Sym('pi'), new Pow(expr, new Num(2)));
+        } else if (axisName === 'y' || axisName === 'Y') {
+            integrand = new Mul(new Mul(new Num(2), new Sym('pi')), new Mul(varNode, expr));
+        } else {
+            integrand = new Mul(new Sym('pi'), new Pow(new Sub(expr, axis), new Num(2)));
+        }
+
+        return this.evaluate(new Call('integrate', [integrand, varNode, a, b])).simplify();
+    }
+
+    _sturm(poly, varNode) {
+        poly = poly.expand().simplify();
+        const seq = [poly];
+
+        let deriv = poly.diff(varNode).simplify();
+        if (deriv instanceof Num && deriv.value === 0) return new Vec(seq);
+
+        seq.push(deriv);
+
+        let p_prev2 = poly;
+        let p_prev1 = deriv;
+
+        for(let i=0; i<20; i++) {
+            if (!this._dependsOn(p_prev1, varNode)) break;
+
+            const rem = this._polyRem(p_prev2, p_prev1, varNode);
+
+            const p_next = new Mul(new Num(-1), rem).simplify();
+
+            if (p_next instanceof Num && p_next.value === 0) break;
+
+            seq.push(p_next);
+            p_prev2 = p_prev1;
+            p_prev1 = p_next;
+        }
+
+        return new Vec(seq);
+    }
+
+    _numRealRoots(poly, varNode, a, b) {
+        const seq = this._sturm(poly, varNode);
+
+        const signChanges = (val) => {
+            let changes = 0;
+            let lastSign = 0;
+
+            for(const p of seq.elements) {
+                let res;
+                const isInf = (v) => v instanceof Sym && (v.name === 'Infinity' || v.name === 'infinity');
+                const isNegInf = (v) => v instanceof Mul && v.left instanceof Num && v.left.value === -1 && isInf(v.right);
+
+                if (isInf(val)) {
+                    const info = this._getPolyCoeffs(p, varNode);
+                    if (info) {
+                        const lc = info.coeffs[info.maxDeg].evaluateNumeric();
+                        if (!isNaN(lc)) {
+                            res = lc > 0 ? 1 : -1;
+                        }
+                    }
+                } else if (isNegInf(val)) {
+                    const info = this._getPolyCoeffs(p, varNode);
+                    if (info) {
+                        const lc = info.coeffs[info.maxDeg].evaluateNumeric();
+                        if (!isNaN(lc)) {
+                            const signLC = lc > 0 ? 1 : -1;
+                            const signPow = (info.maxDeg % 2 === 0) ? 1 : -1;
+                            res = signLC * signPow;
+                        }
+                    }
+                } else {
+                    res = p.substitute(varNode, val).evaluateNumeric();
+                }
+
+                if (typeof res === 'number' && !isNaN(res)) {
+                    const sign = res > 0 ? 1 : (res < 0 ? -1 : 0);
+                    if (sign !== 0) {
+                        if (lastSign !== 0 && sign !== lastSign) {
+                            changes++;
+                        }
+                        lastSign = sign;
+                    }
+                }
+            }
+            return changes;
+        };
+
+        const Va = signChanges(a);
+        const Vb = signChanges(b);
+
+        return new Num(Math.abs(Va - Vb));
     }
 }
 

@@ -58,7 +58,7 @@ class Token {
 
 class Lexer {
     constructor(text) {
-        this.text = text;
+        this.text = text || "";
         this.pos = 0;
         this.currentChar = this.text.length > 0 ? this.text[0] : null;
     }
