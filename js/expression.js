@@ -379,7 +379,31 @@ class Add extends BinaryOp {
             return new Vec(newElements);
         }
 
-        if (l instanceof Num && r instanceof Num) return new Num(l.value + r.value);
+        if (l instanceof Num && r instanceof Num) {
+            const sum = l.value + r.value;
+            if (!isFinite(sum) && isFinite(l.value) && isFinite(r.value)) return new Sym("Infinity"); // Or handle signs
+            // Handle Infinity
+            if (l.value === Infinity && r.value === Infinity) return new Sym("Infinity");
+            if (l.value === -Infinity && r.value === -Infinity) return new Mul(new Num(-1), new Sym("Infinity"));
+            if (!isFinite(sum)) return new Sym("NaN"); // inf - inf
+            return new Num(sum);
+        }
+
+        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+        const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
+        const checkInf = (n) => isInf(n) ? 1 : (isNegInf(n) ? -1 : 0);
+
+        const infL = checkInf(l);
+        const infR = checkInf(r);
+
+        if (infL !== 0 || infR !== 0) {
+            if (infL === 1 && infR === 1) return new Sym("Infinity");
+            if (infL === -1 && infR === -1) return new Mul(new Num(-1), new Sym("Infinity"));
+            if (infL !== 0 && infR === 0) return l;
+            if (infL === 0 && infR !== 0) return r;
+            // inf - inf
+            return new Sym("NaN");
+        }
 
         // Symbolic Fraction addition
         // Combine if same denominator: A/C + B/C -> (A+B)/C
@@ -483,6 +507,23 @@ class Sub extends BinaryOp {
         }
 
         if (l instanceof Num && r instanceof Num) return new Num(l.value - r.value);
+
+        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+        const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
+        const checkInf = (n) => isInf(n) ? 1 : (isNegInf(n) ? -1 : 0);
+
+        const infL = checkInf(l);
+        const infR = checkInf(r);
+
+        if (infL !== 0 || infR !== 0) {
+            if (infL === 1 && infR === -1) return new Sym("Infinity"); // Inf - (-Inf) = Inf
+            if (infL === -1 && infR === 1) return new Mul(new Num(-1), new Sym("Infinity")); // -Inf - Inf = -Inf
+            if (infL !== 0 && infR === 0) return l;
+            if (infL === 0 && infR !== 0) return new Mul(new Num(-1), r).simplify();
+            // Inf - Inf
+            return new Sym("NaN");
+        }
+
         if (l instanceof Num && l.value === 0) return new Mul(new Num(-1), r).simplify();
 
         // Symbolic Fraction subtraction
@@ -672,18 +713,29 @@ class Mul extends BinaryOp {
         }
 
         if (l instanceof Num && r instanceof Num) return new Num(l.value * r.value);
-        // Check for 0 * Infinity
-        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === '-Infinity');
-        const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
 
-        if (l instanceof Num && l.value === 0) {
-            if (isInf(r) || isNegInf(r)) return new Sym("NaN");
-            return new Num(0);
+        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+        const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
+        const checkInf = (n) => isInf(n) ? 1 : (isNegInf(n) ? -1 : 0);
+
+        const infL = checkInf(l);
+        const infR = checkInf(r);
+
+        if (infL !== 0 || infR !== 0) {
+            // Check for 0 * Inf
+            if ((l instanceof Num && l.value === 0) || (r instanceof Num && r.value === 0)) return new Sym("NaN");
+
+            // Determine sign
+            let sign = (infL !== 0 ? infL : 1) * (infR !== 0 ? infR : 1);
+            if (l instanceof Num && l.value < 0) sign *= -1;
+            if (r instanceof Num && r.value < 0) sign *= -1;
+
+            if (sign > 0) return new Sym("Infinity");
+            return new Mul(new Num(-1), new Sym("Infinity"));
         }
-        if (r instanceof Num && r.value === 0) {
-            if (isInf(l) || isNegInf(l)) return new Sym("NaN");
-            return new Num(0);
-        }
+
+        if (l instanceof Num && l.value === 0) return new Num(0);
+        if (r instanceof Num && r.value === 0) return new Num(0);
         if (l instanceof Num && l.value === 1) return r;
         if (r instanceof Num && r.value === 1) return l;
 
@@ -807,6 +859,30 @@ class Div extends BinaryOp {
 
             return new Div(l, r);
         }
+
+        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+        const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
+        const checkInf = (n) => isInf(n) ? 1 : (isNegInf(n) ? -1 : 0);
+
+        const infL = checkInf(l);
+        const infR = checkInf(r);
+
+        if (infL !== 0 && infR === 0) {
+            // Inf / Finite
+            if (r instanceof Num) {
+                const sign = (r.value > 0 ? 1 : -1) * infL;
+                return sign > 0 ? new Sym("Infinity") : new Mul(new Num(-1), new Sym("Infinity"));
+            }
+        }
+        if (infL === 0 && infR !== 0) {
+            // Finite / Inf -> 0
+            return new Num(0);
+        }
+        if (infL !== 0 && infR !== 0) {
+            // Inf / Inf
+            return new Sym("NaN");
+        }
+
         // Vector division by scalar: Vec / Scalar
         if (l instanceof Vec && !(r instanceof Vec)) {
             return new Vec(l.elements.map(e => new Div(e, r).simplify()));
@@ -819,7 +895,6 @@ class Div extends BinaryOp {
 
         if (l instanceof Num && l.value === 0) return new Num(0);
         if (r instanceof Num && r.value === 1) return l;
-        if (r instanceof Sym && (r.name === "Infinity" || r.name === "infinity") && l instanceof Num) return new Num(0); // Finite / Infinity -> 0
         if (l.toString() === r.toString()) return new Num(1);
 
         // Complex 1/i -> -i
@@ -1222,6 +1297,28 @@ class Pow extends BinaryOp {
         if (r instanceof Num && r.value === 0) return new Num(1);
         if (r instanceof Num && r.value === 1) return l;
         if (l instanceof Num && r instanceof Num) return new Num(Math.pow(l.value, r.value));
+
+        // Infinity Powers
+        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+        const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
+        const checkInf = (n) => isInf(n) ? 1 : (isNegInf(n) ? -1 : 0);
+
+        const infL = checkInf(l);
+        if (infL !== 0) {
+            if (r instanceof Num) {
+                if (r.value === 0) return new Sym("NaN"); // Inf^0 indeterminate
+                if (r.value > 0) {
+                    if (infL === 1) return new Sym("Infinity");
+                    // (-Inf)^n
+                    if (Number.isInteger(r.value)) {
+                        return (r.value % 2 === 0) ? new Sym("Infinity") : new Mul(new Num(-1), new Sym("Infinity"));
+                    }
+                    return new Sym("NaN"); // Complex?
+                }
+                // r < 0: 1/Inf -> 0
+                return new Num(0);
+            }
+        }
 
         // Simplify (-x)^even -> x^even
         if (l instanceof Mul && l.left instanceof Num && l.left.value === -1 && r instanceof Num && Number.isInteger(r.value) && r.value % 2 === 0) {
