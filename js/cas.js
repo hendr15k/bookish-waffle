@@ -350,6 +350,10 @@ class CAS {
                 const trigRes = this._integrateTrig(func, varNode);
                 if (trigRes) return trigRes;
 
+                // 4. Special Functions (Error Function, etc.)
+                const specialRes = this._integrateSpecial(func, varNode);
+                if (specialRes) return specialRes;
+
                 let res = func.integrate(varNode);
                 if (res instanceof Call && res.funcName === 'integrate') {
                      // 1. Try Integration by Substitution (Logarithmic form f'/f and others)
@@ -892,6 +896,11 @@ class CAS {
                  return new Call('gamma', args);
             }
 
+            if (node.funcName === 'beta') {
+                 if (node.args.length !== 2) throw new Error("beta requires 2 arguments");
+                 return this._beta(args[0], args[1]);
+            }
+
             if (node.funcName === 'nCr') {
                 if (node.args.length !== 2) throw new Error("nCr requires 2 arguments");
                 return this._nCr(args[0], args[1]);
@@ -1239,6 +1248,12 @@ class CAS {
                 return this._volumeSolid(args[0], args[1], args[2], args[3], axis);
             }
 
+            if (node.funcName === 'surfaceArea' || node.funcName === 'area_surface') {
+                 if (node.args.length < 4) throw new Error("surfaceArea requires at least 4 arguments: expr, var, start, end");
+                 const axis = node.args.length > 4 ? args[4] : new Sym('x');
+                 return this._surfaceArea(args[0], args[1], args[2], args[3], axis);
+            }
+
             if (node.funcName === 'arg') {
                 if (node.args.length !== 1) throw new Error("arg requires 1 argument");
                 return this._arg(args[0]);
@@ -1570,6 +1585,16 @@ class CAS {
             if (node.funcName === 'moment') {
                  if (node.args.length !== 2) throw new Error("moment requires 2 arguments: list, k");
                  return this._moment(args[0], args[1]);
+            }
+
+            if (node.funcName === 'isSubset') {
+                if (node.args.length !== 2) throw new Error("isSubset requires 2 arguments (lists)");
+                return this._isSubset(args[0], args[1]);
+            }
+
+            if (node.funcName === 'cartesianProduct') {
+                if (node.args.length !== 2) throw new Error("cartesianProduct requires 2 arguments (lists)");
+                return this._cartesianProduct(args[0], args[1]);
             }
 
             if (node.funcName === 'skewness') {
@@ -3621,7 +3646,7 @@ class CAS {
         return 0; // Failed
     }
 
-    _beta(a, b) {
+    _betaNumeric(a, b) {
         // B(a, b) = Gamma(a)Gamma(b) / Gamma(a+b)
         return Math.exp(this._logGamma(a) + this._logGamma(b) - this._logGamma(a + b));
     }
@@ -9753,6 +9778,105 @@ class CAS {
         }
 
         return this.evaluate(new Call('integrate', [integrand, varNode, a, b])).simplify();
+    }
+
+    _surfaceArea(expr, varNode, a, b, axis) {
+        if (!(varNode instanceof Sym)) throw new Error("Variable must be a symbol");
+        // S = int 2*pi * r(x) * sqrt(1 + (f')^2) dx
+        // if axis=x, r(x) = f(x) (or |f(x)|)
+        // if axis=y, r(x) = x (or |x|)
+
+        let axisName = 'x';
+        if (axis instanceof Sym) axisName = axis.name;
+
+        const deriv = expr.diff(varNode).simplify();
+        const ds = new Call('sqrt', [new Add(new Num(1), new Pow(deriv, new Num(2)))]).simplify();
+
+        let radius;
+        if (axisName === 'x' || axisName === 'X') {
+            radius = expr; // Should be abs(expr), but usually expr >= 0 assumed
+        } else if (axisName === 'y' || axisName === 'Y') {
+            radius = varNode;
+        } else {
+             // Rotate around y = k? radius = expr - k
+             radius = new Sub(expr, axis);
+        }
+
+        const integrand = new Mul(new Mul(new Num(2), new Sym('pi')), new Mul(radius, ds));
+        return this.evaluate(new Call('integrate', [integrand, varNode, a, b])).simplify();
+    }
+
+    _beta(x, y) {
+        // B(x, y) = gamma(x)gamma(y) / gamma(x+y)
+        const gx = this.evaluate(new Call('gamma', [x]));
+        const gy = this.evaluate(new Call('gamma', [y]));
+        const gxy = this.evaluate(new Call('gamma', [new Add(x, y)]));
+        return new Div(new Mul(gx, gy), gxy).simplify();
+    }
+
+    _isSubset(list1, list2) {
+        if (!(list1 instanceof Vec) || !(list2 instanceof Vec)) return new Call('isSubset', [list1, list2]);
+        // Check if every element of list1 is in list2
+        // Simplistic check using toString comparison for symbolic equality
+        for (const el1 of list1.elements) {
+            const s1 = el1.toString();
+            let found = false;
+            for (const el2 of list2.elements) {
+                if (el2.toString() === s1) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return new Num(0);
+        }
+        return new Num(1);
+    }
+
+    _cartesianProduct(list1, list2) {
+        if (!(list1 instanceof Vec) || !(list2 instanceof Vec)) return new Call('cartesianProduct', [list1, list2]);
+        const res = [];
+        for (const el1 of list1.elements) {
+            for (const el2 of list2.elements) {
+                res.push(new Vec([el1, el2]));
+            }
+        }
+        return new Vec(res);
+    }
+
+    _integrateSpecial(expr, varNode) {
+        // exp(-a*x^2) -> sqrt(pi)/(2*sqrt(a)) * erf(sqrt(a)*x)
+        // Check if expr is exp(...)
+        if (expr instanceof Call && expr.funcName === 'exp') {
+            const arg = expr.args[0]; // -a*x^2
+            // Check if arg is quadratic in varNode with no linear term
+            const poly = this._getPolyCoeffs(arg, varNode);
+            // coeffs[2] = -a, coeffs[1] = 0, coeffs[0] = c (ignore c for now or exp(c) factor)
+            if (poly && poly.maxDeg === 2) {
+                const c2 = poly.coeffs[2];
+                const c1 = poly.coeffs[1] || new Num(0);
+                const c0 = poly.coeffs[0] || new Num(0);
+
+                if (c1.evaluateNumeric() === 0 && c2.evaluateNumeric() < 0) {
+                     // -a = c2 => a = -c2
+                     const a = new Mul(new Num(-1), c2).simplify();
+                     const sqrtA = new Call('sqrt', [a]).simplify();
+
+                     // Integral of exp(-ax^2) = sqrt(pi)/(2*sqrt(a)) * erf(sqrt(a)*x)
+                     const factor = new Div(new Call('sqrt', [new Sym('pi')]), new Mul(new Num(2), sqrtA));
+                     const erfTerm = new Call('erf', [new Mul(sqrtA, varNode)]);
+
+                     let result = new Mul(factor, erfTerm).simplify();
+
+                     // Handle c0: exp(c0) factor
+                     if (c0.evaluateNumeric() !== 0) {
+                         const C = new Call('exp', [c0]).simplify();
+                         result = new Mul(C, result).simplify();
+                     }
+                     return result;
+                }
+            }
+        }
+        return null;
     }
 
     _sturm(poly, varNode) {

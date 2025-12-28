@@ -520,6 +520,21 @@ window.HELP_DATA = {
     "studentTPDF": { "description": "Student's t PDF.", "syntax": "studentTPDF(x, df)", "examples": ["studentTPDF(0, 5)"] },
     "invT": { "description": "Inverse Student's t CDF.", "syntax": "invT(area, df)", "examples": ["invT(0.95, 10)"] },
 
+    // --- Special Functions ---
+    "besselJ": { "description": "Bessel function of the first kind.", "syntax": "besselJ(n, x)", "examples": ["besselJ(0, x)"] },
+    "besselY": { "description": "Bessel function of the second kind.", "syntax": "besselY(n, x)", "examples": ["besselY(0, x)"] },
+    "legendre": { "description": "Legendre polynomial P_n(x).", "syntax": "legendre(n, x)", "examples": ["legendre(3, x)"] },
+    "chebyshev": { "description": "Chebyshev polynomial T_n(x).", "syntax": "chebyshev(n, x)", "examples": ["chebyshev(3, x)"] },
+    "hermite": { "description": "Hermite polynomial H_n(x).", "syntax": "hermite(n, x)", "examples": ["hermite(3, x)"] },
+    "laguerre": { "description": "Laguerre polynomial L_n(x).", "syntax": "laguerre(n, x)", "examples": ["laguerre(3, x)"] },
+    "surfaceArea": {
+        "description": "Surface area of revolution.",
+        "syntax": "surfaceArea(f, x, a, b, [axis])",
+        "examples": ["surfaceArea(x^2, x, 0, 1)", "surfaceArea(x^2, x, 0, 1, y)"]
+    },
+    "isSubset": { "description": "Checks if list1 is a subset of list2.", "syntax": "isSubset(list1, list2)", "examples": ["isSubset([1,2], [1,2,3])"] },
+    "cartesianProduct": { "description": "Cartesian product of two lists.", "syntax": "cartesianProduct(l1, l2)", "examples": ["cartesianProduct([1,2], [a,b])"] },
+
     // --- Engineering ---
     "cis": { "description": "Polar complex form: cos(x) + i*sin(x).", "syntax": "cis(angle_deg)", "examples": ["cis(90)"] },
     "phasor": { "description": "Phasor form.", "syntax": "phasor(mag, angle_deg)", "examples": ["phasor(10, 45)"] },
