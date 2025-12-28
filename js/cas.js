@@ -1839,6 +1839,38 @@ class CAS {
                 return this._kroneckerDelta(args[0], args[1]);
             }
 
+            if (node.funcName === 'fft') {
+                if (node.args.length !== 1) throw new Error("fft requires 1 argument (list)");
+                return this._fft(args[0]);
+            }
+
+            if (node.funcName === 'ifft') {
+                if (node.args.length !== 1) throw new Error("ifft requires 1 argument (list)");
+                return this._ifft(args[0]);
+            }
+
+            if (node.funcName === 'cnf') {
+                if (node.args.length !== 1) throw new Error("cnf requires 1 argument");
+                return this._cnf(args[0]);
+            }
+
+            if (node.funcName === 'dnf') {
+                if (node.args.length !== 1) throw new Error("dnf requires 1 argument");
+                return this._dnf(args[0]);
+            }
+
+            if (node.funcName === 'annuity') {
+                // annuity(rate, n, payment) -> FV
+                if (node.args.length !== 3) throw new Error("annuity requires 3 arguments: rate, n, payment");
+                return this._annuity(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'amortization') {
+                // amortization(rate, n, principal) -> payment
+                if (node.args.length !== 3) throw new Error("amortization requires 3 arguments: rate, n, principal");
+                return this._amortization(args[0], args[1], args[2]);
+            }
+
             return new Call(node.funcName, args);
         }
 
@@ -10246,6 +10278,233 @@ class CAS {
         }
         if (i.toString() === j.toString()) return new Num(1);
         return new Call('kroneckerDelta', [i, j]);
+    }
+
+    _fft(list) {
+        if (!(list instanceof Vec)) throw new Error("fft requires a list");
+        const n = list.elements.length;
+        if ((n & (n - 1)) !== 0 || n === 0) throw new Error("fft requires length to be a power of 2");
+
+        // Convert elements to complex {re, im}
+        const input = list.elements.map(e => {
+            const c = this._getComplexParts(e);
+            return { re: c.re.evaluateNumeric(), im: c.im.evaluateNumeric() };
+        });
+
+        // Check if numeric
+        if (input.some(x => isNaN(x.re) || isNaN(x.im))) {
+            return new Call('fft', [list]);
+        }
+
+        const fftRec = (x) => {
+            const N = x.length;
+            if (N <= 1) return x;
+            const even = fftRec(x.filter((_, i) => i % 2 === 0));
+            const odd = fftRec(x.filter((_, i) => i % 2 !== 0));
+            const T = new Array(N / 2);
+            for (let k = 0; k < N / 2; k++) {
+                const angle = -2 * Math.PI * k / N;
+                const wk = { re: Math.cos(angle), im: Math.sin(angle) };
+                // odd[k] * wk
+                const t = {
+                    re: wk.re * odd[k].re - wk.im * odd[k].im,
+                    im: wk.re * odd[k].im + wk.im * odd[k].re
+                };
+                T[k] = t;
+            }
+            const res = new Array(N);
+            for (let k = 0; k < N / 2; k++) {
+                res[k] = { re: even[k].re + T[k].re, im: even[k].im + T[k].im };
+                res[k + N / 2] = { re: even[k].re - T[k].re, im: even[k].im - T[k].im };
+            }
+            return res;
+        };
+
+        const output = fftRec(input);
+        // Convert back to Expr
+        return new Vec(output.map(c => {
+            // Simplify near-zero
+            const re = (Math.abs(c.re) < 1e-9) ? 0 : c.re;
+            const im = (Math.abs(c.im) < 1e-9) ? 0 : c.im;
+            if (im === 0) return new Num(re);
+            if (re === 0) return new Mul(new Num(im), new Sym('i'));
+            return new Add(new Num(re), new Mul(new Num(im), new Sym('i')));
+        }));
+    }
+
+    _ifft(list) {
+        if (!(list instanceof Vec)) throw new Error("ifft requires a list");
+        const n = list.elements.length;
+        if ((n & (n - 1)) !== 0 || n === 0) throw new Error("ifft requires length to be a power of 2");
+
+        // IFFT(x) = 1/N * conj(FFT(conj(x)))
+        const conjList = new Vec(list.elements.map(e => new Call('conj', [e]).simplify()));
+        const fftRes = this._fft(conjList);
+
+        if (fftRes instanceof Call) return new Call('ifft', [list]);
+
+        const result = new Vec(fftRes.elements.map(e => {
+            // conj(e) / N
+            const c = new Call('conj', [e]).simplify();
+            return new Div(c, new Num(n)).simplify();
+        }));
+        return result;
+    }
+
+    _cnf(expr) {
+        // Convert to Conjunctive Normal Form (AND of ORs)
+        // 1. Eliminate implications (already done by simplifier usually, but let's ensure)
+        // 2. Move NOT inwards (De Morgan)
+        // 3. Distribute OR over AND: A or (B and C) -> (A or B) and (A or C)
+
+        let current = expr;
+
+        // Helper: push NOT inwards
+        const pushNot = (e) => {
+            if (e instanceof Not) {
+                const arg = e.arg;
+                if (arg instanceof Not) return pushNot(arg.arg); // Double neg
+                if (arg instanceof And) return new Or(pushNot(new Not(arg.left)), pushNot(new Not(arg.right)));
+                if (arg instanceof Or) return new And(pushNot(new Not(arg.left)), pushNot(new Not(arg.right)));
+                return e;
+            }
+            if (e instanceof BinaryOp) {
+                // Recurse
+                // Note: BinaryOp constructor is abstract, use e.constructor
+                return new e.constructor(pushNot(e.left), pushNot(e.right));
+            }
+            return e;
+        };
+
+        // Helper: distribute OR over AND
+        const distribute = (e) => {
+            if (e instanceof And) {
+                return new And(distribute(e.left), distribute(e.right));
+            }
+            if (e instanceof Or) {
+                const l = distribute(e.left);
+                const r = distribute(e.right);
+                // (P and Q) or R -> (P or R) and (Q or R)
+                if (l instanceof And) {
+                    return new And(distribute(new Or(l.left, r)), distribute(new Or(l.right, r)));
+                }
+                // L or (P and Q) -> (L or P) and (L or Q)
+                if (r instanceof And) {
+                    return new And(distribute(new Or(l, r.left)), distribute(new Or(l, r.right)));
+                }
+                return new Or(l, r);
+            }
+            return e;
+        };
+
+        // Apply
+        // Simplify first to handle Implies/Iff -> Or/And/Not
+        let s = current.simplify();
+        // Expand logical operators if they are not basic And/Or/Not?
+        // simplify() handles implies/iff -> logic ops?
+        // Implies.simplify() -> Implies (unless numeric).
+        // We need transformation: A->B to !A or B.
+        const eliminate = (e) => {
+            if (e instanceof Implies) return new Or(new Not(eliminate(e.left)), eliminate(e.right));
+            if (e instanceof Iff) {
+                // (A->B) and (B->A)
+                const A = eliminate(e.left);
+                const B = eliminate(e.right);
+                return new And(new Or(new Not(A), B), new Or(new Not(B), A));
+            }
+            if (e instanceof Xor) {
+                // (A or B) and not (A and B)
+                const A = eliminate(e.left);
+                const B = eliminate(e.right);
+                return new And(new Or(A, B), new Not(new And(A, B)));
+            }
+            if (e instanceof BinaryOp) return new e.constructor(eliminate(e.left), eliminate(e.right));
+            if (e instanceof Not) return new Not(eliminate(e.arg));
+            return e;
+        };
+
+        s = eliminate(s);
+        s = pushNot(s); // simplify handles some, but be explicit
+        // Repeat distribute until stable? Or just once recursive?
+        // Distribute is recursive.
+        return distribute(s);
+    }
+
+    _dnf(expr) {
+        // Disjunctive Normal Form (OR of ANDs)
+        // Distribute AND over OR: A and (B or C) -> (A and B) or (A and C)
+
+        const eliminate = (e) => {
+            if (e instanceof Implies) return new Or(new Not(eliminate(e.left)), eliminate(e.right));
+            if (e instanceof Iff) {
+                // (A and B) or (!A and !B)
+                const A = eliminate(e.left);
+                const B = eliminate(e.right);
+                return new Or(new And(A, B), new And(new Not(A), new Not(B)));
+            }
+            if (e instanceof Xor) {
+                // (A and !B) or (!A and B)
+                const A = eliminate(e.left);
+                const B = eliminate(e.right);
+                return new Or(new And(A, new Not(B)), new And(new Not(A), B));
+            }
+            if (e instanceof BinaryOp) return new e.constructor(eliminate(e.left), eliminate(e.right));
+            if (e instanceof Not) return new Not(eliminate(e.arg));
+            return e;
+        };
+
+        const pushNot = (e) => {
+            if (e instanceof Not) {
+                const arg = e.arg;
+                if (arg instanceof Not) return pushNot(arg.arg);
+                if (arg instanceof And) return new Or(pushNot(new Not(arg.left)), pushNot(new Not(arg.right)));
+                if (arg instanceof Or) return new And(pushNot(new Not(arg.left)), pushNot(new Not(arg.right)));
+                return e;
+            }
+            if (e instanceof BinaryOp) return new e.constructor(pushNot(e.left), pushNot(e.right));
+            return e;
+        };
+
+        const distribute = (e) => {
+            if (e instanceof Or) {
+                return new Or(distribute(e.left), distribute(e.right));
+            }
+            if (e instanceof And) {
+                const l = distribute(e.left);
+                const r = distribute(e.right);
+                // A and (B or C) -> (A and B) or (A and C)
+                if (l instanceof Or) {
+                    return new Or(distribute(new And(l.left, r)), distribute(new And(l.right, r)));
+                }
+                if (r instanceof Or) {
+                    return new Or(distribute(new And(l, r.left)), distribute(new And(l, r.right)));
+                }
+                return new And(l, r);
+            }
+            return e;
+        };
+
+        let s = eliminate(expr);
+        s = pushNot(s);
+        return distribute(s);
+    }
+
+    _annuity(r, n, p) {
+        // FV = P * ((1+r)^n - 1) / r
+        const onePlusR = new Add(new Num(1), r);
+        const term = new Pow(onePlusR, n);
+        const num = new Sub(term, new Num(1));
+        const frac = new Div(num, r);
+        return new Mul(p, frac).simplify();
+    }
+
+    _amortization(r, n, pv) {
+        // P = r * PV / (1 - (1+r)^-n)
+        const onePlusR = new Add(new Num(1), r);
+        const term = new Pow(onePlusR, new Mul(new Num(-1), n));
+        const den = new Sub(new Num(1), term);
+        const num = new Mul(r, pv);
+        return new Div(num, den).simplify();
     }
 }
 
