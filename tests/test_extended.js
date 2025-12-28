@@ -112,10 +112,10 @@ test("Diff exp(x)", "diff(exp(x), x)", "exp(x)");
 test("Diff ln(x)", "diff(ln(x), x)", "(1 / x)");
 test("Diff x^2", "diff(x^2, x)", "(2 * x)");
 // Update expected: parentheses around arg in cos
-test("Diff chain rule sin(x^2)", "diff(sin(x^2), x)", "(cos((x^2)) * (2 * x))");
+test("Diff chain rule sin(x^2)", "diff(sin(x^2), x)", "(cos(x^2) * (2 * x))");
 
-test("Integrate x", "integrate(x, x)", "((x^2) / 2)");
-test("Integrate x^2", "integrate(x^2, x)", "((x^3) / 3)");
+test("Integrate x", "integrate(x, x)", "(x^2 / 2)");
+test("Integrate x^2", "integrate(x^2, x)", "(x^3 / 3)");
 test("Integrate 1/x", "integrate(1/x, x)", "ln(x)");
 test("Integrate constant", "integrate(5, x)", "(5 * x)");
 
@@ -145,11 +145,11 @@ test("Factor 10", "factor(10)", "factored(2, 5)");
 
 // 6. Equation Solving
 test("Solve linear", "solve(2*x - 4 = 0, x)", "2");
-test("Solve quadratic", "solve(x^2 - 1, x)", "set(1, -1)");
+test("Solve quadratic", "solve(x^2 - 1, x)", "{-1, 1}");
 
 // 7. Taylor Series
 // Update expected: matches current simplified output
-test("Taylor exp(x)", "taylor(exp(x), x, 0, 2)", "(1 + (x + ((x^2) / 2)))");
+test("Taylor exp(x)", "taylor(exp(x), x, 0, 2)", "(1 + (x + (x^2 / 2)))");
 
 // 8. Simplification
 test("Add 0", "x + 0", "x");
@@ -164,7 +164,7 @@ test("Pow 1", "x^1", "x");
 test("Implicit Mul Number-Var", "2x", "(2 * x)");
 test("Implicit Mul Var-Var", "x y", "(x * y)");
 test("Implicit Mul Parenthesis", "2(x+1)", "(2 * (x + 1))");
-test("Function Power", "sin^2(x)", "(sin(x)^2)");
+test("Function Power", "sin^2(x)", "sin(x)^2");
 
 // 10. Limits
 test("Limit sin(x)/x as x->0", "limit(sin(x)/x, x, 0)", "1");
