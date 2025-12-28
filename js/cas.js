@@ -1793,12 +1793,73 @@ class CAS {
                 return new Call(node.funcName, args).simplify();
             }
 
+            if (node.funcName === 'moebius') {
+                if (node.args.length !== 1) throw new Error("moebius requires 1 argument (integer)");
+                return this._moebius(args[0]);
+            }
+
+            if (node.funcName === 'sigma' || node.funcName === 'divisorSum') {
+                if (node.args.length < 1) throw new Error("sigma requires at least 1 argument");
+                const k = node.args.length > 1 ? args[1] : new Num(1);
+                return this._sigma(args[0], k);
+            }
+
+            if (node.funcName === 'legendreSymbol') {
+                if (node.args.length !== 2) throw new Error("legendreSymbol requires 2 arguments: a, p");
+                return this._legendreSymbol(args[0], args[1]);
+            }
+
+            if (node.funcName === 'stirling1') {
+                if (node.args.length !== 2) throw new Error("stirling1 requires 2 arguments: n, k");
+                return this._stirling1(args[0], args[1]);
+            }
+
+            if (node.funcName === 'stirling2') {
+                if (node.args.length !== 2) throw new Error("stirling2 requires 2 arguments: n, k");
+                return this._stirling2(args[0], args[1]);
+            }
+
+            if (node.funcName === 'bell') {
+                if (node.args.length !== 1) throw new Error("bell requires 1 argument: n");
+                return this._bell(args[0]);
+            }
+
+            if (node.funcName === 'isPerfect') {
+                if (node.args.length !== 1) throw new Error("isPerfect requires 1 argument");
+                return this._isPerfect(args[0]);
+            }
+
+            if (node.funcName === 'matrixPow' || node.funcName === 'matrix_pow') {
+                if (node.args.length !== 2) throw new Error("matrixPow requires 2 arguments: matrix, n");
+                return this._matrixPow(args[0], args[1]);
+            }
+
+            if (node.funcName === 'kroneckerDelta') {
+                if (node.args.length !== 2) throw new Error("kroneckerDelta requires 2 arguments");
+                return this._kroneckerDelta(args[0], args[1]);
+            }
+
             return new Call(node.funcName, args);
         }
 
         if (node instanceof BinaryOp) {
             const left = this._recursiveEval(node.left);
             const right = this._recursiveEval(node.right);
+
+            // Special handling for Matrix Power with negative exponent (Inverse)
+            // or large powers using diagonalization if needed
+            if (node instanceof Pow && left instanceof Vec && right instanceof Num) {
+                if (right.value === -1) {
+                    return this._inv(left);
+                }
+                // Forward to matrix pow logic if integer
+                if (Number.isInteger(right.value)) {
+                    // Let Pow.simplify handle small positive powers, or use _matrixPow for large?
+                    // Currently Pow.simplify handles small positive integers via loop.
+                    // For consistency, we can leave it or enhance.
+                }
+            }
+
             return new node.constructor(left, right).simplify();
         }
 
@@ -9959,6 +10020,232 @@ class CAS {
         const Vb = signChanges(b);
 
         return new Num(Math.abs(Va - Vb));
+    }
+
+    _getPrimeFactorsMap(n) {
+        const factors = this._primeFactors(n); // Vec of Num
+        const map = {};
+        if (factors instanceof Vec) {
+            factors.elements.forEach(f => {
+                if (f instanceof Num) {
+                    const val = f.value;
+                    map[val] = (map[val] || 0) + 1;
+                }
+            });
+        }
+        return map;
+    }
+
+    _moebius(n) {
+        n = n.simplify();
+        if (!(n instanceof Num && Number.isInteger(n.value) && n.value > 0)) {
+            return new Call('moebius', [n]);
+        }
+        if (n.value === 1) return new Num(1);
+
+        const map = this._getPrimeFactorsMap(n);
+        let count = 0;
+        for (const p in map) {
+            if (map[p] > 1) return new Num(0); // Square factor
+            count++;
+        }
+        return new Num(count % 2 === 0 ? 1 : -1);
+    }
+
+    _sigma(n, k) {
+        // sum of k-th powers of divisors
+        // sigma_k(n) = prod ( (p^(k(e+1)) - 1) / (p^k - 1) )
+        n = n.simplify();
+        k = k.simplify();
+        if (!(n instanceof Num && Number.isInteger(n.value) && n.value > 0) || !(k instanceof Num)) {
+            return new Call('sigma', [n, k]);
+        }
+
+        const map = this._getPrimeFactorsMap(n);
+        let res = new Num(1);
+        const kVal = k.value;
+
+        for (const pStr in map) {
+            const p = parseInt(pStr);
+            const e = map[pStr];
+            if (kVal === 0) {
+                // Count divisors: prod(e+1)
+                res = new Mul(res, new Num(e + 1));
+            } else {
+                // Geometric series sum: 1 + p^k + ... + p^(ke)
+                // = (p^(k(e+1)) - 1) / (p^k - 1)
+                const num = Math.pow(p, kVal * (e + 1)) - 1;
+                const den = Math.pow(p, kVal) - 1;
+                res = new Mul(res, new Num(num / den));
+            }
+        }
+        return res.simplify();
+    }
+
+    _legendreSymbol(a, p) {
+        a = a.simplify();
+        p = p.simplify();
+        if (!(a instanceof Num && Number.isInteger(a.value)) || !(p instanceof Num && Number.isInteger(p.value))) {
+            return new Call('legendreSymbol', [a, p]);
+        }
+        // (a/p) = a^((p-1)/2) mod p
+        // returns 1, -1, 0
+        const A = a.value;
+        const P = p.value;
+        if (P <= 2) throw new Error("legendreSymbol requires odd prime p > 2"); // Or p=2 trivial
+
+        if (A % P === 0) return new Num(0);
+
+        // Euler's criterion
+        const exp = (P - 1) / 2;
+        const res = this._modPow(new Num(A), new Num(exp), new Num(P));
+
+        // Result is in [0, P-1]. If P-1, return -1.
+        if (res.value === P - 1) return new Num(-1);
+        return res;
+    }
+
+    _stirling1(n, k) {
+        // Signed Stirling numbers of first kind s(n, k)
+        // Coeff of x^k in x(x-1)...(x-n+1) (falling factorial x_n)
+        // s(n, k) = s(n-1, k-1) - (n-1)s(n-1, k)
+        n = n.simplify();
+        k = k.simplify();
+        if (!(n instanceof Num && Number.isInteger(n.value)) || !(k instanceof Num && Number.isInteger(k.value))) {
+            return new Call('stirling1', [n, k]);
+        }
+        const N = n.value;
+        const K = k.value;
+        if (K < 0 || K > N) return new Num(0);
+        if (N === 0 && K === 0) return new Num(1);
+        if (N === 0 || K === 0) return new Num(0);
+
+        // DP table
+        // Map "n,k" -> val
+        const memo = {};
+        const s = (n, k) => {
+            if (k === n) return 1;
+            if (k === 0) return 0; // n>0
+            const key = n + "," + k;
+            if (memo[key] !== undefined) return memo[key];
+            const res = s(n - 1, k - 1) - (n - 1) * s(n - 1, k);
+            memo[key] = res;
+            return res;
+        };
+        return new Num(s(N, K));
+    }
+
+    _stirling2(n, k) {
+        // Stirling numbers of second kind S(n, k)
+        // S(n, k) = S(n-1, k-1) + k*S(n-1, k)
+        n = n.simplify();
+        k = k.simplify();
+        if (!(n instanceof Num && Number.isInteger(n.value)) || !(k instanceof Num && Number.isInteger(k.value))) {
+            return new Call('stirling2', [n, k]);
+        }
+        const N = n.value;
+        const K = k.value;
+        if (K < 0 || K > N) return new Num(0);
+        if (N === 0 && K === 0) return new Num(1);
+        if (N === 0 || K === 0) return new Num(0);
+
+        const memo = {};
+        const S = (n, k) => {
+            if (k === n) return 1;
+            if (k === 0) return 0;
+            const key = n + "," + k;
+            if (memo[key] !== undefined) return memo[key];
+            const res = S(n - 1, k - 1) + k * S(n - 1, k);
+            memo[key] = res;
+            return res;
+        };
+        return new Num(S(N, K));
+    }
+
+    _bell(n) {
+        n = n.simplify();
+        if (!(n instanceof Num && Number.isInteger(n.value) && n.value >= 0)) {
+            return new Call('bell', [n]);
+        }
+        const N = n.value;
+        let sum = new Num(0);
+        for (let k = 0; k <= N; k++) {
+            sum = new Add(sum, this._stirling2(new Num(N), new Num(k)));
+        }
+        return sum.simplify();
+    }
+
+    _isPerfect(n) {
+        n = n.simplify();
+        if (!(n instanceof Num)) return new Call('isPerfect', [n]);
+        // sigma(n) == 2n
+        const sig = this._sigma(n, new Num(1));
+        const twoN = new Num(2 * n.value);
+        return new Num(sig.value === twoN.value ? 1 : 0);
+    }
+
+    _matrixPow(matrix, n) {
+        if (!(matrix instanceof Vec)) throw new Error("matrixPow requires a matrix");
+        n = n.simplify();
+
+        // Integer power handled by loop or binary exponentiation
+        if (n instanceof Num && Number.isInteger(n.value)) {
+            const exp = n.value;
+            if (exp === 0) {
+                // Identity
+                return this._identity(new Num(matrix.elements.length));
+            }
+            if (exp === -1) return this._inv(matrix);
+            if (exp < 0) return this._matrixPow(this._inv(matrix), new Num(-exp));
+
+            // Binary Exponentiation
+            let res = this._identity(new Num(matrix.elements.length));
+            let base = matrix;
+            let e = exp;
+            while (e > 0) {
+                if (e % 2 === 1) res = new Mul(res, base).simplify();
+                base = new Mul(base, base).simplify();
+                e = Math.floor(e / 2);
+            }
+            return res;
+        }
+
+        // Fractional/Symbolic power: Use diagonalization P D^n P^-1
+        // Requires matrix to be diagonalizable
+        try {
+            const [P, D] = this._diagonalize(matrix).elements;
+            const D_pow_rows = [];
+            const rows = D.elements.length;
+            for(let i=0; i<rows; i++) {
+                const row = [];
+                for(let j=0; j<rows; j++) {
+                    if (i === j) {
+                        const val = D.elements[i].elements[j];
+                        row.push(new Pow(val, n).simplify());
+                    } else {
+                        row.push(new Num(0));
+                    }
+                }
+                D_pow_rows.push(new Vec(row));
+            }
+            const D_pow = new Vec(D_pow_rows);
+
+            const P_inv = this._inv(P);
+            const PD = new Mul(P, D_pow).simplify();
+            return new Mul(PD, P_inv).simplify();
+        } catch (e) {
+            return new Call('matrixPow', [matrix, n]);
+        }
+    }
+
+    _kroneckerDelta(i, j) {
+        i = i.simplify();
+        j = j.simplify();
+        if (i instanceof Num && j instanceof Num) {
+            return new Num(i.value === j.value ? 1 : 0);
+        }
+        if (i.toString() === j.toString()) return new Num(1);
+        return new Call('kroneckerDelta', [i, j]);
     }
 }
 
