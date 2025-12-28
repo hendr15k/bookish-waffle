@@ -3067,6 +3067,12 @@ class CAS {
                     };
                     collect(sol1);
                     collect(sol2);
+                    sols.sort((a, b) => {
+                        const va = a.evaluateNumeric();
+                        const vb = b.evaluateNumeric();
+                        if (!isNaN(va) && !isNaN(vb)) return va - vb;
+                        return a.toString().localeCompare(b.toString());
+                    });
                     return new Call('set', sols);
                 }
             }
@@ -3087,6 +3093,12 @@ class CAS {
                     };
                     collect(sol1);
                     collect(sol2);
+                    sols.sort((a, b) => {
+                        const va = a.evaluateNumeric();
+                        const vb = b.evaluateNumeric();
+                        if (!isNaN(va) && !isNaN(vb)) return va - vb;
+                        return a.toString().localeCompare(b.toString());
+                    });
                     return new Call('set', sols);
                  }
             }
@@ -3157,7 +3169,15 @@ class CAS {
                         const sol1 = new Div(new Add(new Mul(new Num(-1), B), sqrtDisc), new Mul(new Num(2), A));
                         const sol2 = new Div(new Sub(new Mul(new Num(-1), B), sqrtDisc), new Mul(new Num(2), A));
 
-                        return new Call("set", [sol1.simplify(), sol2.simplify()]);
+                        const results = [sol1.simplify(), sol2.simplify()];
+                        results.sort((a, b) => {
+                            const va = a.evaluateNumeric();
+                            const vb = b.evaluateNumeric();
+                            if (!isNaN(va) && !isNaN(vb)) return va - vb;
+                            return a.toString().localeCompare(b.toString());
+                        });
+
+                        return new Call("set", results);
                     }
                 } else if (poly.maxDeg > 2) {
                     // Try factoring higher degree polynomials
@@ -3219,6 +3239,13 @@ class CAS {
                                 });
 
                                 if (unique.length === 1) return unique[0];
+                                // Sort solutions if possible
+                                unique.sort((a, b) => {
+                                    const va = a.evaluateNumeric();
+                                    const vb = b.evaluateNumeric();
+                                    if (!isNaN(va) && !isNaN(vb)) return va - vb;
+                                    return a.toString().localeCompare(b.toString());
+                                });
                                 return new Call("set", unique);
                             }
                         }
@@ -4168,6 +4195,13 @@ class CAS {
             if (isZero(num) && isZero(den)) {
                  const diffNum = expr.left.diff(varNode).simplify();
                  const diffDen = expr.right.diff(varNode).simplify();
+                 // Use a temporary Division that doesn't eager simplify to float if possible,
+                 // but Div constructor does not simplify unless operands are numbers.
+                 // The issue is likely 'new Div(diffNum, diffDen)' if diffNum/diffDen are simple integers.
+                 // Div.simplify() handles integer division. We want to avoid it if it returns float?
+                 // But Div(1, 2).simplify() -> Div(1, 2) unless one is float.
+                 // Check if simplify() was called on new Div inside the recursion?
+                 // Yes, recursive _limit might simplify result.
                  return this._limit(new Div(diffNum, diffDen), varNode, point, depth + 1, dir);
             }
 
@@ -4178,7 +4212,18 @@ class CAS {
             }
 
             if (num instanceof Num && den instanceof Num) {
-                if (den.value !== 0) return new Num(num.value / den.value);
+                if (den.value !== 0) {
+                    // Prefer exact division if integer
+                    if (Number.isInteger(num.value) && Number.isInteger(den.value)) {
+                        if (num.value % den.value === 0) return new Num(num.value / den.value);
+                        // GCD reduction
+                        const gcd = (a, b) => !b ? a : gcd(b, a % b);
+                        const common = gcd(Math.abs(num.value), Math.abs(den.value));
+                        if (common > 1) return new Div(new Num(num.value / common), new Num(den.value / common));
+                        return new Div(num, den);
+                    }
+                    return new Num(num.value / den.value);
+                }
                 if (num.value !== 0 && den.value === 0) {
                      // Directional Limit Logic
                      if (dir !== 0) {
