@@ -95,7 +95,7 @@ test("Power", "2 ^ 3", "8");
 // Algebra
 test("Variable", "x", "x");
 test("Symbolic Addition", "x + x", "(2 * x)");
-test("Symbolic Mul", "x * x", "(x^2)");
+test("Symbolic Mul", "x * x", "x^2");
 
 // Vectors
 test("Vector Addition", "[1, 2] + [3, 4]", "[4, 6]");
@@ -104,7 +104,7 @@ test("Vector * Matrix", "[1, 2] * [[3, 4], [5, 6]]", "[13, 16]");
 test("Matrix * Vector", "[[1, 2], [3, 4]] * [5, 6]", "[17, 39]");
 
 // Calculus
-test("Diff tan(x)", "diff(tan(x), x)", "(1 / (cos(x)^2))");
+test("Diff tan(x)", "diff(tan(x), x)", "(1 / cos(x)^2)");
 test("Limit tan(x)/x", "limit(tan(x)/x, x, 0)", "1");
 
 // Lexer Bug Tests

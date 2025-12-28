@@ -1611,21 +1611,37 @@ class Call extends Expr {
             const arg = simpleArgs[0];
             // asin(sin(x)) -> x (simplified, ignoring domain issues for now)
             if (arg instanceof Call && arg.funcName === 'sin') return arg.args[0];
-            if (arg instanceof Num && arg.value === 0) return new Num(0);
-            if (arg instanceof Num && arg.value === 1) return new Div(new Sym('pi'), new Num(2)).simplify();
-            if (arg instanceof Num && arg.value === -1) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(2)).simplify();
-            if (arg instanceof Num && arg.value === 0.5) return new Div(new Sym('pi'), new Num(6)).simplify();
-            if (arg instanceof Num && arg.value === -0.5) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(6)).simplify();
+
+            const val = arg.evaluateNumeric();
+            if (!isNaN(val)) {
+                if (Math.abs(val) < 1e-9) return new Num(0);
+                if (Math.abs(val - 1) < 1e-9) return new Div(new Sym('pi'), new Num(2)).simplify();
+                if (Math.abs(val + 1) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(2)).simplify();
+                if (Math.abs(val - 0.5) < 1e-9) return new Div(new Sym('pi'), new Num(6)).simplify();
+                if (Math.abs(val + 0.5) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(6)).simplify();
+                if (Math.abs(val - Math.sqrt(2)/2) < 1e-9) return new Div(new Sym('pi'), new Num(4)).simplify();
+                if (Math.abs(val + Math.sqrt(2)/2) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(4)).simplify();
+                if (Math.abs(val - Math.sqrt(3)/2) < 1e-9) return new Div(new Sym('pi'), new Num(3)).simplify();
+                if (Math.abs(val + Math.sqrt(3)/2) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(3)).simplify();
+            }
         }
         if (this.funcName === 'acos') {
             const arg = simpleArgs[0];
             // acos(cos(x)) -> x
             if (arg instanceof Call && arg.funcName === 'cos') return arg.args[0];
-            if (arg instanceof Num && arg.value === 1) return new Num(0);
-            if (arg instanceof Num && arg.value === 0) return new Div(new Sym('pi'), new Num(2)).simplify();
-            if (arg instanceof Num && arg.value === -1) return new Sym('pi');
-            if (arg instanceof Num && arg.value === 0.5) return new Div(new Sym('pi'), new Num(3)).simplify();
-            if (arg instanceof Num && arg.value === -0.5) return new Div(new Mul(new Num(2), new Sym('pi')), new Num(3)).simplify();
+
+            const val = arg.evaluateNumeric();
+            if (!isNaN(val)) {
+                if (Math.abs(val - 1) < 1e-9) return new Num(0);
+                if (Math.abs(val) < 1e-9) return new Div(new Sym('pi'), new Num(2)).simplify();
+                if (Math.abs(val + 1) < 1e-9) return new Sym('pi');
+                if (Math.abs(val - 0.5) < 1e-9) return new Div(new Sym('pi'), new Num(3)).simplify();
+                if (Math.abs(val + 0.5) < 1e-9) return new Div(new Mul(new Num(2), new Sym('pi')), new Num(3)).simplify();
+                if (Math.abs(val - Math.sqrt(2)/2) < 1e-9) return new Div(new Sym('pi'), new Num(4)).simplify();
+                if (Math.abs(val + Math.sqrt(2)/2) < 1e-9) return new Div(new Mul(new Num(3), new Sym('pi')), new Num(4)).simplify();
+                if (Math.abs(val - Math.sqrt(3)/2) < 1e-9) return new Div(new Sym('pi'), new Num(6)).simplify();
+                if (Math.abs(val + Math.sqrt(3)/2) < 1e-9) return new Div(new Mul(new Num(5), new Sym('pi')), new Num(6)).simplify();
+            }
         }
         if (this.funcName === 'atan') {
             const arg = simpleArgs[0];
