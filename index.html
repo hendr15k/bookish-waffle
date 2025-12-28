@@ -2827,7 +2827,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                     // Iterate t from min to max
                     const tMin = parseFloat(p.min);
                     const tMax = parseFloat(p.max);
-                    const tSteps = 500;
+                    const tSteps = p.nstep ? p.nstep : 500;
                     for (let i = 0; i <= tSteps; i++) {
                         const t = tMin + (tMax - tMin) * (i / tSteps);
                         try {
@@ -2850,7 +2850,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                     // Iterate theta
                     const tMin = parseFloat(p.min);
                     const tMax = parseFloat(p.max);
-                    const tSteps = 500;
+                    const tSteps = p.nstep ? p.nstep : 500;
                     for (let i = 0; i <= tSteps; i++) {
                         const t = tMin + (tMax - tMin) * (i / tSteps);
                         try {
@@ -2888,90 +2888,94 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                         } catch(e) { return NaN; }
                     };
 
-                    const maxDepth = 5;
-                    // Recursive sampling
-                    const addPoints = (x1, y1, x2, y2, depth) => {
-                        const xm = (x1 + x2) / 2;
-                        const ym = sample(xm);
-
-                        // Check for validity
-                        const valid1 = !isNaN(y1) && isFinite(y1);
-                        const valid2 = !isNaN(y2) && isFinite(y2);
-                        const validM = !isNaN(ym) && isFinite(ym);
-
-                        if (!validM) {
-                            // If midpoint is invalid but endpoints valid, maybe asymptotes?
-                            // Just recurse a bit to find boundary
-                            if (depth < maxDepth && (valid1 || valid2)) {
-                                addPoints(x1, y1, xm, ym, depth + 1);
-                                points.push({x: xm, y: NaN}); // mark discontinuity
-                                addPoints(xm, ym, x2, y2, depth + 1);
-                            } else {
-                                points.push({x: xm, y: NaN});
+                    // Use nstep if defined for fixed steps
+                    if (p.nstep) {
+                        const steps = p.nstep;
+                        const dx = (maxX - minX) / steps;
+                        for(let i=0; i<=steps; i++) {
+                            const x = minX + i*dx;
+                            const y = sample(x);
+                            points.push({x: x, y: y});
+                            if (!isNaN(y) && isFinite(y)) {
+                                if (y < calcMinY) calcMinY = y;
+                                if (y > calcMaxY) calcMaxY = y;
                             }
-                            return;
                         }
+                    } else {
+                        const maxDepth = 5;
+                        // Recursive sampling
+                        const addPoints = (x1, y1, x2, y2, depth) => {
+                            const xm = (x1 + x2) / 2;
+                            const ym = sample(xm);
 
-                        if (!valid1 || !valid2) {
-                             // Recovering from NaN
-                             if (depth < maxDepth) {
-                                 addPoints(x1, y1, xm, ym, depth + 1);
-                                 points.push({x: xm, y: ym});
-                                 addPoints(xm, ym, x2, y2, depth + 1);
-                             }
-                             return;
+                            // Check for validity
+                            const valid1 = !isNaN(y1) && isFinite(y1);
+                            const valid2 = !isNaN(y2) && isFinite(y2);
+                            const validM = !isNaN(ym) && isFinite(ym);
+
+                            if (!validM) {
+                                // If midpoint is invalid but endpoints valid, maybe asymptotes?
+                                // Just recurse a bit to find boundary
+                                if (depth < maxDepth && (valid1 || valid2)) {
+                                    addPoints(x1, y1, xm, ym, depth + 1);
+                                    points.push({x: xm, y: NaN}); // mark discontinuity
+                                    addPoints(xm, ym, x2, y2, depth + 1);
+                                } else {
+                                    points.push({x: xm, y: NaN});
+                                }
+                                return;
+                            }
+
+                            if (!valid1 || !valid2) {
+                                 // Recovering from NaN
+                                 if (depth < maxDepth) {
+                                     addPoints(x1, y1, xm, ym, depth + 1);
+                                     points.push({x: xm, y: ym});
+                                     addPoints(xm, ym, x2, y2, depth + 1);
+                                 }
+                                 return;
+                            }
+
+                            // Adaptive criteria: non-linearity
+                            // Check if midpoint deviates from line connecting endpoints
+                            const yLin = (y1 + y2) / 2;
+                            const diff = Math.abs(ym - yLin);
+
+                            const dy = Math.abs(y2 - y1);
+                            const threshold = (dy === 0) ? 0.01 : dy * 0.1;
+
+                            if (depth < maxDepth && diff > Math.max(0.001, threshold)) {
+                                addPoints(x1, y1, xm, ym, depth + 1);
+                                points.push({x: xm, y: ym});
+                                addPoints(xm, ym, x2, y2, depth + 1);
+                            }
+                        };
+
+                        // Initial coarse steps
+                        const initialSteps = Math.min(steps, 200); // Coarser than pixels
+                        const dx = (maxX - minX) / initialSteps;
+
+                        let prevX = minX;
+                        let prevY = sample(minX);
+                        points.push({x: prevX, y: prevY});
+                        if (prevY < calcMinY) calcMinY = prevY;
+                        if (prevY > calcMaxY) calcMaxY = prevY;
+
+                        for (let i = 1; i <= initialSteps; i++) {
+                            const x = minX + i * dx;
+                            const y = sample(x);
+
+                            addPoints(prevX, prevY, x, y, 0);
+                            points.push({x: x, y: y});
+
+                            if (!isNaN(y) && isFinite(y)) {
+                                if (y < calcMinY) calcMinY = y;
+                                if (y > calcMaxY) calcMaxY = y;
+                            }
+
+                            prevX = x;
+                            prevY = y;
                         }
-
-                        // Adaptive criteria: non-linearity
-                        // Check if midpoint deviates from line connecting endpoints
-                        // Since we don't have Y-scale yet, we use relative error or angle?
-                        // Simple absolute curvature approximation: |y_mid - (y1+y2)/2|
-                        const yLin = (y1 + y2) / 2;
-                        const diff = Math.abs(ym - yLin);
-
-                        // Heuristic threshold: if curvature is high relative to dx?
-                        // Or just if it looks "bumpy".
-                        // Threshold needs to be relative to Y values?
-                        // Let's use a small constant assuming normalized coordinates or just refine if change is significant
-                        // compared to the change in Y over the segment.
-                        const dy = Math.abs(y2 - y1);
-                        const threshold = (dy === 0) ? 0.01 : dy * 0.1;
-
-                        // Also check for discontinuity (large jump with sign change or huge slope)
-                        // If slope is extremely high, we might want to sample more to confirm asymptote
-
-                        if (depth < maxDepth && diff > Math.max(0.001, threshold)) {
-                            addPoints(x1, y1, xm, ym, depth + 1);
-                            points.push({x: xm, y: ym});
-                            addPoints(xm, ym, x2, y2, depth + 1);
-                        }
-                        // Else assume linear enough
-                    };
-
-                    // Initial coarse steps
-                    const initialSteps = Math.min(steps, 200); // Coarser than pixels
-                    const dx = (maxX - minX) / initialSteps;
-
-                    let prevX = minX;
-                    let prevY = sample(minX);
-                    points.push({x: prevX, y: prevY});
-                    if (prevY < calcMinY) calcMinY = prevY;
-                    if (prevY > calcMaxY) calcMaxY = prevY;
-
-                    for (let i = 1; i <= initialSteps; i++) {
-                        const x = minX + i * dx;
-                        const y = sample(x);
-
-                        addPoints(prevX, prevY, x, y, 0);
-                        points.push({x: x, y: y});
-
-                        if (!isNaN(y) && isFinite(y)) {
-                            if (y < calcMinY) calcMinY = y;
-                            if (y > calcMaxY) calcMaxY = y;
-                        }
-
-                        prevX = x;
-                        prevY = y;
                     }
                 }
                 allPoints.push(points);
