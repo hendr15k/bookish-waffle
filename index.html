@@ -1735,8 +1735,26 @@
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-nrg')">Energy</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-elec')">Electricity</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-waves')">Waves</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-phys-optics')">Optics</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-ac')">Wechselstrom (AC)</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-const')">Constants</button>
+        </div>
+
+        <!-- Optics Tab -->
+        <div id="tab-phys-optics" class="tab-content">
+             <div class="tool-form">
+                 <div class="form-group">
+                     <label class="form-label">Calculation</label>
+                     <select id="phys-optics-type" class="form-input" onchange="updatePhysicsInputs('optics')">
+                         <option value="f">Focal Length (f)</option>
+                         <option value="di">Image Dist (di)</option>
+                         <option value="do">Object Dist (do)</option>
+                         <option value="m">Magnification (m)</option>
+                     </select>
+                 </div>
+                 <div id="phys-optics-inputs"></div>
+                 <button class="action-btn" onclick="runPhysics('optics')">Calculate</button>
+             </div>
         </div>
 
         <!-- AC Circuits Tab -->
@@ -2398,6 +2416,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 updatePhysicsInputs('elec');
                 updatePhysicsInputs('waves');
                 updatePhysicsInputs('ac');
+                updatePhysicsInputs('optics');
             }
         };
 
@@ -6520,6 +6539,22 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                  } else if (type === 'T') {
                      container.appendChild(createInput('phys-f', 'Frequency (f)'));
                  }
+             } else if (tab === 'optics') {
+                 if (type === 'f') {
+                     container.appendChild(createInput('phys-do', 'Object Dist (do)'));
+                     container.appendChild(createInput('phys-di', 'Image Dist (di)'));
+                 } else if (type === 'di') {
+                     container.appendChild(createInput('phys-f', 'Focal Length (f)'));
+                     container.appendChild(createInput('phys-do', 'Object Dist (do)'));
+                 } else if (type === 'do') {
+                     container.appendChild(createInput('phys-f', 'Focal Length (f)'));
+                     container.appendChild(createInput('phys-di', 'Image Dist (di)'));
+                 } else if (type === 'm') {
+                     container.appendChild(createInput('phys-di', 'Image Dist (di)'));
+                     container.appendChild(createInput('phys-do', 'Object Dist (do)'));
+                     container.appendChild(createInput('phys-hi', 'Image Height (hi) (optional)', ''));
+                     container.appendChild(createInput('phys-ho', 'Object Height (ho) (optional)', ''));
+                 }
              } else if (tab === 'ac') {
                  if (type === 'reactance') {
                      container.appendChild(createInput('phys-f', 'Frequency (Hz)'));
@@ -7009,6 +7044,40 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                      if (!isNaN(v) && !isNaN(f)) result = `Wavelength (λ) = ${(v/f).toFixed(4)} m`;
                  } else if (type === 'T') {
                      if (!isNaN(f)) result = `Period (T) = ${(1/f).toFixed(4)} s`;
+                 }
+             } else if (tab === 'optics') {
+                 const f = val('phys-f');
+                 const di = val('phys-di');
+                 const do_val = val('phys-do');
+
+                 if (type === 'f') {
+                     if (!isNaN(di) && !isNaN(do_val)) {
+                         const res = 1 / (1/di + 1/do_val);
+                         result = `Focal Length (f) = ${res.toFixed(4)}`;
+                     }
+                 } else if (type === 'di') {
+                     if (!isNaN(f) && !isNaN(do_val)) {
+                         const res = 1 / (1/f - 1/do_val);
+                         result = `Image Dist (di) = ${res.toFixed(4)}`;
+                     }
+                 } else if (type === 'do') {
+                     if (!isNaN(f) && !isNaN(di)) {
+                         const res = 1 / (1/f - 1/di);
+                         result = `Object Dist (do) = ${res.toFixed(4)}`;
+                     }
+                 } else if (type === 'm') {
+                     if (!isNaN(di) && !isNaN(do_val)) {
+                         const m = -di / do_val;
+                         result = `Magnification (m) = ${m.toFixed(4)}`;
+
+                         const hi = val('phys-hi');
+                         const ho = val('phys-ho');
+                         if (!isNaN(ho)) {
+                             result += `\nImage Height (hi) = ${(m * ho).toFixed(4)}`;
+                         } else if (!isNaN(hi)) {
+                             result += `\nObject Height (ho) = ${(hi / m).toFixed(4)}`;
+                         }
+                     }
                  }
              } else if (tab === 'ac') {
                  // AC Calculations using CAS for complex numbers
