@@ -9,6 +9,29 @@ class CAS {
         };
 
         this.functions = {};
+
+        // Unit Conversion Rates (Base: SI units)
+        this.conversionRates = {
+            // Length (Base: m)
+            'm': 1, 'km': 1000, 'cm': 0.01, 'mm': 0.001, 'um': 1e-6, 'nm': 1e-9,
+            'ft': 0.3048, 'in': 0.0254, 'yd': 0.9144, 'mi': 1609.34,
+            // Mass (Base: kg)
+            'kg': 1, 'g': 0.001, 'mg': 1e-6, 'lb': 0.453592, 'oz': 0.0283495, 't': 1000,
+            // Time (Base: s)
+            's': 1, 'min': 60, 'h': 3600, 'd': 86400, 'wk': 604800, 'y': 31536000, 'ms': 0.001,
+            // Area (Base: m^2)
+            'm^2': 1, 'km^2': 1e6, 'cm^2': 1e-4, 'mm^2': 1e-6, 'ft^2': 0.092903, 'in^2': 0.00064516, 'ac': 4046.86, 'ha': 10000,
+            // Volume (Base: m^3)
+            'm^3': 1, 'km^3': 1e9, 'cm^3': 1e-6, 'mm^3': 1e-9, 'L': 0.001, 'mL': 1e-6, 'gal': 0.00378541, 'ft^3': 0.0283168,
+            // Speed (Base: m/s)
+            'm/s': 1, 'km/h': 0.277778, 'mph': 0.44704, 'kn': 0.514444, 'ft/s': 0.3048,
+            // Pressure (Base: Pa)
+            'Pa': 1, 'kPa': 1000, 'bar': 100000, 'atm': 101325, 'psi': 6894.76, 'Torr': 133.322,
+            // Energy (Base: J)
+            'J': 1, 'kJ': 1000, 'cal': 4.184, 'kcal': 4184, 'eV': 1.60218e-19, 'kWh': 3.6e6,
+            // Power (Base: W)
+            'W': 1, 'kW': 1000, 'hp': 745.7
+        };
     }
 
     evaluate(exprTree) {
@@ -1917,6 +1940,51 @@ class CAS {
                 // amortization(rate, n, principal) -> payment
                 if (node.args.length !== 3) throw new Error("amortization requires 3 arguments: rate, n, principal");
                 return this._amortization(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'codegen' || node.funcName === 'toCode') {
+                if (node.args.length !== 2) throw new Error("codegen requires 2 arguments: expr, language");
+                // Expect language as string identifier
+                let lang = "";
+                if (args[1] instanceof Sym) lang = args[1].name;
+                else if (args[1] instanceof Num) lang = args[1].toString(); // unlikely
+                else throw new Error("Language must be an identifier (e.g. python, js, c)");
+                return this._codegen(args[0], lang);
+            }
+
+            if (node.funcName === 'convert') {
+                if (node.args.length !== 3) throw new Error("convert requires 3 arguments: value, fromUnit, toUnit");
+                // fromUnit, toUnit as symbols
+                let fromUnit = "", toUnit = "";
+                if (args[1] instanceof Sym) fromUnit = args[1].name;
+                if (args[2] instanceof Sym) toUnit = args[2].name;
+                // handle power units like m^2 represented as Pow in AST if parser allows,
+                // but parser likely sees m^2 as Pow(Sym(m), Num(2)).
+                // We need to convert AST to unit string if complex.
+                // Simple helper to get unit string
+                const getUnitStr = (n) => {
+                    if (n instanceof Sym) return n.name;
+                    if (n instanceof Pow) return getUnitStr(n.left) + "^" + getUnitStr(n.right);
+                    if (n instanceof Num) return n.value.toString();
+                    if (n instanceof Div) return getUnitStr(n.left) + "/" + getUnitStr(n.right);
+                    if (n instanceof Mul) return getUnitStr(n.left) + "*" + getUnitStr(n.right); // rarely used in simple converters
+                    return "";
+                };
+
+                if (!fromUnit) fromUnit = getUnitStr(args[1]);
+                if (!toUnit) toUnit = getUnitStr(args[2]);
+
+                return this._convert(args[0], fromUnit, toUnit);
+            }
+
+            if (node.funcName === 'mse') {
+                if (node.args.length !== 1) throw new Error("mse requires 1 argument (list)");
+                return this._mse(args[0]);
+            }
+
+            if (node.funcName === 'mae') {
+                if (node.args.length !== 1) throw new Error("mae requires 1 argument (list)");
+                return this._mae(args[0]);
             }
 
             return new Call(node.funcName, args);
@@ -10553,6 +10621,153 @@ class CAS {
         const den = new Sub(new Num(1), term);
         const num = new Mul(r, pv);
         return new Div(num, den).simplify();
+    }
+
+    _codegen(expr, lang) {
+        lang = lang.toLowerCase();
+
+        const mapOp = (op) => {
+            if (lang === 'python' || lang === 'py') {
+                if (op === '^') return '**';
+                if (op === '&&') return 'and';
+                if (op === '||') return 'or';
+                if (op === '!') return 'not ';
+            } else if (lang === 'js' || lang === 'javascript') {
+                if (op === '^') return '**'; // ES6
+            } else if (lang === 'c' || lang === 'cpp') {
+                if (op === '^') return ', '; // pow(a, b) needs comma
+            }
+            return op;
+        };
+
+        const mapFunc = (func) => {
+            if (lang === 'python' || lang === 'py') {
+                const np = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'exp', 'log', 'sqrt', 'abs', 'floor', 'ceil'];
+                if (np.includes(func)) return 'np.' + func;
+                if (func === 'ln') return 'np.log';
+            } else if (lang === 'js' || lang === 'javascript') {
+                const math = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'exp', 'log', 'sqrt', 'abs', 'floor', 'ceil', 'round', 'min', 'max', 'pow'];
+                if (math.includes(func)) return 'Math.' + func;
+                if (func === 'ln') return 'Math.log';
+            } else if (lang === 'c' || lang === 'cpp') {
+                if (func === 'ln') return 'log';
+                if (func === 'abs') return 'fabs';
+            }
+            return func;
+        };
+
+        const mapConst = (c) => {
+            if (lang === 'python' || lang === 'py') {
+                if (c === 'pi') return 'np.pi';
+                if (c === 'e') return 'np.e';
+                if (c === 'i') return '1j';
+                if (c === 'true') return 'True';
+                if (c === 'false') return 'False';
+            } else if (lang === 'js' || lang === 'javascript') {
+                if (c === 'pi') return 'Math.PI';
+                if (c === 'e') return 'Math.E';
+                if (c === 'true') return 'true';
+                if (c === 'false') return 'false';
+            } else if (lang === 'c' || lang === 'cpp') {
+                if (c === 'pi') return 'M_PI';
+                if (c === 'e') return 'M_E';
+                if (c === 'true') return '1';
+                if (c === 'false') return '0';
+            }
+            return c;
+        };
+
+        const rec = (node) => {
+            if (node instanceof Num) return node.toString();
+            if (node instanceof Sym) return mapConst(node.name);
+
+            if (node instanceof Add) return `(${rec(node.left)} + ${rec(node.right)})`;
+            if (node instanceof Sub) return `(${rec(node.left)} - ${rec(node.right)})`;
+            if (node instanceof Mul) return `(${rec(node.left)} * ${rec(node.right)})`;
+            if (node instanceof Div) return `(${rec(node.left)} / ${rec(node.right)})`;
+
+            if (node instanceof Pow) {
+                if ((lang === 'c' || lang === 'cpp') || (lang === 'js' && false)) { // JS supports ** now
+                    return `pow(${rec(node.left)}, ${rec(node.right)})`;
+                }
+                return `(${rec(node.left)} ${mapOp('^')} ${rec(node.right)})`;
+            }
+
+            if (node instanceof Call) {
+                const fn = mapFunc(node.funcName);
+                const args = node.args.map(rec).join(', ');
+                return `${fn}(${args})`;
+            }
+
+            if (node instanceof Eq) {
+                if (lang === 'python' || lang === 'c' || lang === 'js') return `(${rec(node.left)} == ${rec(node.right)})`;
+            }
+
+            return node.toString();
+        };
+
+        return { type: 'info', text: rec(expr), toLatex: () => `\\texttt{${rec(expr)}}` };
+    }
+
+    _convert(val, from, to) {
+        val = val.evaluateNumeric();
+        if (isNaN(val)) return new Sym('NaN');
+
+        // Check Temp
+        if (from === 'C' || from === 'F' || from === 'K' || to === 'C' || to === 'F' || to === 'K') {
+            let k = val;
+            if (from === 'C') k = val + 273.15;
+            else if (from === 'F') k = (val - 32) * 5/9 + 273.15;
+
+            let res = k;
+            if (to === 'C') res = k - 273.15;
+            else if (to === 'F') res = (k - 273.15) * 9/5 + 32;
+
+            return new Num(res);
+        }
+
+        const rateFrom = this.conversionRates[from];
+        const rateTo = this.conversionRates[to];
+
+        if (rateFrom === undefined || rateTo === undefined) {
+            throw new Error(`Unknown unit conversion: ${from} -> ${to}`);
+        }
+
+        // Base value = val * rateFrom
+        // Target value = Base / rateTo
+        // Note: assumes same dimension check is implicit or user knows.
+        // We could check if they share a base category but I flattened the map.
+
+        return new Num(val * rateFrom / rateTo);
+    }
+
+    _mse(list) {
+        if (!(list instanceof Vec)) throw new Error("mse requires a list");
+        // mean squared error (from 0? or mean?)
+        // If single list, usually MSE of errors implies elements ARE errors?
+        // Or MSE of data from mean? That's variance (biased).
+        // Let's assume list is errors. sum(x^2)/n
+        // Or if list of points? No, usually mse(residuals).
+
+        const n = list.elements.length;
+        if (n === 0) return new Num(0);
+        let sum = new Num(0);
+        for(const e of list.elements) {
+            sum = new Add(sum, new Pow(e, new Num(2)));
+        }
+        return new Div(sum.simplify(), new Num(n)).simplify();
+    }
+
+    _mae(list) {
+        if (!(list instanceof Vec)) throw new Error("mae requires a list");
+        // mean absolute error
+        const n = list.elements.length;
+        if (n === 0) return new Num(0);
+        let sum = new Num(0);
+        for(const e of list.elements) {
+            sum = new Add(sum, new Call('abs', [e]));
+        }
+        return new Div(sum.simplify(), new Num(n)).simplify();
     }
 }
 
