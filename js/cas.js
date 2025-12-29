@@ -509,11 +509,28 @@ class CAS {
                  if (node.args.length < 2) throw new Error("plot requires at least 2 arguments: expression and variable");
                  const expr = args[0];
                  const varNode = args[1];
-                 let min = node.args.length > 2 ? args[2].evaluateNumeric() : -10;
-                 let max = node.args.length > 3 ? args[3].evaluateNumeric() : 10;
+                 let min = -10, max = 10;
+                 let nstep = null;
 
-                 if (isNaN(min)) min = -10;
-                 if (isNaN(max)) max = 10;
+                 // Handle args
+                 // args[2] could be min, args[3] max
+                 // Check for optional nstep=...
+                 let posArgCount = 0;
+                 for(let i=2; i<node.args.length; i++) {
+                     const arg = args[i];
+                     if (arg instanceof Eq && arg.left instanceof Sym && arg.left.name === 'nstep') {
+                         const val = arg.right.evaluateNumeric();
+                         if (!isNaN(val) && val > 0) nstep = val;
+                     } else {
+                         // Positional logic: 0->min, 1->max
+                         const val = arg.evaluateNumeric();
+                         if (!isNaN(val)) {
+                             if (posArgCount === 0) min = val;
+                             if (posArgCount === 1) max = val;
+                             posArgCount++;
+                         }
+                     }
+                 }
 
                  // Return a special object that the frontend can recognize
                  return {
@@ -523,6 +540,7 @@ class CAS {
                      var: varNode,
                      min: min,
                      max: max,
+                     nstep: nstep,
                      toString: () => `Plotting ${expr} from ${min} to ${max}`,
                      toLatex: () => `\\text{Plotting } ${expr.toLatex()}`
                  };
@@ -570,7 +588,8 @@ class CAS {
                 // plotparam([x(t), y(t)], t, min, max)
                 // or plotparam(x(t), y(t), t, min, max)
 
-                let xExpr, yExpr, tVar, min, max;
+                let xExpr, yExpr, tVar, min = -10, max = 10, nstep = null;
+                let argStartIdx = 0;
 
                 if (node.args.length >= 2 && args[0] instanceof Vec) {
                     // plotparam([x, y], t, [min], [max])
@@ -578,22 +597,35 @@ class CAS {
                     xExpr = args[0].elements[0];
                     yExpr = args[0].elements[1];
                     tVar = args[1];
-                    min = node.args.length > 2 ? args[2].evaluateNumeric() : -10;
-                    max = node.args.length > 3 ? args[3].evaluateNumeric() : 10;
+                    argStartIdx = 2;
                 } else if (node.args.length >= 3) {
                     // plotparam(x, y, t, [min], [max])
                     xExpr = args[0];
                     yExpr = args[1];
                     tVar = args[2];
-                    min = node.args.length > 3 ? args[3].evaluateNumeric() : -10;
-                    max = node.args.length > 4 ? args[4].evaluateNumeric() : 10;
+                    argStartIdx = 3;
                 } else {
                     throw new Error("plotparam requires arguments: x, y, t, [min, max]");
                 }
 
+                // Parse remaining args for min, max, nstep
+                let posArgCount = 0;
+                for(let i=argStartIdx; i<node.args.length; i++) {
+                    const arg = args[i];
+                    if (arg instanceof Eq && arg.left instanceof Sym && arg.left.name === 'nstep') {
+                        const val = arg.right.evaluateNumeric();
+                        if (!isNaN(val) && val > 0) nstep = val;
+                    } else {
+                        const val = arg.evaluateNumeric();
+                        if (!isNaN(val)) {
+                            if (posArgCount === 0) min = val;
+                            if (posArgCount === 1) max = val;
+                            posArgCount++;
+                        }
+                    }
+                }
+
                 if (!(tVar instanceof Sym)) throw new Error("plotparam variable must be a symbol");
-                if (isNaN(min)) min = -10;
-                if (isNaN(max)) max = 10;
 
                 return {
                     type: 'plot',
@@ -603,6 +635,7 @@ class CAS {
                     var: tVar,
                     min: min,
                     max: max,
+                    nstep: nstep,
                     toString: () => `Parametric Plot (${xExpr}, ${yExpr}) t=${min}..${max}`,
                     toLatex: () => `\\text{Parametric Plot } (${xExpr.toLatex()}, ${yExpr.toLatex()})`
                 };
@@ -613,12 +646,26 @@ class CAS {
                 if (node.args.length < 3) throw new Error("plotpolar requires at least 3 arguments: r, theta, min, max");
                 const rExpr = args[0];
                 const thetaVar = args[1];
-                let min = node.args.length > 2 ? args[2].evaluateNumeric() : 0;
-                let max = node.args.length > 3 ? args[3].evaluateNumeric() : 2 * Math.PI;
+                let min = 0, max = 2 * Math.PI, nstep = null;
+
+                // Parse remaining args
+                let posArgCount = 0;
+                for(let i=2; i<node.args.length; i++) {
+                    const arg = args[i];
+                    if (arg instanceof Eq && arg.left instanceof Sym && arg.left.name === 'nstep') {
+                        const val = arg.right.evaluateNumeric();
+                        if (!isNaN(val) && val > 0) nstep = val;
+                    } else {
+                        const val = arg.evaluateNumeric();
+                        if (!isNaN(val)) {
+                            if (posArgCount === 0) min = val;
+                            if (posArgCount === 1) max = val;
+                            posArgCount++;
+                        }
+                    }
+                }
 
                 if (!(thetaVar instanceof Sym)) throw new Error("plotpolar variable must be a symbol");
-                if (isNaN(min)) min = 0;
-                if (isNaN(max)) max = 2 * Math.PI;
 
                 return {
                     type: 'plot',
@@ -627,6 +674,7 @@ class CAS {
                     var: thetaVar,
                     min: min,
                     max: max,
+                    nstep: nstep,
                     toString: () => `Polar Plot r=${rExpr} theta=${min}..${max}`,
                     toLatex: () => `\\text{Polar Plot } r=${rExpr.toLatex()}`
                 };
