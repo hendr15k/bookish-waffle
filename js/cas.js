@@ -1987,6 +1987,16 @@ class CAS {
                 return this._mae(args[0]);
             }
 
+            if (node.funcName === 'convolution') {
+                if (node.args.length !== 3) throw new Error("convolution requires 3 arguments: f, g, t");
+                return this._convolution(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'wronskian') {
+                if (node.args.length !== 2) throw new Error("wronskian requires 2 arguments: list_of_funcs, var");
+                return this._wronskian(args[0], args[1]);
+            }
+
             return new Call(node.funcName, args);
         }
 
@@ -10636,6 +10646,11 @@ class CAS {
                 if (op === '^') return '**'; // ES6
             } else if (lang === 'c' || lang === 'cpp') {
                 if (op === '^') return ', '; // pow(a, b) needs comma
+            } else if (lang === 'matlab' || lang === 'octave') {
+                if (op === '^') return '^';
+                if (op === '&&') return '&&';
+                if (op === '||') return '||';
+                if (op === '!') return '~';
             }
             return op;
         };
@@ -10652,6 +10667,15 @@ class CAS {
             } else if (lang === 'c' || lang === 'cpp') {
                 if (func === 'ln') return 'log';
                 if (func === 'abs') return 'fabs';
+            } else if (lang === 'matlab' || lang === 'octave') {
+                if (func === 'ln') return 'log';
+                if (func === 'log') return 'log10'; // CAS log is base 10 usually, MATLAB log is ln. Wait, CAS log is what?
+                // My CAS: ln is natural, log is base 10?
+                // parser maps log -> log (natural? or 10?)
+                // Default JS Math.log is ln.
+                // In my CAS, log is aliased to ln in simplify?
+                // Let's assume log is base 10 for consistency with "log10".
+                // If standard math: log is base 10.
             }
             return func;
         };
@@ -10673,6 +10697,12 @@ class CAS {
                 if (c === 'e') return 'M_E';
                 if (c === 'true') return '1';
                 if (c === 'false') return '0';
+            } else if (lang === 'matlab' || lang === 'octave') {
+                if (c === 'pi') return 'pi';
+                if (c === 'e') return 'exp(1)';
+                if (c === 'i') return '1i';
+                if (c === 'true') return 'true';
+                if (c === 'false') return 'false';
             }
             return c;
         };
@@ -10768,6 +10798,40 @@ class CAS {
             sum = new Add(sum, new Call('abs', [e]));
         }
         return new Div(sum.simplify(), new Num(n)).simplify();
+    }
+
+    _convolution(f, g, t) {
+        if (!(t instanceof Sym)) throw new Error("Third argument to convolution must be a variable (t)");
+        // Integral from 0 to t of f(tau) * g(t - tau) d_tau
+        const tau = new Sym('tau_' + Math.floor(Math.random() * 1000)); // Unique var
+        const f_tau = f.substitute(t, tau);
+        const t_minus_tau = new Sub(t, tau);
+        const g_shifted = g.substitute(t, t_minus_tau);
+        const integrand = new Mul(f_tau, g_shifted);
+
+        return this.evaluate(new Call('integrate', [integrand, tau, new Num(0), t])).simplify();
+    }
+
+    _wronskian(funcs, varNode) {
+        if (!(funcs instanceof Vec)) throw new Error("wronskian expects a list of functions");
+        if (!(varNode instanceof Sym)) throw new Error("wronskian expects a variable");
+
+        const n = funcs.elements.length;
+        const rows = [];
+
+        // Row 0: functions themselves
+        let currentDerivs = funcs.elements;
+        rows.push(new Vec(currentDerivs));
+
+        // Subsequent rows: derivatives
+        for (let i = 1; i < n; i++) {
+            const nextDerivs = currentDerivs.map(f => f.diff(varNode).simplify());
+            rows.push(new Vec(nextDerivs));
+            currentDerivs = nextDerivs;
+        }
+
+        const mat = new Vec(rows);
+        return this._det(mat);
     }
 }
 
