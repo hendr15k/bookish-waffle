@@ -1864,6 +1864,13 @@ class Call extends Expr {
             if (arg instanceof Sym && arg.name === 'e') return new Num(1);
         }
 
+        if (this.funcName === 'psi' || this.funcName === 'digamma') {
+            const val = simpleArgs[0].evaluateNumeric();
+            if (!isNaN(val)) {
+                return new Num(math_psi(val));
+            }
+        }
+
         if (this.funcName === 'zeta') {
             const arg = simpleArgs[0];
             if (arg instanceof Num) {
@@ -2024,10 +2031,21 @@ class Call extends Expr {
         if (this.funcName === 'lambertw') {
             return math_lambertw(argsVal[0]);
         }
+        if (this.funcName === 'psi' || this.funcName === 'digamma') {
+            return math_psi(argsVal[0]);
+        }
         return NaN; // Unknown
     }
     diff(varName) {
         const u = this.args[0];
+        if (this.funcName === 'gamma') {
+            // diff(gamma(u)) = gamma(u) * psi(u) * u'
+            return new Mul(new Mul(this, new Call('psi', [u])), u.diff(varName));
+        }
+        if (this.funcName === 'psi' || this.funcName === 'digamma') {
+            // diff(psi(u)) = polygamma(1, u) * u'
+            return new Mul(new Call('polygamma', [new Num(1), u]), u.diff(varName));
+        }
         if (this.funcName === 'heaviside') {
             // diff(heaviside(u)) = dirac(u) * u'
             return new Mul(new Call('dirac', [u]), u.diff(varName));
@@ -2262,8 +2280,14 @@ class Call extends Expr {
             'imag': '\\Im',
             'conj': '\\overline{' + argsTex[0] + '}',
             'sign': '\\operatorname{sgn}',
-            'erf': '\\operatorname{erf}'
+            'erf': '\\operatorname{erf}',
+            'psi': '\\psi',
+            'digamma': '\\psi'
         };
+
+        if (this.funcName === 'polygamma' && argsTex.length === 2) {
+            return `\\psi^{(${argsTex[0]})}\\left(${argsTex[1]}\\right)`;
+        }
 
         if (this.funcName === 'floor') return `\\lfloor ${argsTex[0]} \\rfloor`;
         if (this.funcName === 'ceil') return `\\lceil ${argsTex[0]} \\rceil`;
@@ -3009,6 +3033,32 @@ function math_lambertw(x) {
         w = w - wewx / (ew * (w + 1) - (w + 2) * wewx / (2 * w + 2));
     }
     return w;
+}
+
+function math_psi(x) {
+    // Digamma function approximation
+    if (x <= 0) {
+        // Reflection: psi(1-x) - psi(x) = pi * cot(pi*x)
+        // psi(x) = psi(1-x) - pi * cot(pi*x)
+        // Ensure not integer (pole)
+        if (Number.isInteger(x)) return NaN; // Pole
+        return math_psi(1 - x) - Math.PI / Math.tan(Math.PI * x);
+    }
+
+    // Use asymptotic expansion for large x
+    // psi(x) ~ ln(x) - 1/2x - 1/12x^2 + 1/120x^4 - 1/252x^6 ...
+    if (x < 10) {
+        // Shift up
+        return math_psi(x + 1) - 1/x;
+    }
+
+    let res = Math.log(x) - 1/(2*x);
+    const x2 = x * x;
+    const x4 = x2 * x2;
+    res -= 1/(12*x2);
+    res += 1/(120*x4);
+    res -= 1/(252*x2*x4);
+    return res;
 }
 
 // Export classes for Global/CommonJS environments
