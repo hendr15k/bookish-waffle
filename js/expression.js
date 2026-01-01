@@ -2034,6 +2034,12 @@ class Call extends Expr {
         if (this.funcName === 'psi' || this.funcName === 'digamma') {
             return math_psi(argsVal[0]);
         }
+        if (this.funcName === 'polygamma') {
+            // polygamma(n, z)
+            if (argsVal.length === 2 && !isNaN(argsVal[0]) && !isNaN(argsVal[1])) {
+                return math_polygamma(argsVal[0], argsVal[1]);
+            }
+        }
         return NaN; // Unknown
     }
     diff(varName) {
@@ -2045,6 +2051,18 @@ class Call extends Expr {
         if (this.funcName === 'psi' || this.funcName === 'digamma') {
             // diff(psi(u)) = polygamma(1, u) * u'
             return new Mul(new Call('polygamma', [new Num(1), u]), u.diff(varName));
+        }
+        if (this.funcName === 'polygamma') {
+            // diff(polygamma(n, x)) = polygamma(n+1, x)
+            if (this.args.length === 2) {
+                const n = this.args[0];
+                const x = this.args[1];
+                // Assuming n is constant w.r.t x for standard polygamma derivative
+                if (n instanceof Num) {
+                    return new Mul(new Call('polygamma', [new Num(n.value + 1), x]), x.diff(varName));
+                }
+                return new Mul(new Call('polygamma', [new Add(n, new Num(1)), x]), x.diff(varName));
+            }
         }
         if (this.funcName === 'heaviside') {
             // diff(heaviside(u)) = dirac(u) * u'
@@ -3059,6 +3077,66 @@ function math_psi(x) {
     res += 1/(120*x4);
     res -= 1/(252*x2*x4);
     return res;
+}
+
+function math_polygamma(n, z) {
+    // n: integer order (0 = psi)
+    // z: argument
+    if (n < 0 || !Number.isInteger(n)) return NaN;
+    if (n === 0) return math_psi(z);
+
+    // Reflection Formula: (-1)^n * psi_n(1-z) - psi_n(z) = pi * d^n/dz^n (cot(pi*z))
+    // This is complex. We stick to z > 0 recursion.
+    if (z <= 0) {
+        if (Number.isInteger(z)) return NaN; // Pole
+        // Use recurrence relation: psi_n(z+1) = psi_n(z) + (-1)^n * n! / z^(n+1)
+        // -> psi_n(z) = psi_n(z+1) - (-1)^n * n! / z^(n+1)
+        // We shift UP until positive.
+        // Wait, for negative non-integers, we can shift up to positive region.
+        // Formula: psi_n(z) = psi_n(z+k) - (-1)^n * n! * sum_{j=0}^{k-1} (z+j)^-(n+1)
+
+        // Simple recursive shift
+        // (-1)^n * n! is constant
+        const factN = (function f(k){ return k<=1?1:k*f(k-1); })(n);
+        const term = (n % 2 === 0 ? 1 : -1) * factN * Math.pow(z, -(n+1));
+        return math_polygamma(n, z+1) - term;
+    }
+
+    // Recurrence for small positive z
+    if (z < 15) {
+        const factN = (function f(k){ return k<=1?1:k*f(k-1); })(n);
+        const term = (n % 2 === 0 ? 1 : -1) * factN * Math.pow(z, -(n+1));
+        return math_polygamma(n, z + 1) - term;
+    }
+
+    // Asymptotic Expansion for large z
+    // psi_n(z) ~ (-1)^(n-1) [ (n-1)! / z^n  +  n! / (2 z^(n+1)) + ... ]
+    // Check Trigamma (n=1): 1/z + 1/2z^2 + 1/6z^3 ...
+    // Formula: psi_n(z) = (-1)^(n+1) * n! * [ 1/(n*z^n) + 1/(2*z^(n+1)) + sum B_2k / (2k)! * (n+2k-1)!/(n!) * z^-(n+2k) ] ?
+    // Let's use the explicit summation form
+    // (-1)^(n+1) * [ (n-1)!/z^n + n!/(2z^(n+1)) + sum B_2k * (n+2k-1)!/(2k)! * z^-(n+2k) ]
+    // Wait, let's verify Trigamma n=1. (-1)^2 [ 0!/z + 1!/2z^2 + B2 * 2!/2! * z^-3 ] = 1/z + 1/2z^2 + 1/6z^3. Correct.
+
+    // Factorial helper
+    const fact = (k) => { let r=1; for(let i=2; i<=k; i++) r*=i; return r; };
+    const factN = fact(n);
+    const factN_1 = fact(n-1);
+
+    let res = factN_1 / Math.pow(z, n);
+    res += factN / (2 * Math.pow(z, n+1));
+
+    // Bernoulli numbers B2, B4, ...
+    const B = [1/6, -1/30, 1/42, -1/30, 5/66, -691/2730, 7/6];
+    // terms z^-(n+2), z^-(n+4)...
+
+    for(let k=1; k<=B.length; k++) {
+        const b2k = B[k-1];
+        const exponent = n + 2*k;
+        const coeff = b2k * fact(n + 2*k - 1) / fact(2*k); // (n+2k-1)! / (2k)!
+        res += coeff * Math.pow(z, -exponent);
+    }
+
+    return (n % 2 === 0 ? -1 : 1) * res; // (-1)^(n+1)
 }
 
 // Export classes for Global/CommonJS environments
