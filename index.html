@@ -923,6 +923,7 @@
                 <div class="action-grid">
                     <button class="action-btn" onclick="runTool('desolve', ['desolve-eq', 'desolve-var'])">Solve ODE</button>
                     <button class="action-btn" onclick="runAndPlot('slopefield', ['desolve-eq', 'desolve-x', 'desolve-var'])" style="background-color: #28a745;">Plot Slope Field</button>
+                    <button class="action-btn secondary" style="grid-column: span 2;" onclick="runTool('wronskian', ['desolve-eq', 'desolve-x'])">Wronskian (use list)</button>
                 </div>
             </div>
         </div>
@@ -1085,6 +1086,10 @@
                 <div class="action-grid">
                     <button class="action-btn" onclick="runTool('laplace', ['laplace-expr', 'laplace-t', 'laplace-s'])">Transform (L)</button>
                     <button class="action-btn secondary" onclick="runTool('ilaplace', ['laplace-expr', 'laplace-s', 'laplace-t'])">Inverse (L⁻¹)</button>
+                    <button class="action-btn secondary" style="grid-column: span 2;" onclick="runTool('convolution', ['laplace-expr', 'laplace-s', 'laplace-t'])">Convolution (f * g)</button>
+                </div>
+                <div style="margin-top:5px; font-size:0.9em; color:#666;">
+                    For convolution, enter "f, g" in function field.
                 </div>
             </div>
         </div>
@@ -1737,7 +1742,24 @@
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-waves')">Waves</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-optics')">Optics</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-ac')">Wechselstrom (AC)</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-phys-thermo')">Thermodynamics</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-phys-const')">Constants</button>
+        </div>
+
+        <!-- Thermodynamics Tab -->
+        <div id="tab-phys-thermo" class="tab-content">
+             <div class="tool-form">
+                 <div class="form-group">
+                     <label class="form-label">Calculation</label>
+                     <select id="phys-thermo-type" class="form-input" onchange="updatePhysicsInputs('thermo')">
+                         <option value="ideal">Ideal Gas (PV=nRT)</option>
+                         <option value="heat">Heat Energy (Q=mcΔT)</option>
+                         <option value="efficiency">Efficiency (η)</option>
+                     </select>
+                 </div>
+                 <div id="phys-thermo-inputs"></div>
+                 <button class="action-btn" onclick="runPhysics('thermo')">Calculate</button>
+             </div>
         </div>
 
         <!-- Optics Tab -->
@@ -2417,6 +2439,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 updatePhysicsInputs('waves');
                 updatePhysicsInputs('ac');
                 updatePhysicsInputs('optics');
+                updatePhysicsInputs('thermo');
             }
         };
 
@@ -6555,6 +6578,24 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                      container.appendChild(createInput('phys-hi', 'Image Height (hi) (optional)', ''));
                      container.appendChild(createInput('phys-ho', 'Object Height (ho) (optional)', ''));
                  }
+             } else if (tab === 'thermo') {
+                 if (type === 'ideal') {
+                     container.appendChild(createInput('phys-P', 'Pressure (P)', '101325'));
+                     container.appendChild(createInput('phys-V', 'Volume (V)', '1'));
+                     container.appendChild(createInput('phys-n', 'Moles (n)', '1'));
+                     container.appendChild(createInput('phys-T', 'Temp (T in K)', '298'));
+                     const hint = document.createElement('small');
+                     hint.style.color = '#666'; hint.style.display = 'block'; hint.marginTop = '5px';
+                     hint.textContent = "Leave one empty to calculate";
+                     container.appendChild(hint);
+                 } else if (type === 'heat') {
+                     container.appendChild(createInput('phys-m', 'Mass (m)'));
+                     container.appendChild(createInput('phys-c', 'Specific Heat (c)'));
+                     container.appendChild(createInput('phys-dt', 'Delta T (ΔT)'));
+                 } else if (type === 'efficiency') {
+                     container.appendChild(createInput('phys-tc', 'Temp Cold (Tc)'));
+                     container.appendChild(createInput('phys-th', 'Temp Hot (Th)'));
+                 }
              } else if (tab === 'ac') {
                  if (type === 'reactance') {
                      container.appendChild(createInput('phys-f', 'Frequency (Hz)'));
@@ -7076,6 +7117,53 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                              result += `\nImage Height (hi) = ${(m * ho).toFixed(4)}`;
                          } else if (!isNaN(hi)) {
                              result += `\nObject Height (ho) = ${(hi / m).toFixed(4)}`;
+                         }
+                     }
+                 }
+             } else if (tab === 'thermo') {
+                 if (type === 'ideal') {
+                     // PV = nRT. R = 8.314
+                     const R = 8.314;
+                     const P = document.getElementById('phys-P').value;
+                     const V = document.getElementById('phys-V').value;
+                     const n = document.getElementById('phys-n').value;
+                     const T = document.getElementById('phys-T').value;
+
+                     const pVal = parseFloat(P);
+                     const vVal = parseFloat(V);
+                     const nVal = parseFloat(n);
+                     const tVal = parseFloat(T);
+
+                     if (!P && V && n && T) {
+                         const res = (nVal * R * tVal) / vVal;
+                         result = `Pressure (P) = ${res.toFixed(2)} Pa`;
+                     } else if (P && !V && n && T) {
+                         const res = (nVal * R * tVal) / pVal;
+                         result = `Volume (V) = ${res.toFixed(4)} m^3`;
+                     } else if (P && V && !n && T) {
+                         const res = (pVal * vVal) / (R * tVal);
+                         result = `Moles (n) = ${res.toFixed(4)} mol`;
+                     } else if (P && V && n && !T) {
+                         const res = (pVal * vVal) / (nVal * R);
+                         result = `Temperature (T) = ${res.toFixed(2)} K`;
+                     } else {
+                         result = "Please leave exactly one field empty.";
+                     }
+                 } else if (type === 'heat') {
+                     const m = val('phys-m');
+                     const c = val('phys-c');
+                     const dt = val('phys-dt');
+                     if (!isNaN(m) && !isNaN(c) && !isNaN(dt)) {
+                         result = `Heat Energy (Q) = ${(m * c * dt).toFixed(2)} J`;
+                     }
+                 } else if (type === 'efficiency') {
+                     const Tc = val('phys-tc');
+                     const Th = val('phys-th');
+                     if (!isNaN(Tc) && !isNaN(Th)) {
+                         if (Th <= Tc) result = "Error: Th must be > Tc";
+                         else {
+                             const eff = 1 - Tc/Th;
+                             result = `Carnot Efficiency (η) = ${(eff * 100).toFixed(2)}%`;
                          }
                      }
                  }
