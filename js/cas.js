@@ -756,8 +756,16 @@ class CAS {
                 const point = args[2];
                 let dir = 0;
                 if (node.args.length > 3) {
-                    const d = args[3].evaluateNumeric();
-                    if (!isNaN(d)) dir = d;
+                    const dArg = args[3];
+                    const d = dArg.evaluateNumeric();
+                    if (!isNaN(d)) {
+                        dir = d;
+                    } else if (dArg instanceof Sym) {
+                        const name = dArg.name.toLowerCase();
+                        if (name === 'right' || name === 'plus') dir = 1;
+                        if (name === 'left' || name === 'minus') dir = -1;
+                    } else if (dArg.toString() === '+') dir = 1;
+                    else if (dArg.toString() === '-') dir = -1;
                 }
 
                 if (!(varNode instanceof Sym)) throw new Error("Second argument to limit must be a variable");
@@ -4548,6 +4556,29 @@ class CAS {
             }
 
             const val = expr.substitute(varNode, point).simplify();
+
+            // Check for directional limit at pole (Infinity or NaN)
+            if (dir !== 0) {
+                const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+                const isUnsignedInf = (n) => isInf(n) || (n instanceof Sym && n.name === 'NaN');
+
+                // If direct substitution gave Infinity (unsigned) or NaN (pole), we check direction
+                if (isUnsignedInf(val)) {
+                    // Test point approach
+                    // Check sign of f(point + dir*delta)
+                    // If point is numeric, use small delta.
+                    const pVal = point.evaluateNumeric();
+                    if (!isNaN(pVal)) {
+                        const delta = dir * 1e-9;
+                        const testVal = expr.substitute(varNode, new Num(pVal + delta)).evaluateNumeric();
+                        if (!isNaN(testVal)) {
+                            if (testVal > 1e6) return new Sym("Infinity");
+                            if (testVal < -1e6) return new Mul(new Num(-1), new Sym("Infinity")).simplify();
+                        }
+                    }
+                }
+            }
+
             if (val instanceof Num) return val;
             return val;
         } catch (e) {
