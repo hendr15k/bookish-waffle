@@ -1748,22 +1748,14 @@ class Call extends Expr {
         if (this.funcName === 'erf') {
             const arg = simpleArgs[0];
             if (arg instanceof Num) {
-                const val = arg.value;
-                // Use approximation for numeric erf
-                const sign = (val >= 0) ? 1 : -1;
-                const x = Math.abs(val);
+                return new Num(math_erf(arg.value));
+            }
+        }
 
-                // Abramowitz & Stegun 7.1.26
-                const a1 =  0.254829592;
-                const a2 = -0.284496736;
-                const a3 =  1.421413741;
-                const a4 = -1.453152027;
-                const a5 =  1.061405429;
-                const p  =  0.3275911;
-
-                const t = 1.0 / (1.0 + p * x);
-                const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
-                return new Num(sign * y);
+        if (this.funcName === 'erfi') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) {
+                return new Num(math_erfi(arg.value));
             }
         }
 
@@ -1868,6 +1860,12 @@ class Call extends Expr {
             const val = simpleArgs[0].evaluateNumeric();
             if (!isNaN(val)) {
                 return new Num(math_psi(val));
+            }
+        }
+
+        if (this.funcName === 'polygamma') {
+            if (simpleArgs.length === 2 && simpleArgs[0] instanceof Num && simpleArgs[1] instanceof Num) {
+                return new Num(math_polygamma(simpleArgs[0].value, simpleArgs[1].value));
             }
         }
 
@@ -2000,21 +1998,10 @@ class Call extends Expr {
              return NaN;
         }
         if (this.funcName === 'erf') {
-             // Approximation (same logic as simplify or just call it)
-             // But evaluateNumeric returns a number, not Expr.
-             const val = argsVal[0];
-             if (isNaN(val)) return NaN;
-             const sign = (val >= 0) ? 1 : -1;
-             const x = Math.abs(val);
-             const a1 =  0.254829592;
-             const a2 = -0.284496736;
-             const a3 =  1.421413741;
-             const a4 = -1.453152027;
-             const a5 =  1.061405429;
-             const p  =  0.3275911;
-             const t = 1.0 / (1.0 + p * x);
-             const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
-             return sign * y;
+             return math_erf(argsVal[0]);
+        }
+        if (this.funcName === 'erfi') {
+             return math_erfi(argsVal[0]);
         }
         if (this.funcName === 'gamma') {
             return math_gamma(argsVal[0]);
@@ -2034,6 +2021,9 @@ class Call extends Expr {
         if (this.funcName === 'psi' || this.funcName === 'digamma') {
             return math_psi(argsVal[0]);
         }
+        if (this.funcName === 'polygamma') {
+            return math_polygamma(argsVal[0], argsVal[1]);
+        }
         return NaN; // Unknown
     }
     diff(varName) {
@@ -2049,6 +2039,10 @@ class Call extends Expr {
         if (this.funcName === 'heaviside') {
             // diff(heaviside(u)) = dirac(u) * u'
             return new Mul(new Call('dirac', [u]), u.diff(varName));
+        }
+        if (this.funcName === 'sign') {
+            // diff(sign(u)) = 2*dirac(u) * u'
+            return new Mul(new Mul(new Num(2), new Call('dirac', [u])), u.diff(varName));
         }
         if (this.funcName === 'dirac') {
             // diff(dirac(u)) = dirac(u, 1) * u' ? Or symbolic
@@ -2161,6 +2155,12 @@ class Call extends Expr {
             const exp = new Call('exp', [new Mul(new Num(-1), new Pow(u, new Num(2)))]);
             return new Mul(new Mul(coeff, exp), u.diff(varName));
         }
+        if (this.funcName === 'erfi') {
+            // d/dx erfi(u) = 2/sqrt(pi) * e^(u^2) * u'
+            const coeff = new Div(new Num(2), new Call('sqrt', [new Sym('pi')]));
+            const exp = new Call('exp', [new Pow(u, new Num(2))]);
+            return new Mul(new Mul(coeff, exp), u.diff(varName));
+        }
         // Default to symbolic diff
         return new Call('diff', [this, varName]);
     }
@@ -2210,6 +2210,18 @@ class Call extends Expr {
             if (this.funcName === 'heaviside') {
                 // x * H(x) (Ramp function)
                 return new Mul(varName, new Call('heaviside', [varName]));
+            }
+            if (this.funcName === 'erf') {
+                // integrate(erf(x)) = x*erf(x) + exp(-x^2)/sqrt(pi)
+                const term1 = new Mul(varName, new Call('erf', [varName]));
+                const term2 = new Div(new Call('exp', [new Mul(new Num(-1), new Pow(varName, new Num(2)))]), new Call('sqrt', [new Sym('pi')]));
+                return new Add(term1, term2);
+            }
+            if (this.funcName === 'erfi') {
+                // integrate(erfi(x)) = x*erfi(x) - exp(x^2)/sqrt(pi)
+                const term1 = new Mul(varName, new Call('erfi', [varName]));
+                const term2 = new Div(new Call('exp', [new Pow(varName, new Num(2))]), new Call('sqrt', [new Sym('pi')]));
+                return new Sub(term1, term2);
             }
         }
         return new Call("integrate", [this, varName]);
@@ -3059,6 +3071,129 @@ function math_psi(x) {
     res += 1/(120*x4);
     res -= 1/(252*x2*x4);
     return res;
+}
+
+function math_polygamma(n, x) {
+    // n-th derivative of psi(x)
+    if (n < 0 || !Number.isInteger(n)) return NaN;
+    if (n === 0) return math_psi(x);
+
+    // Reflection formula: psi(n, 1-x) + (-1)^(n+1) psi(n, x) = (-1)^n pi d^n/dx^n cot(pi x)
+    // Complex. Let's stick to positive x shift.
+
+    // Shift up
+    if (x < 10) {
+        // psi(n, x+1) = psi(n, x) + (-1)^n * n! / x^(n+1)
+        // => psi(n, x) = psi(n, x+1) - (-1)^n * n! / x^(n+1)
+
+        // factorial(n)
+        let fact = 1; for(let i=1; i<=n; i++) fact *= i;
+
+        const sign = (n % 2 === 0) ? 1 : -1;
+        const term = sign * fact / Math.pow(x, n+1);
+
+        return math_polygamma(n, x+1) - term;
+    }
+
+    // Asymptotic expansion for psi(n, x)
+    // psi(n, x) ~ (-1)^(n-1) * [ (n-1)!/x^n + n!/(2x^(n+1)) + sum B2k * (n+2k-1)! / ( (2k)! * x^(n+2k) ) ]
+
+    // Careful with signs and indices.
+    // psi(0) ~ ln(x) - 1/2x - 1/12x^2 ...
+
+    // n=1: 1/x + 1/2x^2 + 1/6x^3 ...
+
+    // Generic term from Euler-Maclaurin applied to derivatives?
+    // psi(n, z) = (-1)^(n+1) * n! * [ -sum 1/(z+k)^(n+1) ] No that's def.
+
+    // Asymptotic:
+    // psi(n, z) = (-1)^(n+1) * ( n!/2z^(n+1) + (n-1)!/z^n + ... ) ?
+    // Let's use standard formula:
+    // psi(n, z) ~ (-1)^(n-1) [ (n-1)!/z^n + n!/(2z^(n+1)) + sum_{k=1} B2k (n+2k-1)! / ((2k)! z^(n+2k)) ]
+
+    // Factorial helper
+    const fact = (k) => { let r=1; for(let i=2; i<=k; i++) r*=i; return r; };
+
+    const pre = (n % 2 === 0) ? -1 : 1; // (-1)^(n-1) -> if n=1 (+1), n=2 (-1).
+    // n=1: (-1)^0 = 1. n=2: (-1)^1 = -1.
+    // n even: -1. n odd: 1.
+    // So if n%2==0 return -1 else 1.
+
+    // Term 1: (n-1)! / z^n
+    let sum = fact(n-1) / Math.pow(x, n);
+
+    // Term 2: n! / (2 z^(n+1))
+    sum += fact(n) / (2 * Math.pow(x, n+1));
+
+    // B2 = 1/6, B4 = -1/30, B6 = 1/42
+    const B = [1/6, -1/30, 1/42, -1/30, 5/66];
+
+    for(let k=1; k<=5; k++) {
+        const b2k = B[k-1];
+        const num = fact(n + 2*k - 1);
+        const den = fact(2*k) * Math.pow(x, n + 2*k);
+        sum += b2k * num / den;
+    }
+
+    return ((n % 2 === 0) ? -1 : 1) * sum;
+}
+
+function math_erf(x) {
+    if (isNaN(x)) return NaN;
+    const sign = (x >= 0) ? 1 : -1;
+    x = Math.abs(x);
+    const a1 =  0.254829592;
+    const a2 = -0.284496736;
+    const a3 =  1.421413741;
+    const a4 = -1.453152027;
+    const a5 =  1.061405429;
+    const p  =  0.3275911;
+    const t = 1.0 / (1.0 + p * x);
+    const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+    return sign * y;
+}
+
+function math_erfi(x) {
+    // erfi(x) = -i erf(ix)
+    // Real x -> Real result
+    // Taylor series for small x: 2/sqrt(pi) * sum( x^(2k+1) / (k! (2k+1)) )
+    // Asymptotic for large x: exp(x^2)/(sqrt(pi)*x)
+
+    if (Math.abs(x) < 4) {
+        let sum = 0;
+        let term = x;
+        let k = 0;
+        // 2/sqrt(pi) * (x + x^3/3 + x^5/10 + ...)
+        // term_k = x^(2k+1) / (k! (2k+1))
+        // term_{k+1} = x^(2k+3) / ((k+1)! (2k+3))
+        // ratio = x^2 * (2k+1) / ((k+1)(2k+3))
+
+        // Compute directly
+        for(let k=0; k<100; k++) {
+            const num = Math.pow(x, 2*k+1);
+            let den = 1; for(let i=1; i<=k; i++) den *= i; // k!
+            den *= (2*k+1);
+            const val = num / den;
+            sum += val;
+            if (Math.abs(val) < 1e-15) break;
+        }
+        return 2 / Math.sqrt(Math.PI) * sum;
+    } else {
+        // Asymptotic expansion
+        // exp(x^2)/(sqrt(pi)*x) * (1 + 1/(2x^2) + 3/(4x^4) + ...)
+        const ex2 = Math.exp(x*x);
+        if (!isFinite(ex2)) return (x>0 ? Infinity : -Infinity);
+
+        let sum = 1;
+        let term = 1;
+        // Series diverges eventually, but good for few terms
+        for(let k=1; k<5; k++) {
+            // factor (2k-1)/(2x^2)
+            term *= (2*k-1) / (2*x*x);
+            sum += term;
+        }
+        return ex2 / (Math.sqrt(Math.PI) * x) * sum;
+    }
 }
 
 // Export classes for Global/CommonJS environments

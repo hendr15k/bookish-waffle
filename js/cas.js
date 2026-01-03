@@ -10106,23 +10106,41 @@ class CAS {
                 const c1 = poly.coeffs[1] || new Num(0);
                 const c0 = poly.coeffs[0] || new Num(0);
 
-                if (c1.evaluateNumeric() === 0 && c2.evaluateNumeric() < 0) {
-                     // -a = c2 => a = -c2
-                     const a = new Mul(new Num(-1), c2).simplify();
-                     const sqrtA = new Call('sqrt', [a]).simplify();
+                if (c1.evaluateNumeric() === 0) {
+                    const c2Val = c2.evaluateNumeric();
+                    if (c2Val < 0) {
+                        // -a = c2 => a = -c2
+                        const a = new Mul(new Num(-1), c2).simplify();
+                        const sqrtA = new Call('sqrt', [a]).simplify();
 
-                     // Integral of exp(-ax^2) = sqrt(pi)/(2*sqrt(a)) * erf(sqrt(a)*x)
-                     const factor = new Div(new Call('sqrt', [new Sym('pi')]), new Mul(new Num(2), sqrtA));
-                     const erfTerm = new Call('erf', [new Mul(sqrtA, varNode)]);
+                        // Integral of exp(-ax^2) = sqrt(pi)/(2*sqrt(a)) * erf(sqrt(a)*x)
+                        const factor = new Div(new Call('sqrt', [new Sym('pi')]), new Mul(new Num(2), sqrtA));
+                        const erfTerm = new Call('erf', [new Mul(sqrtA, varNode)]);
 
-                     let result = new Mul(factor, erfTerm).simplify();
+                        let result = new Mul(factor, erfTerm).simplify();
 
-                     // Handle c0: exp(c0) factor
-                     if (c0.evaluateNumeric() !== 0) {
-                         const C = new Call('exp', [c0]).simplify();
-                         result = new Mul(C, result).simplify();
-                     }
-                     return result;
+                        // Handle c0: exp(c0) factor
+                        if (c0.evaluateNumeric() !== 0) {
+                            const C = new Call('exp', [c0]).simplify();
+                            result = new Mul(C, result).simplify();
+                        }
+                        return result;
+                    } else if (c2Val > 0) {
+                        // exp(a*x^2) => sqrt(pi)/(2*sqrt(a)) * erfi(sqrt(a)*x)
+                        const a = c2;
+                        const sqrtA = new Call('sqrt', [a]).simplify();
+
+                        const factor = new Div(new Call('sqrt', [new Sym('pi')]), new Mul(new Num(2), sqrtA));
+                        const erfiTerm = new Call('erfi', [new Mul(sqrtA, varNode)]);
+
+                        let result = new Mul(factor, erfiTerm).simplify();
+
+                        if (c0.evaluateNumeric() !== 0) {
+                            const C = new Call('exp', [c0]).simplify();
+                            result = new Mul(C, result).simplify();
+                        }
+                        return result;
+                    }
                 }
             }
         }
