@@ -1442,6 +1442,26 @@ class CAS {
                 return this._fourier(expr, varNode, n, L);
             }
 
+            if (node.funcName === 'fourier_transform' || node.funcName === 'ft') {
+                if (node.args.length !== 3) throw new Error("fourier_transform requires 3 arguments: expr, t, w");
+                return this._fourierTransform(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'inverse_fourier_transform' || node.funcName === 'ift') {
+                if (node.args.length !== 3) throw new Error("inverse_fourier_transform requires 3 arguments: expr, w, t");
+                return this._inverseFourierTransform(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'latex' || node.funcName === 'tex') {
+                if (node.args.length !== 1) throw new Error("latex requires 1 argument");
+                const latexStr = args[0].toLatex();
+                return {
+                    type: 'info',
+                    text: latexStr,
+                    toLatex: () => `\\text{${latexStr.replace(/\\/g, '\\\\')}}` // Escape backslashes for display
+                };
+            }
+
             if (node.funcName === 'slopefield') {
                  // slopefield(diffEq, x, y, [minX, maxX, minY, maxY])
                  if (node.args.length < 3) throw new Error("slopefield requires at least 3 arguments: equation, x, y");
@@ -10675,8 +10695,14 @@ class CAS {
                 if (op === '!') return 'not ';
             } else if (lang === 'js' || lang === 'javascript') {
                 if (op === '^') return '**'; // ES6
+                if (op === '&&') return '&&';
+                if (op === '||') return '||';
+                if (op === '!') return '!';
             } else if (lang === 'c' || lang === 'cpp') {
                 if (op === '^') return ', '; // pow(a, b) needs comma
+                if (op === '&&') return '&&';
+                if (op === '||') return '||';
+                if (op === '!') return '!';
             } else if (lang === 'matlab' || lang === 'octave') {
                 if (op === '^') return '^';
                 if (op === '&&') return '&&';
@@ -10688,25 +10714,25 @@ class CAS {
 
         const mapFunc = (func) => {
             if (lang === 'python' || lang === 'py') {
-                const np = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'exp', 'log', 'sqrt', 'abs', 'floor', 'ceil'];
+                const np = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'exp', 'log', 'sqrt', 'abs', 'floor', 'ceil', 'erf', 'gamma'];
                 if (np.includes(func)) return 'np.' + func;
                 if (func === 'ln') return 'np.log';
+                if (func === 'arctan') return 'np.arctan';
+                if (func === 'arcsin') return 'np.arcsin';
+                if (func === 'arccos') return 'np.arccos';
             } else if (lang === 'js' || lang === 'javascript') {
-                const math = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'exp', 'log', 'sqrt', 'abs', 'floor', 'ceil', 'round', 'min', 'max', 'pow'];
+                const math = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'exp', 'log', 'sqrt', 'abs', 'floor', 'ceil', 'round', 'min', 'max', 'pow', 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', 'cbrt', 'sign', 'trunc'];
                 if (math.includes(func)) return 'Math.' + func;
                 if (func === 'ln') return 'Math.log';
             } else if (lang === 'c' || lang === 'cpp') {
                 if (func === 'ln') return 'log';
                 if (func === 'abs') return 'fabs';
+                const std = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'exp', 'sqrt', 'floor', 'ceil', 'erf', 'tgamma'];
+                if (func === 'gamma') return 'tgamma';
+                if (std.includes(func)) return func;
             } else if (lang === 'matlab' || lang === 'octave') {
                 if (func === 'ln') return 'log';
-                if (func === 'log') return 'log10'; // CAS log is base 10 usually, MATLAB log is ln. Wait, CAS log is what?
-                // My CAS: ln is natural, log is base 10?
-                // parser maps log -> log (natural? or 10?)
-                // Default JS Math.log is ln.
-                // In my CAS, log is aliased to ln in simplify?
-                // Let's assume log is base 10 for consistency with "log10".
-                // If standard math: log is base 10.
+                if (func === 'log') return 'log10';
             }
             return func;
         };
@@ -10718,22 +10744,19 @@ class CAS {
                 if (c === 'i') return '1j';
                 if (c === 'true') return 'True';
                 if (c === 'false') return 'False';
+                if (c === 'infinity' || c === 'Infinity') return 'np.inf';
             } else if (lang === 'js' || lang === 'javascript') {
                 if (c === 'pi') return 'Math.PI';
                 if (c === 'e') return 'Math.E';
                 if (c === 'true') return 'true';
                 if (c === 'false') return 'false';
+                if (c === 'infinity' || c === 'Infinity') return 'Infinity';
             } else if (lang === 'c' || lang === 'cpp') {
                 if (c === 'pi') return 'M_PI';
                 if (c === 'e') return 'M_E';
                 if (c === 'true') return '1';
                 if (c === 'false') return '0';
-            } else if (lang === 'matlab' || lang === 'octave') {
-                if (c === 'pi') return 'pi';
-                if (c === 'e') return 'exp(1)';
-                if (c === 'i') return '1i';
-                if (c === 'true') return 'true';
-                if (c === 'false') return 'false';
+                if (c === 'infinity' || c === 'Infinity') return 'INFINITY';
             }
             return c;
         };
@@ -10748,7 +10771,7 @@ class CAS {
             if (node instanceof Div) return `(${rec(node.left)} / ${rec(node.right)})`;
 
             if (node instanceof Pow) {
-                if ((lang === 'c' || lang === 'cpp') || (lang === 'js' && false)) { // JS supports ** now
+                if ((lang === 'c' || lang === 'cpp')) {
                     return `pow(${rec(node.left)}, ${rec(node.right)})`;
                 }
                 return `(${rec(node.left)} ${mapOp('^')} ${rec(node.right)})`;
@@ -10763,6 +10786,10 @@ class CAS {
             if (node instanceof Eq) {
                 if (lang === 'python' || lang === 'c' || lang === 'js') return `(${rec(node.left)} == ${rec(node.right)})`;
             }
+
+            if (node instanceof Not) return `(${mapOp('!')}${rec(node.arg)})`;
+            if (node instanceof And) return `(${rec(node.left)} ${mapOp('&&')} ${rec(node.right)})`;
+            if (node instanceof Or) return `(${rec(node.left)} ${mapOp('||')} ${rec(node.right)})`;
 
             return node.toString();
         };
@@ -10800,6 +10827,69 @@ class CAS {
         // We could check if they share a base category but I flattened the map.
 
         return new Num(val * rateFrom / rateTo);
+    }
+
+    _fourierTransform(expr, t, w) {
+        expr = expr.expand().simplify();
+
+        if (expr instanceof Add) return new Add(this._fourierTransform(expr.left, t, w), this._fourierTransform(expr.right, t, w)).simplify();
+        if (expr instanceof Sub) return new Sub(this._fourierTransform(expr.left, t, w), this._fourierTransform(expr.right, t, w)).simplify();
+        if (expr instanceof Mul) {
+            if (!this._dependsOn(expr.left, t)) return new Mul(expr.left, this._fourierTransform(expr.right, t, w)).simplify();
+            if (!this._dependsOn(expr.right, t)) return new Mul(expr.right, this._fourierTransform(expr.left, t, w)).simplify();
+        }
+
+        // Table
+        // delta(t - t0) -> exp(-i*w*t0)
+        // exp(-a*t^2) -> sqrt(pi/a) * exp(-w^2/(4a))
+        // exp(-a*abs(t)) -> 2a / (a^2 + w^2)
+        // 1 -> 2*pi*delta(w) (Not handled nicely, but possible)
+
+        // Gaussian: exp(-a*t^2)
+        if (expr instanceof Call && expr.funcName === 'exp') {
+             const arg = expr.args[0];
+             // check -a*t^2
+             const poly = this._getPolyCoeffs(arg, t);
+             if (poly && poly.maxDeg === 2) {
+                 const c2 = poly.coeffs[2];
+                 // const c1 = poly.coeffs[1]; // Shift?
+                 if (poly.coeffs[1] && poly.coeffs[1].evaluateNumeric() !== 0) {
+                     // Shift theorem? F{f(t-t0)}? No, this is exp(-(t-t0)^2) maybe
+                     return new Call('fourier_transform', [expr, t, w]);
+                 }
+
+                 // Check c2 is negative
+                 const c2Val = c2.evaluateNumeric();
+                 if (!isNaN(c2Val) && c2Val < 0) {
+                     // a = -c2
+                     const a = new Mul(new Num(-1), c2).simplify();
+
+                     // sqrt(pi/a) * exp(-w^2 / 4a)
+                     const factor = new Call('sqrt', [new Div(new Sym('pi'), a)]);
+                     const expArg = new Div(new Mul(new Num(-1), new Pow(w, new Num(2))), new Mul(new Num(4), a));
+                     return new Mul(factor, new Call('exp', [expArg])).simplify();
+                 }
+             }
+        }
+
+        // dirac(t - a)
+        if (expr instanceof Call && expr.funcName === 'dirac') {
+            const arg = expr.args[0];
+            const poly = this._getPolyCoeffs(arg, t);
+            if (poly && poly.maxDeg === 1 && poly.coeffs[1].evaluateNumeric() === 1) {
+                // t + c0 = t - (-c0)
+                const a = new Mul(new Num(-1), poly.coeffs[0] || new Num(0)).simplify();
+                // e^(-i w a)
+                return new Call('exp', [new Mul(new Mul(new Num(-1), new Sym('i')), new Mul(w, a))]).simplify();
+            }
+        }
+
+        return new Call('fourier_transform', [expr, t, w]);
+    }
+
+    _inverseFourierTransform(expr, w, t) {
+        // Just inverse of the above
+        return new Call('inverse_fourier_transform', [expr, w, t]);
     }
 
     _mse(list) {

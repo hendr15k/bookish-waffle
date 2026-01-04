@@ -7093,30 +7093,36 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
 
                  if (type === 'f') {
                      if (!isNaN(di) && !isNaN(do_val)) {
-                         const res = 1 / (1/di + 1/do_val);
+                         const res = 1 / (1/do_val + 1/di);
                          result = `Focal Length (f) = ${res.toFixed(4)}`;
+                         formula = `1/f = 1/do + 1/di`;
                      }
                  } else if (type === 'di') {
                      if (!isNaN(f) && !isNaN(do_val)) {
                          const res = 1 / (1/f - 1/do_val);
                          result = `Image Dist (di) = ${res.toFixed(4)}`;
+                         formula = `1/di = 1/f - 1/do`;
                      }
                  } else if (type === 'do') {
                      if (!isNaN(f) && !isNaN(di)) {
                          const res = 1 / (1/f - 1/di);
                          result = `Object Dist (do) = ${res.toFixed(4)}`;
+                         formula = `1/do = 1/f - 1/di`;
                      }
                  } else if (type === 'm') {
                      if (!isNaN(di) && !isNaN(do_val)) {
                          const m = -di / do_val;
                          result = `Magnification (m) = ${m.toFixed(4)}`;
+                         formula = `m = -di/do`;
 
                          const hi = val('phys-hi');
                          const ho = val('phys-ho');
                          if (!isNaN(ho)) {
                              result += `\nImage Height (hi) = ${(m * ho).toFixed(4)}`;
+                             formula += `, hi = m*ho`;
                          } else if (!isNaN(hi)) {
                              result += `\nObject Height (ho) = ${(hi / m).toFixed(4)}`;
+                             formula += `, ho = hi/m`;
                          }
                      }
                  }
