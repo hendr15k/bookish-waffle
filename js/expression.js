@@ -1132,7 +1132,7 @@ class Div extends BinaryOp {
         }
 
         if (this.left instanceof Num && this.left.value === 1 && this.right instanceof Sym && this.right.name === varName.name) {
-            return new Call("ln", [varName]);
+            return new Call("ln", [new Call("abs", [varName])]);
         }
         if (this.right instanceof Num) {
             return new Mul(new Div(new Num(1), this.right), this.left.integrate(varName));
@@ -1195,7 +1195,7 @@ class Div extends BinaryOp {
                 const newExp = -n + 1;
                 return new Div(new Pow(this.right.left, new Num(newExp)), new Num(newExp));
             } else {
-                 return new Call("ln", [varName]);
+                 return new Call("ln", [new Call("abs", [varName])]);
             }
         }
 
@@ -2074,6 +2074,13 @@ class Call extends Expr {
             // Standard: dirac'(x)
             return new Call('diff', [this, varName]);
         }
+        if (this.funcName === 'sign') {
+            // diff(sign(u)) = 2*dirac(u) * u'
+            return new Mul(new Mul(new Num(2), new Call('dirac', [u])), u.diff(varName));
+        }
+        if (['floor', 'ceil', 'round'].includes(this.funcName)) {
+            return new Num(0);
+        }
         if (this.funcName === 'sinc') {
             // diff(sin(x)/x) = (x*cos(x) - sin(x)) / x^2
             const num = new Sub(new Mul(u, new Call('cos', [u])), new Call('sin', [u]));
@@ -2228,6 +2235,14 @@ class Call extends Expr {
             if (this.funcName === 'heaviside') {
                 // x * H(x) (Ramp function)
                 return new Mul(varName, new Call('heaviside', [varName]));
+            }
+            if (this.funcName === 'abs') {
+                // x*abs(x)/2
+                return new Div(new Mul(varName, new Call('abs', [varName])), new Num(2));
+            }
+            if (this.funcName === 'sign') {
+                // abs(x)
+                return new Call('abs', [varName]);
             }
         }
         return new Call("integrate", [this, varName]);
