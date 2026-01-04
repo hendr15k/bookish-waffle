@@ -116,7 +116,7 @@ test("Diff chain rule sin(x^2)", "diff(sin(x^2), x)", "(cos(x^2) * (2 * x))");
 
 test("Integrate x", "integrate(x, x)", "(x^2 / 2)");
 test("Integrate x^2", "integrate(x^2, x)", "(x^3 / 3)");
-test("Integrate 1/x", "integrate(1/x, x)", "ln(x)");
+test("Integrate 1/x", "integrate(1/x, x)", "ln(abs(x))");
 test("Integrate constant", "integrate(5, x)", "(5 * x)");
 
 // 3. Complex Numbers
