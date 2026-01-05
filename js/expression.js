@@ -598,6 +598,8 @@ class Sub extends BinaryOp {
         // csc^2(x) - cot^2(x) -> 1
         // tan^2(x) - sec^2(x) -> -1
         // cot^2(x) - csc^2(x) -> -1
+        // cosh^2(x) - sinh^2(x) -> 1
+        // sinh^2(x) - cosh^2(x) -> -1
         if (l instanceof Pow && r instanceof Pow && l.right instanceof Num && l.right.value === 2 && r.right instanceof Num && r.right.value === 2) {
              if (l.left instanceof Call && r.left instanceof Call && l.left.args[0].toString() === r.left.args[0].toString()) {
                  const f1 = l.left.funcName;
@@ -606,6 +608,8 @@ class Sub extends BinaryOp {
                  if (f1 === 'csc' && f2 === 'cot') return new Num(1);
                  if (f1 === 'tan' && f2 === 'sec') return new Num(-1);
                  if (f1 === 'cot' && f2 === 'csc') return new Num(-1);
+                 if (f1 === 'cosh' && f2 === 'sinh') return new Num(1);
+                 if (f1 === 'sinh' && f2 === 'cosh') return new Num(-1);
              }
         }
 
@@ -1197,6 +1201,11 @@ class Div extends BinaryOp {
             } else {
                  return new Call("ln", [new Call("abs", [varName])]);
             }
+        }
+
+        // integrate(1/sqrt(x), x) -> 2sqrt(x)
+        if (this.left instanceof Num && this.left.value === 1 && this.right instanceof Call && this.right.funcName === 'sqrt' && this.right.args[0].name === varName.name) {
+             return new Mul(new Num(2), new Call('sqrt', [varName]));
         }
 
         // integrate(x / (x^2 + a)) -> 0.5 * ln(x^2 + a)

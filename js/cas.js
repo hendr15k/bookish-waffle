@@ -354,9 +354,24 @@ class CAS {
                         return new Call('integrate', args);
                     }
 
-                    const valUpper = indefinite.substitute(varNode, upper);
-                    const valLower = indefinite.substitute(varNode, lower);
-                    return new Sub(valUpper, valLower);
+                    // Use limit for bounds to handle singularities (e.g. 1/sqrt(x) at 0)
+                    // limit(F(x), x, upper, left) - limit(F(x), x, lower, right)
+                    let valUpper = indefinite.substitute(varNode, upper);
+                    // Check if substitution failed (NaN or Infinity symbolic)
+                    // Also check for evaluateNumeric issues if needed, but symbolic check covers basic cases
+                    const isBad = (n) => (n instanceof Sym && (n.name === 'NaN' || n.name === 'Infinity' || n.name === 'infinity')) ||
+                                         (n instanceof Mul && n.left instanceof Num && n.left.value === -1 && (n.right.name === 'Infinity' || n.right.name === 'infinity'));
+
+                    if (isBad(valUpper)) {
+                         valUpper = this._limit(indefinite, varNode, upper, 0, -1);
+                    }
+
+                    let valLower = indefinite.substitute(varNode, lower);
+                    if (isBad(valLower)) {
+                         valLower = this._limit(indefinite, varNode, lower, 0, 1);
+                    }
+
+                    return new Sub(valUpper, valLower).simplify();
                 }
 
                 // Check for standard integrals that are not handled by Expr.integrate
@@ -4429,6 +4444,21 @@ class CAS {
     }
 
     _limit(expr, varNode, point, depth = 0, dir = 0) {
+        // Special check for direction sensitivity on basic functions like sign/abs at discontinuity
+        if (dir !== 0) {
+             const val = expr.substitute(varNode, point).simplify();
+             // If evaluation yields 0 for sign(x) but we have direction, check argument
+             if (expr instanceof Call && expr.funcName === 'sign' && val.evaluateNumeric() === 0) {
+                 const arg = expr.args[0];
+                 // Check derivative of argument at point
+                 const argDiff = arg.diff(varNode).substitute(varNode, point).evaluateNumeric();
+                 if (!isNaN(argDiff) && argDiff !== 0) {
+                     // If arg is increasing, sign(arg) approaches sign(dir)
+                     // If arg is decreasing, sign(arg) approaches sign(-dir)
+                     return new Num(Math.sign(argDiff * dir));
+                 }
+             }
+        }
         if (depth > 5) return new Call("limit", [expr, varNode, point]);
 
         // Check for Indeterminate form NaN (from 0*Inf)
@@ -4474,13 +4504,13 @@ class CAS {
                  // But Div(1, 2).simplify() -> Div(1, 2) unless one is float.
                  // Check if simplify() was called on new Div inside the recursion?
                  // Yes, recursive _limit might simplify result.
-                 return this._limit(new Div(diffNum, diffDen), varNode, point, depth + 1, dir);
+                 return this._limit(new Div(diffNum, diffDen).simplify(), varNode, point, depth + 1, dir);
             }
 
             if (isInfinite(num) && isInfinite(den)) {
                  const diffNum = expr.left.diff(varNode).simplify();
                  const diffDen = expr.right.diff(varNode).simplify();
-                 return this._limit(new Div(diffNum, diffDen), varNode, point, depth + 1, dir);
+                 return this._limit(new Div(diffNum, diffDen).simplify(), varNode, point, depth + 1, dir);
             }
 
             if (num instanceof Num && den instanceof Num) {
@@ -4561,8 +4591,8 @@ class CAS {
 
             // Check for 1^Infinity form: lim (base^exp)
             if (expr instanceof Pow) {
-                const L_base = this._limit(expr.left, varNode, point, depth + 1);
-                const L_exp = this._limit(expr.right, varNode, point, depth + 1);
+                const L_base = this._limit(expr.left, varNode, point, depth + 1, dir);
+                const L_exp = this._limit(expr.right, varNode, point, depth + 1, dir);
 
                 // Check if base -> 1 and exp -> Infinity
                 const isOne = (node) => node instanceof Num && Math.abs(node.value - 1) < 1e-9;
@@ -4576,7 +4606,7 @@ class CAS {
                     // Actually, if it simplifies to 1, limit(1) is 1. That is correct.
                     // If it simplifies to 1, result is exp(1).
                     const newExpr = new Mul(baseMinusOne, expr.right).simplify();
-                    const limNew = this._limit(newExpr, varNode, point, depth + 1);
+                    const limNew = this._limit(newExpr, varNode, point, depth + 1, dir);
                     // Force return of exp(limNew)
                     // If limNew is 1, Call('exp', [1]).simplify() might return Num(2.718) or Num(1) if logic is wrong?
                     // Call.simplify for exp: if arg is 0 -> 1. If arg is 1 -> exp(1).
