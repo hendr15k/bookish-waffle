@@ -1447,6 +1447,13 @@ class CAS {
                 return this._desolve(args[0], args[1]);
             }
 
+            if (node.funcName === 'rsolve') {
+                // rsolve(eq, a(n), [conds])
+                if (node.args.length < 2) throw new Error("rsolve requires at least 2 arguments: equation, recurrence_term");
+                const conds = (node.args.length > 2) ? args[2] : null;
+                return this._rsolve(args[0], args[1], conds);
+            }
+
             if (node.funcName === 'fourier') {
                 if (node.args.length < 3) throw new Error("fourier requires 3 arguments: expr, var, n, [L]");
                 const expr = args[0];
@@ -2327,6 +2334,19 @@ class CAS {
             return new Pow(expr, count).simplify();
         }
 
+        // Normalize start to 1
+        // product(f(k), k, a, b) -> product(f(j+a-1), j, 1, b-a+1)
+        if (!(start instanceof Num && start.value === 1)) {
+             const j = new Sym(varNode.name + "_idx");
+             const shift = new Sub(start, new Num(1));
+             const subExpr = expr.substitute(varNode, new Add(j, shift)).simplify();
+             const newEnd = new Sub(end, shift).simplify();
+             return this._productSymbolic(subExpr, j, new Num(1), newEnd);
+        }
+
+        // Now start is 1. Number of terms is 'end' (denoted n)
+        const n = end;
+
         // product(A*B) = product(A) * product(B)
         if (expr instanceof Mul) {
             return new Mul(
@@ -2343,23 +2363,36 @@ class CAS {
             ).simplify();
         }
 
-        // Normalize start to 1?
-        // product(f(k), k, 1, n)
-
-        // k -> n!
-        if (expr instanceof Sym && expr.name === varNode.name) {
-             if (start instanceof Num && start.value === 1) {
-                 return new Call('factorial', [end]);
-             }
-        }
-
-        // c^k -> c^(sum k) = c^(n(n+1)/2)
+        // c^k -> c^(sum k)
         if (expr instanceof Pow && !this._dependsOn(expr.left, varNode)) {
-             // base^exponent
-             // product(b^f(k)) = b^sum(f(k))
              const exponentSum = this._sumSymbolic(expr.right, varNode, start, end);
              return new Pow(expr.left, exponentSum).simplify();
         }
+
+        // Check for Linear Term: c1*k + c0
+        // product(c1*k + c0) = c1^n * gamma(n + 1 + c0/c1) / gamma(1 + c0/c1)
+        try {
+            const poly = this._getPolyCoeffs(expr, varNode);
+            if (poly && poly.maxDeg === 1) {
+                const c1 = poly.coeffs[1];
+                const c0 = poly.coeffs[0] || new Num(0);
+
+                // If c1 = 1: gamma(n + 1 + c0) / gamma(1 + c0)
+                // If c1 != 1: c1^n * ...
+                const B = new Div(c0, c1).simplify(); // c0/c1
+
+                const gammaNum = new Call('gamma', [new Add(new Add(n, new Num(1)), B)]);
+                const gammaDen = new Call('gamma', [new Add(new Num(1), B)]);
+                const termGamma = new Div(gammaNum, gammaDen);
+
+                if (c1 instanceof Num && c1.value === 1) {
+                    return termGamma.simplify();
+                } else {
+                    const termC1 = new Pow(c1, n);
+                    return new Mul(termC1, termGamma).simplify();
+                }
+            }
+        } catch(e) {}
 
         return new Call("product", [expr, varNode, start, end]);
     }
@@ -5258,6 +5291,14 @@ class CAS {
             const calcGcd = (u, v) => !v ? u : calcGcd(v, u % v);
             return new Num((x * y) / calcGcd(x, y));
          }
+
+         // Polynomial LCM: (A * B) / GCD(A, B)
+         const gcdVal = this._gcd(a, b);
+         if (!(gcdVal instanceof Call && gcdVal.funcName === 'gcd')) {
+             const prod = new Mul(a, b).simplify();
+             return new Div(prod, gcdVal).simplify();
+         }
+
          return new Call('lcm', [a, b]);
     }
 
@@ -6814,6 +6855,199 @@ class CAS {
         }
 
         return new Vec(L.map(r => new Vec(r)));
+    }
+
+    _rsolve(eq, term, conds) {
+        // Linear Constant Coefficient Recurrence Relation
+        // eq: a(n) - a(n-1) - a(n-2) = 0
+        // term: a(n) (Call)
+        // conds: [a(0)=0, a(1)=1] (Vec of Eqs)
+
+        if (!(term instanceof Call)) throw new Error("Recurrence term must be a function call, e.g., a(n)");
+        const funcName = term.funcName;
+        const nVar = term.args[0]; // n
+
+        // Normalize equation to Expression = 0
+        let expr = eq;
+        if (eq instanceof Eq) expr = new Sub(eq.left, eq.right).simplify();
+        expr = expr.expand().simplify();
+
+        // 1. Identify Shifted Terms
+        // Find all occurrences of a(n+k) or a(n-k)
+        // Map shift k -> coefficient
+        const coeffs = {}; // integer shift -> Expr
+        let minShift = 0;
+        let maxShift = 0;
+        let foundAny = false;
+
+        const terms = [];
+        const collect = (e, sign=1) => {
+            if (e instanceof Add) { collect(e.left, sign); collect(e.right, sign); }
+            else if (e instanceof Sub) { collect(e.left, sign); collect(e.right, -sign); }
+            else terms.push({e, sign});
+        };
+        collect(expr);
+
+        for(const item of terms) {
+            // Check for coeff * a(...)
+            // Separate coeff and call
+            let coeff = new Num(item.sign);
+            let callNode = null;
+
+            const analyze = (node) => {
+                if (node instanceof Call && node.funcName === funcName) return node;
+                if (node instanceof Mul) {
+                    const l = analyze(node.left);
+                    if (l) { coeff = new Mul(coeff, node.right); return l; }
+                    const r = analyze(node.right);
+                    if (r) { coeff = new Mul(coeff, node.left); return r; }
+                }
+                return null;
+            };
+
+            callNode = analyze(item.e);
+
+            if (callNode) {
+                // Check argument n+k or n-k
+                const arg = callNode.args[0].simplify();
+                let shift = 0;
+                // n -> 0
+                // n+k -> k
+                // n-k -> -k
+                if (arg.toString() === nVar.toString()) shift = 0;
+                else if (arg instanceof Add && arg.left.toString() === nVar.toString() && arg.right instanceof Num) {
+                    shift = arg.right.value;
+                }
+                else if (arg instanceof Add && arg.right.toString() === nVar.toString() && arg.left instanceof Num) {
+                    shift = arg.left.value;
+                }
+                else if (arg instanceof Sub && arg.left.toString() === nVar.toString() && arg.right instanceof Num) {
+                    shift = -arg.right.value;
+                }
+                else {
+                    // Complex shift or not linear shift
+                    // throw new Error("Only constant shifts supported: " + arg);
+                    return new Call('rsolve', [eq, term, conds]);
+                }
+
+                if (!foundAny) { minShift = shift; maxShift = shift; foundAny = true; }
+                else {
+                    if (shift < minShift) minShift = shift;
+                    if (shift > maxShift) maxShift = shift;
+                }
+
+                coeffs[shift] = new Add(coeffs[shift] || new Num(0), coeff).simplify();
+            } else {
+                // Non-homogeneous term?
+                // For now, assume homogeneous (=0) or ignore/error
+                // Or subtract from 0?
+                // We strictly solve homogeneous for now.
+                const val = item.e.evaluateNumeric();
+                if (isNaN(val) || Math.abs(val) > 1e-9) {
+                    // return new Call('rsolve', [eq, term, conds]); // Fallback
+                }
+            }
+        }
+
+        if (!foundAny) return new Call('rsolve', [eq, term, conds]);
+
+        // 2. Characteristic Polynomial
+        // Shift indices so lowest is 0.
+        // P(r) = sum c_k * r^(k - minShift)
+        let charPoly = new Num(0);
+        const rVar = new Sym('r');
+
+        for(const s in coeffs) {
+            const shift = parseInt(s);
+            const power = shift - minShift;
+            const c = coeffs[s];
+            if (power === 0) charPoly = new Add(charPoly, c);
+            else charPoly = new Add(charPoly, new Mul(c, new Pow(rVar, new Num(power))));
+        }
+
+        charPoly = charPoly.simplify();
+
+        // 3. Solve for Roots
+        const rootsRes = this._solve(charPoly, rVar);
+        let roots = [];
+        if (rootsRes instanceof Call && rootsRes.funcName === 'set') roots = rootsRes.args;
+        else if (rootsRes instanceof Expr && !(rootsRes instanceof Call && rootsRes.funcName === 'solve')) roots = [rootsRes];
+        else {
+            // Unsolvable
+            return new Call('rsolve', [eq, term, conds]);
+        }
+
+        // Count multiplicities
+        const rootCounts = {};
+        for(const r of roots) {
+            const s = r.toString();
+            rootCounts[s] = (rootCounts[s] || 0) + 1;
+        }
+
+        // 4. General Solution
+        // sum (C_i * r^n)
+        // repeated root r (m times): C1*r^n + C2*n*r^n + ... + Cm*n^(m-1)*r^n
+        let solution = new Num(0);
+        let constants = [];
+        let cIdx = 1;
+
+        for(const rStr in rootCounts) {
+            // Find the actual root object
+            const root = roots.find(r => r.toString() === rStr);
+            const m = rootCounts[rStr];
+
+            for(let i=0; i<m; i++) {
+                const C = new Sym('C' + cIdx++);
+                constants.push(C);
+                let termSol;
+                // n^i * r^n
+                const rPowN = new Pow(root, nVar);
+                if (i === 0) termSol = rPowN;
+                else if (i === 1) termSol = new Mul(nVar, rPowN);
+                else termSol = new Mul(new Pow(nVar, new Num(i)), rPowN);
+
+                solution = new Add(solution, new Mul(C, termSol));
+            }
+        }
+        solution = solution.simplify();
+
+        // 5. Apply Initial Conditions
+        if (conds && conds instanceof Vec) {
+            const system = [];
+            const vars = new Vec(constants);
+
+            for(const cond of conds.elements) {
+                // a(k) = val
+                // Extract k and val
+                let kVal = null;
+                let val = null;
+                if (cond instanceof Eq) {
+                    if (cond.left instanceof Call && cond.left.funcName === funcName) {
+                        kVal = cond.left.args[0].evaluateNumeric();
+                        val = cond.right;
+                    }
+                }
+                if (kVal !== null && val !== null) {
+                    // Substitute n=k in solution -> eq
+                    const eqSol = solution.substitute(nVar, new Num(kVal)).simplify();
+                    system.push(new Eq(eqSol, val));
+                }
+            }
+
+            if (system.length > 0) {
+                const solConsts = this._solveSystem(new Vec(system), vars);
+                if (solConsts instanceof Vec && solConsts.elements.length === constants.length) {
+                    // Substitute constants back
+                    let finalSol = solution;
+                    for(let i=0; i<constants.length; i++) {
+                        finalSol = finalSol.substitute(constants[i], solConsts.elements[i]);
+                    }
+                    return finalSol.simplify();
+                }
+            }
+        }
+
+        return solution;
     }
 
     _desolve(eq, depVar) {
