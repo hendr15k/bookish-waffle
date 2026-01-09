@@ -2195,6 +2195,39 @@ class Call extends Expr {
             const exp = new Call('exp', [new Mul(new Num(-1), new Pow(u, new Num(2)))]);
             return new Mul(new Mul(coeff, exp), u.diff(varName));
         }
+
+        if (this.funcName === 'sum') {
+            // sum(expr, k, start, end)
+            if (this.args.length === 4) {
+                const expr = this.args[0];
+                const k = this.args[1];
+                const start = this.args[2];
+                const end = this.args[3];
+                // diff(sum(f)) = sum(diff(f)) assuming bounds const
+                // Check dependency of bounds
+                // For now assume constant bounds or handle symbolic diff
+                const diffExpr = expr.diff(varName).simplify();
+                return new Call('sum', [diffExpr, k, start, end]).simplify();
+            }
+        }
+
+        if (this.funcName === 'product') {
+            // product(expr, k, start, end)
+            // diff(prod(f)) = prod(f) * sum(diff(f)/f)
+            if (this.args.length === 4) {
+                const expr = this.args[0];
+                const k = this.args[1];
+                const start = this.args[2];
+                const end = this.args[3];
+
+                const diffExpr = expr.diff(varName).simplify();
+                const term = new Div(diffExpr, expr).simplify();
+                const sumPart = new Call('sum', [term, k, start, end]).simplify();
+
+                return new Mul(this, sumPart).simplify();
+            }
+        }
+
         // Default to symbolic diff
         return new Call('diff', [this, varName]);
     }
