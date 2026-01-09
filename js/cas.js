@@ -2042,6 +2042,17 @@ class CAS {
                 return this._convolution(args[0], args[1], args[2]);
             }
 
+            if (node.funcName === 'conv') {
+                if (node.args.length !== 2) throw new Error("conv requires 2 arguments: u, v");
+                return this._conv(args[0], args[1]);
+            }
+
+            if (node.funcName === 'pade') {
+                // pade(expr, var, n, m)
+                if (node.args.length !== 4) throw new Error("pade requires 4 arguments: expr, var, n, m");
+                return this._pade(args[0], args[1], args[2], args[3]);
+            }
+
             if (node.funcName === 'wronskian') {
                 if (node.args.length !== 2) throw new Error("wronskian requires 2 arguments: list_of_funcs, var");
                 return this._wronskian(args[0], args[1]);
@@ -4683,7 +4694,7 @@ class CAS {
         if (!(matrix instanceof Vec)) throw new Error("det requires a matrix");
 
         const rows = matrix.elements.length;
-        if (rows === 0) return new Num(0);
+        if (rows === 0) return new Num(1); // Empty determinant is 1
         if (!(matrix.elements[0] instanceof Vec)) throw new Error("det requires a matrix");
         const cols = matrix.elements[0].elements.length;
 
@@ -11195,6 +11206,133 @@ class CAS {
         const integrand = new Mul(f_tau, g_shifted);
 
         return this.evaluate(new Call('integrate', [integrand, tau, new Num(0), t])).simplify();
+    }
+
+    _conv(u, v) {
+        if (!(u instanceof Vec) || !(v instanceof Vec)) throw new Error("conv requires two lists");
+        // Discrete convolution
+        const A = u.elements;
+        const B = v.elements;
+        const n = A.length;
+        const m = B.length;
+        if (n === 0 || m === 0) return new Vec([]);
+
+        const len = n + m - 1;
+        const res = new Array(len).fill(null);
+
+        // Standard O(N*M) implementation
+        // w[k] = sum(A[j] * B[k-j])
+        for (let k = 0; k < len; k++) {
+            let sum = new Num(0);
+            const start = Math.max(0, k - m + 1);
+            const end = Math.min(k, n - 1);
+            for (let j = start; j <= end; j++) {
+                const term = new Mul(A[j], B[k - j]).simplify();
+                sum = new Add(sum, term).simplify();
+            }
+            res[k] = sum;
+        }
+        return new Vec(res);
+    }
+
+    _pade(expr, varNode, n, m) {
+        // Pade Approximation [n/m]
+        // f(x) approx P(x)/Q(x)
+        // P degree n, Q degree m. Q(0)=1.
+        if (!(n instanceof Num) || !(m instanceof Num)) throw new Error("Orders must be numbers");
+        const N = n.value;
+        const M = m.value;
+
+        // 1. Compute Taylor series up to N + M
+        // We assume expansion around 0 for standard Pade?
+        // Usually Pade is at x=0.
+        // If expr is f(x), taylor(f, x, 0, N+M)
+        // Ensure sufficient degree: N+M+1 just to be safe if taylor is order-exclusive
+        const taylorPoly = this._taylor(expr, varNode, new Num(0), N + M + 1);
+        const polyInfo = this._getPolyCoeffs(taylorPoly, varNode);
+        if (!polyInfo) throw new Error("Failed to compute Taylor series for Pade");
+
+        const c = (k) => polyInfo.coeffs[k] || new Num(0);
+
+        // 2. Solve for Q coefficients q1...qM
+        // System: sum_{j=0}^M c_{k-j} * q_j = 0 for k = N+1 ... N+M
+        // where q_0 = 1.
+        // c_{N+1} + c_N q_1 + ... + c_{N-M+1} q_M = 0
+        // ...
+        // We have M unknowns q_1...q_M.
+        // A * q = b
+
+        if (M > 0) {
+            const matRows = [];
+            const bCols = []; // Actually we solve A*q = -b (since c_{k} term moves to RHS)
+
+            for (let i = 1; i <= M; i++) {
+                const k = N + i;
+                const row = [];
+                // coeffs for q_1 ... q_M
+                // eq: c_{k}*1 + c_{k-1}*q_1 + ... + c_{k-M}*q_M = 0
+                // coeffs are c_{k-1} ... c_{k-M}
+                for (let j = 1; j <= M; j++) {
+                    const idx = k - j;
+                    row.push(idx >= 0 ? c(idx) : new Num(0));
+                }
+                matRows.push(new Vec(row));
+                // RHS: -c_k
+                bCols.push(new Mul(new Num(-1), c(k)).simplify());
+            }
+
+            // Solve A*q = b
+            const A = new Vec(matRows);
+            const b = new Vec(bCols.map(x => new Vec([x]))); // Column vector
+
+            // Use generic solve? Or linear algebra solve.
+            // If matrix is singular, Pade might not exist.
+            let qVec;
+            try {
+                // x = inv(A) * b
+                const invA = this._inv(A);
+                qVec = new Mul(invA, b).simplify();
+            } catch (e) {
+                return new Call('pade', [expr, varNode, n, m]);
+            }
+
+            // Construct Q
+            let Q = new Num(1);
+            for (let i = 0; i < M; i++) {
+                // qVec is column vector of q1...qM
+                const qi = (qVec instanceof Vec) ? qVec.elements[i].elements[0] : qVec;
+                // q_i * x^(i+1)
+                const term = new Mul(qi, new Pow(varNode, new Num(i + 1)));
+                Q = new Add(Q, term);
+            }
+            Q = Q.simplify();
+
+            // 3. Compute P coefficients p0...pN
+            // p_k = sum_{j=0}^k c_{k-j} * q_j
+            // q_0 = 1
+            let P = new Num(0);
+            for (let k = 0; k <= N; k++) {
+                let pk = new Num(0);
+                for (let j = 0; j <= k; j++) {
+                    // q_j. q_0=1.
+                    let qj = new Num(1);
+                    if (j > 0) {
+                        if (j <= M) {
+                             const el = (qVec instanceof Vec) ? qVec.elements[j - 1].elements[0] : qVec;
+                             qj = el;
+                        } else qj = new Num(0);
+                    }
+                    pk = new Add(pk, new Mul(c(k - j), qj));
+                }
+                P = new Add(P, new Mul(pk, new Pow(varNode, new Num(k))));
+            }
+            P = P.simplify();
+
+            return new Div(P, Q).simplify();
+        } else {
+            // M=0 -> Taylor polynomial
+            return taylorPoly;
+        }
     }
 
     _wronskian(funcs, varNode) {

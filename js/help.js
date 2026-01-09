@@ -142,6 +142,11 @@ window.HELP_DATA = {
         "syntax": "taylor(expr, var, point, order)",
         "examples": ["taylor(sin(x), x, 0, 5)"]
     },
+    "pade": {
+        "description": "Computes the Pade approximation [N/M].",
+        "syntax": "pade(expr, var, n, m)",
+        "examples": ["pade(exp(x), x, 2, 2)"]
+    },
     "sum": {
         "description": "Calculates the summation.",
         "syntax": "sum(expr, var, start, end)",
@@ -233,6 +238,11 @@ window.HELP_DATA = {
         "description": "Inverse of a matrix.",
         "syntax": "inv(matrix)",
         "examples": ["inv([[1, 2], [3, 4]])"]
+    },
+    "cond": {
+        "description": "Condition number of a matrix.",
+        "syntax": "cond(matrix)",
+        "examples": ["cond([[1, 2], [3, 4]])"]
     },
     "trans": {
         "description": "Transpose of a matrix.",
@@ -474,6 +484,7 @@ window.HELP_DATA = {
     "legendreSymbol": { "description": "Legendre Symbol (a/p).", "syntax": "legendreSymbol(a, p)", "examples": ["legendreSymbol(2, 7)"] },
     "isPerfect": { "description": "Checks if a number is a perfect number.", "syntax": "isPerfect(n)", "examples": ["isPerfect(6)", "isPerfect(28)"] },
     "fibonacci": { "description": "nth Fibonacci number.", "syntax": "fibonacci(n)", "examples": ["fibonacci(10)"] },
+    "bernoulli": { "description": "Bernoulli numbers.", "syntax": "bernoulli(n)", "examples": ["bernoulli(4)"] },
     "gamma": { "description": "Gamma function.", "syntax": "gamma(z)", "examples": ["gamma(0.5)"] },
     "beta": { "description": "Beta function B(x, y).", "syntax": "beta(x, y)", "examples": ["beta(2, 3)"] },
     "stirling1": { "description": "Signed Stirling numbers of the first kind.", "syntax": "stirling1(n, k)", "examples": ["stirling1(4, 2)"] },
@@ -487,6 +498,7 @@ window.HELP_DATA = {
     "maximize": { "description": "Finds local maximum.", "syntax": "maximize(f, x)", "examples": ["maximize(-x^2, x)"] },
     "nIntegrate": { "description": "Numeric Integration (Simpson's Rule).", "syntax": "nIntegrate(f, x, a, b)", "examples": ["nIntegrate(exp(-x^2), x, 0, 1)"] },
     "vectorfield": { "description": "Plots a 2D vector field.", "syntax": "vectorfield([u, v], x, y)", "examples": ["vectorfield([-y, x], x, y)"] },
+    "conv": { "description": "Discrete convolution of two lists.", "syntax": "conv(list1, list2)", "examples": ["conv([1, 2], [3, 4])"] },
     "trigReduce": { "description": "Linearize trigonometric powers.", "syntax": "trigReduce(expr)", "examples": ["trigReduce(sin(x)^2)"] },
     "trigExpand": { "description": "Expand trigonometric sums.", "syntax": "trigExpand(expr)", "examples": ["trigExpand(sin(2x))"] },
 
