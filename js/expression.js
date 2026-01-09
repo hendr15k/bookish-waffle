@@ -1751,7 +1751,20 @@ class Call extends Expr {
         if (this.funcName === 'sign') {
             const arg = simpleArgs[0];
             if (arg instanceof Num) return new Num(Math.sign(arg.value));
-            if (arg instanceof Num && arg.value === 0) return new Num(0);
+            // sign(c * x) -> sign(x) if c > 0, -sign(x) if c < 0
+            if (arg instanceof Mul && arg.left instanceof Num) {
+                const c = arg.left;
+                if (c.value > 0) return new Call('sign', [arg.right]).simplify();
+                if (c.value < 0) return new Mul(new Num(-1), new Call('sign', [arg.right])).simplify();
+            }
+            // sign(x^even) -> 1 (assuming x != 0)
+            if (arg instanceof Pow && arg.right instanceof Num && arg.right.value % 2 === 0) {
+                return new Num(1);
+            }
+            // sign(abs(x)) -> 1
+            if (arg instanceof Call && arg.funcName === 'abs') {
+                return new Num(1);
+            }
         }
 
         if (this.funcName === 'erf') {
