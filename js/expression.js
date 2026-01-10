@@ -289,6 +289,8 @@ class Sym extends Expr {
     evaluateNumeric() {
         if (this.name === 'pi') return Math.PI;
         if (this.name === 'e') return Math.E;
+        if (this.name === 'catalan') return 0.9159655941772190;
+        if (this.name === 'gamma') return 0.5772156649015328;
         if (this.name === 'Infinity' || this.name === 'infinity') return Infinity;
         if (this.name === 'i') return NaN; // Or complex object?
         return NaN; // Cannot evaluate generic symbol
@@ -1505,6 +1507,13 @@ class Pow extends BinaryOp {
     toLatex() {
         let lTex = this.left.toLatex();
         if (this.left instanceof Add || this.left instanceof Sub || this.left instanceof Mul || this.left instanceof Div || this.left instanceof Pow) lTex = `\\left(${lTex}\\right)`;
+
+        // Render x^(1/n) as \sqrt[n]{x}
+        if (this.right instanceof Div && this.right.left instanceof Num && this.right.left.value === 1) {
+            const n = this.right.right.toLatex();
+            return `\\sqrt[${n}]{${lTex}}`;
+        }
+
         return `{${lTex}}^{${this.right.toLatex()}}`;
     }
 }
@@ -1758,21 +1767,14 @@ class Call extends Expr {
             const arg = simpleArgs[0];
             if (arg instanceof Num) {
                 const val = arg.value;
-                // Use approximation for numeric erf
-                const sign = (val >= 0) ? 1 : -1;
-                const x = Math.abs(val);
-
-                // Abramowitz & Stegun 7.1.26
-                const a1 =  0.254829592;
-                const a2 = -0.284496736;
-                const a3 =  1.421413741;
-                const a4 = -1.453152027;
-                const a5 =  1.061405429;
-                const p  =  0.3275911;
-
-                const t = 1.0 / (1.0 + p * x);
-                const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
-                return new Num(sign * y);
+                return new Num(math_erf(val));
+            }
+        }
+        if (this.funcName === 'erfc') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) {
+                const val = arg.value;
+                return new Num(1.0 - math_erf(val));
             }
         }
 
@@ -2009,21 +2011,14 @@ class Call extends Expr {
              return NaN;
         }
         if (this.funcName === 'erf') {
-             // Approximation (same logic as simplify or just call it)
-             // But evaluateNumeric returns a number, not Expr.
              const val = argsVal[0];
              if (isNaN(val)) return NaN;
-             const sign = (val >= 0) ? 1 : -1;
-             const x = Math.abs(val);
-             const a1 =  0.254829592;
-             const a2 = -0.284496736;
-             const a3 =  1.421413741;
-             const a4 = -1.453152027;
-             const a5 =  1.061405429;
-             const p  =  0.3275911;
-             const t = 1.0 / (1.0 + p * x);
-             const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
-             return sign * y;
+             return math_erf(val);
+        }
+        if (this.funcName === 'erfc') {
+             const val = argsVal[0];
+             if (isNaN(val)) return NaN;
+             return 1.0 - math_erf(val);
         }
         if (this.funcName === 'gamma') {
             return math_gamma(argsVal[0]);
@@ -2195,6 +2190,12 @@ class Call extends Expr {
             const exp = new Call('exp', [new Mul(new Num(-1), new Pow(u, new Num(2)))]);
             return new Mul(new Mul(coeff, exp), u.diff(varName));
         }
+        if (this.funcName === 'erfc') {
+            // d/dx erfc(u) = -2/sqrt(pi) * e^(-u^2) * u'
+            const coeff = new Div(new Num(-2), new Call('sqrt', [new Sym('pi')]));
+            const exp = new Call('exp', [new Mul(new Num(-1), new Pow(u, new Num(2)))]);
+            return new Mul(new Mul(coeff, exp), u.diff(varName));
+        }
         // Default to symbolic diff
         return new Call('diff', [this, varName]);
     }
@@ -2292,6 +2293,7 @@ class Call extends Expr {
         const argsTex = this.args.map(a => a.toLatex());
 
         if (this.funcName === 'sqrt') return `\\sqrt{${argsTex[0]}}`;
+        if (this.funcName === 'root' && argsTex.length === 2) return `\\sqrt[${argsTex[1]}]{${argsTex[0]}}`;
 
         const standardFunctions = ['sin', 'cos', 'tan', 'sinh', 'cosh', 'tanh', 'exp', 'ln', 'log', 'det', 'gcd', 'sec', 'csc', 'cot'];
         if (standardFunctions.includes(this.funcName)) {
@@ -2323,8 +2325,12 @@ class Call extends Expr {
             'conj': '\\overline{' + argsTex[0] + '}',
             'sign': '\\operatorname{sgn}',
             'erf': '\\operatorname{erf}',
+            'erfc': '\\operatorname{erfc}',
             'psi': '\\psi',
-            'digamma': '\\psi'
+            'digamma': '\\psi',
+            'lambertw': '\\operatorname{W}',
+            'zeta': '\\zeta',
+            'beta': '\\operatorname{B}'
         };
 
         if (this.funcName === 'polygamma' && argsTex.length === 2) {
@@ -3060,6 +3066,22 @@ function math_zeta(s) {
         return sum;
     }
     return NaN; // Not implemented for critical strip yet
+}
+
+function math_erf(x) {
+    // Approximation for numeric erf
+    const sign = (x >= 0) ? 1 : -1;
+    x = Math.abs(x);
+    const a1 =  0.254829592;
+    const a2 = -0.284496736;
+    const a3 =  1.421413741;
+    const a4 = -1.453152027;
+    const a5 =  1.061405429;
+    const p  =  0.3275911;
+
+    const t = 1.0 / (1.0 + p * x);
+    const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+    return sign * y;
 }
 
 function math_lambertw(x) {
