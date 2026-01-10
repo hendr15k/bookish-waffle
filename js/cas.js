@@ -5,7 +5,9 @@ class CAS {
             'pi': new Num(Math.PI),
             'true': new Num(1),
             'false': new Num(0),
-            'j': new Sym('i') // Electrical Engineering imaginary unit
+            'j': new Sym('i'), // Electrical Engineering imaginary unit
+            'catalan': new Num(0.9159655941772190),
+            'gamma': new Num(0.5772156649015328)
         };
 
         this.functions = {};
