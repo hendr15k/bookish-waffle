@@ -2195,6 +2195,35 @@ class Call extends Expr {
             const exp = new Call('exp', [new Mul(new Num(-1), new Pow(u, new Num(2)))]);
             return new Mul(new Mul(coeff, exp), u.diff(varName));
         }
+
+        if (this.funcName === 'sum') {
+            // diff(sum(f, i, a, b), x) = sum(diff(f, x), i, a, b)
+            // Assuming limits a, b do not depend on x
+            if (this.args.length === 4) {
+                const expr = this.args[0];
+                const i = this.args[1];
+                const a = this.args[2];
+                const b = this.args[3];
+                // Check if bounds depend on varName?
+                // Standard CAS assumption: differentiation under sum sign
+                // If bounds depend on x, Leibniz rule applies.
+                // For now, assume independent bounds or handle inner term
+                return new Call('sum', [expr.diff(varName), i, a, b]);
+            }
+        }
+
+        if (this.funcName === 'product') {
+            // diff(product(f, i, a, b), x) = product(f) * sum(diff(f)/f, i, a, b)
+            if (this.args.length === 4) {
+                const expr = this.args[0];
+                const i = this.args[1];
+                const a = this.args[2];
+                const b = this.args[3];
+                const term = new Div(expr.diff(varName), expr);
+                return new Mul(this, new Call('sum', [term, i, a, b]));
+            }
+        }
+
         // Default to symbolic diff
         return new Call('diff', [this, varName]);
     }

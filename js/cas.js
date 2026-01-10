@@ -2042,6 +2042,38 @@ class CAS {
                 return this._convolution(args[0], args[1], args[2]);
             }
 
+            if (node.funcName === 'conv') {
+                if (node.args.length !== 2) throw new Error("conv requires 2 arguments (lists)");
+                return this._conv(args[0], args[1]);
+            }
+
+            if (node.funcName === 'xcorr') {
+                if (node.args.length !== 2) throw new Error("xcorr requires 2 arguments (lists)");
+                return this._xcorr(args[0], args[1]);
+            }
+
+            if (node.funcName === 'pade') {
+                if (node.args.length < 4) throw new Error("pade requires 4 arguments: expr, var, n, m");
+                return this._pade(args[0], args[1], args[2], args[3]);
+            }
+
+            if (node.funcName === 'vandermonde') {
+                if (node.args.length !== 1) throw new Error("vandermonde requires 1 argument (vector)");
+                return this._vandermonde(args[0]);
+            }
+
+            if (node.funcName === 'hilbert') {
+                if (node.args.length !== 1) throw new Error("hilbert requires 1 argument (size)");
+                return this._hilbert(args[0]);
+            }
+
+            if (node.funcName === 'toeplitz') {
+                if (node.args.length < 1) throw new Error("toeplitz requires at least 1 argument");
+                const c = args[0];
+                const r = args.length > 1 ? args[1] : null;
+                return this._toeplitz(c, r);
+            }
+
             if (node.funcName === 'wronskian') {
                 if (node.args.length !== 2) throw new Error("wronskian requires 2 arguments: list_of_funcs, var");
                 return this._wronskian(args[0], args[1]);
@@ -11195,6 +11227,205 @@ class CAS {
         const integrand = new Mul(f_tau, g_shifted);
 
         return this.evaluate(new Call('integrate', [integrand, tau, new Num(0), t])).simplify();
+    }
+
+    _conv(u, v) {
+        if (!(u instanceof Vec) || !(v instanceof Vec)) throw new Error("Arguments must be lists/vectors");
+        const n = u.elements.length;
+        const m = v.elements.length;
+        const len = n + m - 1;
+        const res = [];
+
+        for(let k = 0; k < len; k++) {
+            let sum = new Num(0);
+            // sum_{j} u[j] * v[k-j]
+            // range of j: max(0, k-(m-1)) to min(n-1, k)
+            const lower = Math.max(0, k - (m - 1));
+            const upper = Math.min(n - 1, k);
+
+            for(let j = lower; j <= upper; j++) {
+                sum = new Add(sum, new Mul(u.elements[j], v.elements[k-j])).simplify();
+            }
+            res.push(sum);
+        }
+        return new Vec(res);
+    }
+
+    _xcorr(u, v) {
+        if (!(u instanceof Vec) || !(v instanceof Vec)) throw new Error("Arguments must be lists/vectors");
+        // Cross-correlation: (f star g)[n] = sum f[m] * conj(g[m+n])
+        // Or standard signal processing def?
+        // xcorr(u, v) usually implies full correlation (lags -(N-1) to (M-1))?
+        // Or valid/same?
+        // Let's implement full cross-correlation via convolution.
+        // xcorr(u, v) = conv(u, reverse(conj(v)))
+        // but convolution index shift?
+        // Matlab xcorr returns vector of length 2*max(N,M)-1 centered at lag 0.
+        // Let's implement simple discrete correlation.
+        // conv(u, reverse(v))
+        const vRev = this._reverse(v);
+        // Conj if complex?
+        const vConjRev = new Vec(vRev.elements.map(e => new Call('conj', [e]).simplify()));
+        return this._conv(u, vConjRev);
+    }
+
+    _pade(expr, varNode, n, m) {
+        // Pade Approximation R(x) = P(x) / Q(x)
+        // deg(P) <= n, deg(Q) <= m, Q(0)=1
+        // expr - P/Q = O(x^(n+m+1)) => expr * Q - P = O(x^(n+m+1))
+        if (!(n instanceof Num) || !(m instanceof Num)) throw new Error("Degrees must be numbers");
+        const N = n.value;
+        const M = m.value;
+        const order = N + M;
+
+        // 1. Taylor Series
+        const taylor = this._taylor(expr, varNode, new Num(0), order);
+        const poly = this._getPolyCoeffs(taylor, varNode); // coeffs[k] is coeff of x^k
+        if (!poly) throw new Error("Could not compute Taylor series");
+
+        const c = [];
+        for(let i=0; i<=order; i++) c[i] = poly.coeffs[i] || new Num(0);
+
+        // 2. Solve for Q coefficients q_1 ... q_m (q_0 = 1)
+        // System: sum_{j=0}^M c_{k-j} * q_j = 0 for k = N+1 ... N+M
+        // q_0 = 1
+        // c_k + c_{k-1}q_1 + ... + c_{k-m}q_m = 0
+        // Matrix A * [q_1 ... q_m]^T = B
+
+        if (M > 0) {
+            const rows = [];
+            for(let i=0; i<M; i++) {
+                const k = N + 1 + i;
+                const row = [];
+                for(let j=1; j<=M; j++) {
+                    // coeff of q_j is c_{k-j}
+                    const idx = k - j;
+                    if (idx < 0) row.push(new Num(0));
+                    else row.push(c[idx] || new Num(0));
+                }
+                rows.push(new Vec(row));
+            }
+            const A = new Vec(rows);
+
+            const b = [];
+            for(let i=0; i<M; i++) {
+                const k = N + 1 + i;
+                // RHS is -c_k * q_0 = -c_k
+                b.push(new Mul(new Num(-1), c[k] || new Num(0)).simplify());
+            }
+            const B = new Vec(b.map(x => new Vec([x]))); // Col vector
+
+            // Solve A*q = B
+            // If A is singular, Pade might not exist or non-unique.
+            let q_vec;
+            try {
+                // Use linear solve
+                // _solveSystem or matrix solve?
+                // A*x=B -> x = A^-1 * B or solve(Ax=B)
+                // Use _inv?
+                const invA = this._inv(A);
+                q_vec = new Mul(invA, B).simplify();
+            } catch (e) {
+                // Fallback or singular
+                throw new Error("Pade approximation failed (singular matrix)");
+            }
+
+            // Construct Q
+            let Q = new Num(1);
+            for(let j=1; j<=M; j++) {
+                const qj = q_vec.elements[j-1].elements[0];
+                Q = new Add(Q, new Mul(qj, new Pow(varNode, new Num(j)))).simplify();
+            }
+
+            // 3. Compute P
+            // P(x) = (Q(x) * T(x)) mod x^(N+1)
+            // p_k = sum_{j=0}^k c_{k-j} * q_j for k=0..N
+            let P = new Num(0);
+            for(let k=0; k<=N; k++) {
+                let pk = new Num(0);
+                for(let j=0; j<=k; j++) {
+                    // q_j
+                    let qj;
+                    if (j===0) qj = new Num(1);
+                    else if (j <= M) qj = q_vec.elements[j-1].elements[0];
+                    else qj = new Num(0);
+
+                    const ckj = c[k-j] || new Num(0);
+                    pk = new Add(pk, new Mul(ckj, qj)).simplify();
+                }
+                P = new Add(P, new Mul(pk, new Pow(varNode, new Num(k)))).simplify();
+            }
+
+            return new Div(P, Q).simplify();
+        } else {
+            // M=0, just Taylor polynomial
+            return taylor;
+        }
+    }
+
+    _vandermonde(vec) {
+        if (!(vec instanceof Vec)) throw new Error("vandermonde argument must be a vector");
+        const n = vec.elements.length;
+        const rows = [];
+        for(let i=0; i<n; i++) {
+            const row = [];
+            const x = vec.elements[i];
+            for(let j=0; j<n; j++) {
+                // x^j
+                row.push(new Pow(x, new Num(j)).simplify());
+            }
+            rows.push(new Vec(row));
+        }
+        return new Vec(rows);
+    }
+
+    _hilbert(n) {
+        if (!(n instanceof Num)) throw new Error("hilbert size must be a number");
+        const size = n.value;
+        const rows = [];
+        for(let i=1; i<=size; i++) {
+            const row = [];
+            for(let j=1; j<=size; j++) {
+                // H_ij = 1 / (i + j - 1)
+                row.push(new Div(new Num(1), new Num(i + j - 1)).simplify());
+            }
+            rows.push(new Vec(row));
+        }
+        return new Vec(rows);
+    }
+
+    _toeplitz(c, r) {
+        if (!(c instanceof Vec)) throw new Error("Column argument must be a vector");
+        if (r && !(r instanceof Vec)) throw new Error("Row argument must be a vector");
+        // Symmetric Toeplitz if r is null (uses conj of c)
+        // c defines first col. r defines first row.
+        // c[0] must equal r[0] usually.
+
+        const m = c.elements.length; // rows
+        const n = r ? r.elements.length : m; // cols
+
+        const rows = [];
+        for(let i=0; i<m; i++) {
+            const row = [];
+            for(let j=0; j<n; j++) {
+                if (j >= i) {
+                    // Upper triangle (use r)
+                    const idx = j - i;
+                    if (r) {
+                        row.push(r.elements[idx]);
+                    } else {
+                        // Symmetric/Hermitian: conj(c[idx])
+                        row.push(new Call('conj', [c.elements[idx]]).simplify());
+                    }
+                } else {
+                    // Lower triangle (use c)
+                    const idx = i - j;
+                    row.push(c.elements[idx]);
+                }
+            }
+            rows.push(new Vec(row));
+        }
+        return new Vec(rows);
     }
 
     _wronskian(funcs, varNode) {
