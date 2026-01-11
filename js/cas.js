@@ -4175,14 +4175,23 @@ class CAS {
 
              // Check if 4AC - B^2 > 0 (i.e. discriminant < 0)
              let isAtan = false;
-             if (!isNaN(discriminantVal) && discriminantVal < 0) isAtan = true;
-             // If symbolic, we might optimistically assume atan if A, C > 0 and B=0
-             if (isNaN(discriminantVal)) {
+             let isAtanh = false;
+
+             if (!isNaN(discriminantVal)) {
+                 if (discriminantVal < 0) isAtan = true; // D < 0 -> 4AC > B^2
+                 else if (discriminantVal > 0) isAtanh = true; // D > 0 -> 4AC < B^2 (real roots)
+             } else {
+                 // Symbolic check
                  if (B instanceof Num && B.value === 0) {
-                     // Check AC > 0
                      const AC = new Mul(A, C).simplify();
+                     const isNeg = (node) => {
+                         if (node instanceof Num && node.value < 0) return true;
+                         if (node instanceof Mul && node.left instanceof Num && node.left.value < 0) return true;
+                         return false;
+                     };
                      const ACVal = AC.evaluateNumeric();
-                     if (!isNaN(ACVal) && ACVal > 0) isAtan = true;
+                     if ((!isNaN(ACVal) && ACVal < 0) || (!isNaN(ACVal) ? false : isNeg(AC))) isAtanh = true;
+                     else isAtan = true; // Assume positive (atan) if unknown
                  }
              }
 
@@ -4200,6 +4209,21 @@ class CAS {
                  const coeff = new Div(new Num(2), sqrtDelta).simplify();
 
                  return new Mul(num, new Mul(coeff, new Call('atan', [arg]))).simplify();
+             }
+
+             if (isAtanh) {
+                 // 1/(Ax^2+Bx+C) with D = B^2 - 4AC > 0.
+                 // Formula: -2/sqrt(D) * atanh( (2Ax+B) / sqrt(D) )
+
+                 const D = new Sub(new Pow(B, new Num(2)), new Mul(new Num(4), new Mul(A, C))).simplify();
+                 const sqrtD = new Call('sqrt', [D]).simplify();
+
+                 const argNum = new Add(new Mul(new Num(2), new Mul(A, varNode)), B).simplify();
+                 const arg = new Div(argNum, sqrtD).simplify();
+
+                 const coeff = new Div(new Num(-2), sqrtD).simplify();
+
+                 return new Mul(num, new Mul(coeff, new Call('atanh', [arg]))).simplify();
              }
         }
         return null;
@@ -4253,31 +4277,34 @@ class CAS {
                     // Result = (1/sqrt(A)) * ln( 2*sqrt(A)*sqrt(Ax^2+Bx+C) + 2Ax + B )
 
                     const sqrtA = new Call('sqrt', [A]).simplify();
-                    const term1 = new Mul(new Num(2), new Mul(sqrtA, den)).simplify(); // 2*sqrt(A)*sqrt(Q)
-                    const term2 = new Add(new Mul(new Num(2), new Mul(A, varNode)), B).simplify(); // 2Ax + B
 
-                    const arg = new Add(term1, term2).simplify();
-                    const res = new Mul(new Div(num, sqrtA), new Call('ln', [arg])).simplify();
-
-                    // Optional: convert to asinh/acosh if possible for cleaner output?
-                    // asinh(x) = ln(x + sqrt(x^2+1))
-                    // acosh(x) = ln(x + sqrt(x^2-1))
-                    // If B=0, C=1, A=1 => ln(2*sqrt(x^2+1) + 2x) = ln(2) + asinh(x).
-                    // This matches.
-
-                    // Check if it simplifies to standard asinh/acosh
+                    // Check if it simplifies to standard asinh/acosh first
                     if (B instanceof Num && B.value === 0) {
-                        if (C.evaluateNumeric() > 0) {
+                        // Check if C is positive/negative (numerically or symbolically)
+                        const isNeg = (node) => {
+                            if (node instanceof Num && node.value < 0) return true;
+                            if (node instanceof Mul && node.left instanceof Num && node.left.value < 0) return true;
+                            return false;
+                        };
+
+                        const cVal = C.evaluateNumeric();
+                        if ((!isNaN(cVal) && cVal > 0) || (!isNaN(cVal) ? false : !isNeg(C))) {
                             // 1/sqrt(Ax^2 + C) = 1/sqrt(A) * asinh( x * sqrt(A/C) )
                             const arg = new Mul(varNode, new Call('sqrt', [new Div(A, C)])).simplify();
                             return new Mul(new Div(num, sqrtA), new Call('asinh', [arg])).simplify();
-                        } else if (C.evaluateNumeric() < 0) {
-                            // 1/sqrt(Ax^2 - C) = 1/sqrt(A) * acosh( x * sqrt(A/-C) )
+                        } else {
+                            // 1/sqrt(Ax^2 - |C|) = 1/sqrt(A) * acosh( x * sqrt(A/|C|) )
                             const negC = new Mul(new Num(-1), C).simplify();
                             const arg = new Mul(varNode, new Call('sqrt', [new Div(A, negC)])).simplify();
                             return new Mul(new Div(num, sqrtA), new Call('acosh', [arg])).simplify();
                         }
                     }
+
+                    const term1 = new Mul(new Num(2), new Mul(sqrtA, den)).simplify(); // 2*sqrt(A)*sqrt(Q)
+                    const term2 = new Add(new Mul(new Num(2), new Mul(A, varNode)), B).simplify(); // 2Ax + B
+
+                    const arg = new Add(term1, term2).simplify();
+                    const res = new Mul(new Div(num, sqrtA), new Call('ln', [arg])).simplify();
 
                     return res;
 
