@@ -3617,77 +3617,165 @@ class CAS {
                 return new Div(new Mul(new Num(-1), b), a).simplify();
             }
 
-            // Attempt Trigonometric Solving
-            // sin(u) = c, cos(u) = c, tan(u) = c
-            // expr is LHS-RHS, so sin(u) - c = 0 => sin(u) = c
-            // We look for form Func(Arg) - Const or Const - Func(Arg)
-            let funcTerm = null;
-            let constTerm = new Num(0);
-            let sign = 1;
+            // Attempt Generalized Solving (Trig, Exp, Log, Pow)
+            // Identify form: c1 * Core(arg) + c0 = 0
+            let core = null;
+            let c1 = new Num(1);
+            let c0 = new Num(0);
+            let coreType = ''; // 'call', 'pow_base', 'pow_exp'
 
-            if (expr instanceof Sub) {
-                if (expr.left instanceof Call && !this._dependsOn(expr.right, varNode)) {
-                    funcTerm = expr.left;
-                    constTerm = expr.right;
-                } else if (expr.right instanceof Call && !this._dependsOn(expr.left, varNode)) {
-                    funcTerm = expr.right;
-                    constTerm = expr.left; // Const - Func = 0 => Func = Const
+            const terms = [];
+            const collectAdd = (node, sign = 1) => {
+                if (node instanceof Add) { collectAdd(node.left, sign); collectAdd(node.right, sign); }
+                else if (node instanceof Sub) { collectAdd(node.left, sign); collectAdd(node.right, -sign); }
+                else terms.push({ node, sign });
+            };
+            collectAdd(expr);
+
+            let dependentTerms = [];
+            let constantTerm = new Num(0);
+
+            for (const t of terms) {
+                if (this._dependsOn(t.node, varNode)) {
+                    dependentTerms.push(t);
+                } else {
+                    const val = (t.sign === 1) ? t.node : new Mul(new Num(-1), t.node);
+                    constantTerm = new Add(constantTerm, val);
                 }
-            } else if (expr instanceof Add) {
-                if (expr.left instanceof Call && !this._dependsOn(expr.right, varNode)) {
-                    funcTerm = expr.left;
-                    constTerm = new Mul(new Num(-1), expr.right).simplify(); // Func = -Const
-                } else if (expr.right instanceof Call && !this._dependsOn(expr.left, varNode)) {
-                    funcTerm = expr.right;
-                    constTerm = new Mul(new Num(-1), expr.left).simplify();
+            }
+            constantTerm = constantTerm.simplify();
+
+            if (dependentTerms.length === 1) {
+                const term = dependentTerms[0];
+                let node = term.node;
+                let sign = term.sign;
+
+                let coeff = new Num(sign);
+                let target = node;
+
+                if (node instanceof Mul) {
+                    if (!this._dependsOn(node.left, varNode)) {
+                        coeff = new Mul(coeff, node.left);
+                        target = node.right;
+                    } else if (!this._dependsOn(node.right, varNode)) {
+                        coeff = new Mul(coeff, node.right);
+                        target = node.left;
+                    }
                 }
-            } else if (expr instanceof Call) {
-                funcTerm = expr; // Func = 0
+
+                if (target instanceof Call) {
+                    const f = target.funcName;
+                    if (['sin', 'cos', 'tan', 'exp', 'ln', 'log', 'asin', 'acos', 'atan', 'sqrt'].includes(f)) {
+                        core = target;
+                        c1 = coeff.simplify();
+                        c0 = constantTerm;
+                        coreType = 'call';
+                    }
+                } else if (target instanceof Pow) {
+                    if (!this._dependsOn(target.left, varNode) && this._dependsOn(target.right, varNode)) {
+                        // a^f(x)
+                        core = target;
+                        c1 = coeff.simplify();
+                        c0 = constantTerm;
+                        coreType = 'pow_exp';
+                    } else if (this._dependsOn(target.left, varNode) && !this._dependsOn(target.right, varNode)) {
+                        // f(x)^a
+                        core = target;
+                        c1 = coeff.simplify();
+                        c0 = constantTerm;
+                        coreType = 'pow_base';
+                    }
+                }
             }
 
-            if (funcTerm && (funcTerm.funcName === 'sin' || funcTerm.funcName === 'cos' || funcTerm.funcName === 'tan')) {
-                const arg = funcTerm.args[0];
-                if (this._dependsOn(arg, varNode)) {
-                    // sin(arg) = C
-                    const C = constTerm;
-                    let solutions = [];
+            if (core) {
+                // c1 * core + c0 = 0 => core = -c0/c1
+                const rhs = new Div(new Mul(new Num(-1), c0), c1).simplify();
+                let arg = null;
+                let solExpr = null;
+                let solutions = [];
+
+                if (coreType === 'call') {
+                    arg = core.args[0];
+                    const fn = core.funcName;
                     const pi = new Sym('pi');
 
-                    if (funcTerm.funcName === 'sin') {
-                        // arg = asin(C)
-                        // arg = pi - asin(C)
-                        const asinC = new Call('asin', [C]).simplify();
+                    if (fn === 'exp') {
+                        solExpr = new Call('ln', [rhs]);
+                    } else if (fn === 'ln') {
+                        solExpr = new Call('exp', [rhs]);
+                    } else if (fn === 'log') {
+                        solExpr = new Pow(new Num(10), rhs);
+                    } else if (fn === 'sqrt') {
+                        // sqrt(u) = C => u = C^2
+                        solExpr = new Pow(rhs, new Num(2));
+                    } else if (fn === 'sin') {
+                        const asinC = new Call('asin', [rhs]).simplify();
                         const sol1 = this._solve(new Eq(arg, asinC), varNode);
                         const sol2 = this._solve(new Eq(arg, new Sub(pi, asinC)), varNode);
                         solutions.push(sol1);
                         solutions.push(sol2);
-                    } else if (funcTerm.funcName === 'cos') {
-                        // arg = acos(C)
-                        // arg = -acos(C)
-                        const acosC = new Call('acos', [C]).simplify();
+                    } else if (fn === 'cos') {
+                        const acosC = new Call('acos', [rhs]).simplify();
                         const sol1 = this._solve(new Eq(arg, acosC), varNode);
                         const sol2 = this._solve(new Eq(arg, new Mul(new Num(-1), acosC)), varNode);
                         solutions.push(sol1);
                         solutions.push(sol2);
-                    } else if (funcTerm.funcName === 'tan') {
-                        // arg = atan(C)
-                        const atanC = new Call('atan', [C]).simplify();
-                        const sol1 = this._solve(new Eq(arg, atanC), varNode);
-                        solutions.push(sol1);
+                    } else if (fn === 'tan') {
+                        const atanC = new Call('atan', [rhs]).simplify();
+                        solutions.push(this._solve(new Eq(arg, atanC), varNode));
+                    } else if (fn === 'asin') {
+                        solExpr = new Call('sin', [rhs]);
+                    } else if (fn === 'acos') {
+                        solExpr = new Call('cos', [rhs]);
+                    } else if (fn === 'atan') {
+                        solExpr = new Call('tan', [rhs]);
                     }
-
-                    // Flatten solutions if they returned sets
-                    const flatSols = [];
-                    const process = (s) => {
-                        if (s instanceof Call && s.funcName === 'set') s.args.forEach(process);
-                        else if (s instanceof Expr && !(s instanceof Call && s.funcName === 'solve')) flatSols.push(s);
-                    };
-                    solutions.forEach(process);
-
-                    if (flatSols.length > 0) {
-                        if (flatSols.length === 1) return flatSols[0];
-                        return new Call('set', flatSols);
+                } else if (coreType === 'pow_exp') {
+                    // a^f(x) = rhs => f(x) = ln(rhs)/ln(a)
+                    arg = core.right;
+                    const base = core.left;
+                    solExpr = new Div(new Call('ln', [rhs]), new Call('ln', [base]));
+                } else if (coreType === 'pow_base') {
+                    // f(x)^a = rhs => f(x) = rhs^(1/a)
+                    arg = core.left;
+                    const exp = core.right;
+                    solExpr = new Pow(rhs, new Div(new Num(1), exp));
+                    // Note: even roots have +/- solutions. x^2=4 => x=2, -2.
+                    // This simple logic returns principal root.
+                    // If exp is even integer, add negative solution?
+                    if (exp instanceof Num && Number.isInteger(exp.value) && exp.value % 2 === 0) {
+                        const s1 = this._solve(new Eq(arg, solExpr), varNode);
+                        const s2 = this._solve(new Eq(arg, new Mul(new Num(-1), solExpr)), varNode);
+                        solutions.push(s1);
+                        solutions.push(s2);
+                        solExpr = null; // handled
                     }
+                }
+
+                if (solExpr) {
+                    solutions.push(this._solve(new Eq(arg, solExpr), varNode));
+                }
+
+                // Flatten and return
+                const flatSols = [];
+                const process = (s) => {
+                    if (s instanceof Call && s.funcName === 'set') s.args.forEach(process);
+                    else if (s instanceof Expr && !(s instanceof Call && s.funcName === 'solve')) flatSols.push(s);
+                };
+                solutions.forEach(process);
+
+                if (flatSols.length > 0) {
+                    // Unique
+                    const unique = [];
+                    const seen = new Set();
+                    flatSols.forEach(s => {
+                        const str = s.toString();
+                        if (!seen.has(str)) { seen.add(str); unique.push(s); }
+                    });
+
+                    if (unique.length === 1) return unique[0];
+                    return new Call('set', unique);
                 }
             }
 
