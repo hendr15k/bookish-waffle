@@ -34,6 +34,7 @@ This CAS supports a wide range of mathematical operations, including:
 
 ### Output
 *   Results are rendered in **LaTeX** using MathJax for beautiful mathematical display.
+*   Command history is saved locally in your browser for quick recall in the input after reloads.
 
 ## Usage
 

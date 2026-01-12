@@ -36,7 +36,7 @@ Die Anwendung verfügt über zwei Hauptmodi:
 
 1.  **Desktop-Modus (Standard):**
     *   **Eingabezeile:** Unten finden Sie eine Eingabeaufforderung für direkte Befehle (z. B. `solve(x^2-4, x)`).
-    *   **Verlauf (History):** Der mittlere Bereich zeigt Ihre vergangenen Berechnungen und Ergebnisse in schön formatierter mathematischer Notation (LaTeX) an.
+    *   **Verlauf (History):** Der mittlere Bereich zeigt Ihre vergangenen Berechnungen und Ergebnisse in schön formatierter mathematischer Notation (LaTeX) an. Der Befehlsverlauf wird lokal im Browser gespeichert und bleibt für die Eingabe per Pfeiltasten nach einem Neuladen verfügbar.
     *   **Seitenleiste:** Rechts sehen Sie definierte Variablen und eine kurze Liste verfügbarer Funktionen.
     *   **App-Modus Button:** Oben rechts können Sie in den "App-Modus" wechseln.
 
