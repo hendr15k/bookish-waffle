@@ -2254,6 +2254,41 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         // Command History
         const commandHistory = [];
         let historyIndex = -1;
+        const HISTORY_STORAGE_KEY = 'webcas_command_history';
+        const HISTORY_MAX_ENTRIES = 200;
+
+        function saveCommandHistory() {
+            try {
+                if (!commandHistory.length) {
+                    localStorage.removeItem(HISTORY_STORAGE_KEY);
+                    return;
+                }
+                const trimmed = commandHistory.slice(-HISTORY_MAX_ENTRIES);
+                localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(trimmed));
+            } catch (e) {
+                console.warn("LocalStorage access denied");
+            }
+        }
+
+        function loadCommandHistory() {
+            try {
+                const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+                if (!raw) return [];
+                const parsed = JSON.parse(raw);
+                if (!Array.isArray(parsed)) return [];
+                return parsed.filter((cmd) => typeof cmd === 'string' && cmd.trim().length > 0);
+            } catch (e) {
+                console.warn("LocalStorage access denied");
+                return [];
+            }
+        }
+
+        function restoreCommandHistory() {
+            const stored = loadCommandHistory();
+            if (!stored.length) return;
+            commandHistory.push(...stored);
+            historyIndex = -1;
+        }
 
         // Track focused input
         document.addEventListener('focusin', (e) => {
@@ -2533,6 +2568,9 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         window.clearHistory = function() {
             history.innerHTML = '';
             document.getElementById('app-history-content').innerHTML = '';
+            commandHistory.length = 0;
+            historyIndex = -1;
+            saveCommandHistory();
         };
 
         window.insertAtCursor = function(fieldId, val) {
@@ -4281,7 +4319,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             resultDiv.className = isError ? 'result error' : 'result';
 
             if (result && result.type === 'action' && result.name === 'clear') {
-                history.innerHTML = '';
+                clearHistory();
                 return;
             }
 
@@ -4535,7 +4573,11 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 if (command && (!commandHistory.length || commandHistory[commandHistory.length - 1] !== command)) {
                     commandHistory.push(command);
                 }
+                if (commandHistory.length > HISTORY_MAX_ENTRIES) {
+                    commandHistory.splice(0, commandHistory.length - HISTORY_MAX_ENTRIES);
+                }
                 historyIndex = -1;
+                saveCommandHistory();
 
             } catch (error) {
                 addToHistory(displayCommand, error.message, true);
@@ -7384,6 +7426,8 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 }
             }, 50);
         };
+
+        restoreCommandHistory();
     </script>
 </body>
 </html>
