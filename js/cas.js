@@ -846,7 +846,7 @@ class CAS {
                 return this._rank(args[0]);
             }
 
-            if (node.funcName === 'cross') {
+            if (node.funcName === 'cross' || node.funcName === 'cross_product') {
                 if (node.args.length !== 2) throw new Error("cross requires 2 arguments");
                 return this._cross(args[0], args[1]);
             }
@@ -1005,17 +1005,17 @@ class CAS {
                 return this._nPr(args[0], args[1]);
             }
 
-            if (node.funcName === 'isPrime') {
+            if (node.funcName === 'isPrime' || node.funcName === 'is_prime') {
                 if (node.args.length !== 1) throw new Error("isPrime requires 1 argument");
                 return this._isPrime(args[0]);
             }
 
-            if (node.funcName === 'nextprime') {
+            if (node.funcName === 'nextprime' || node.funcName === 'next_prime') {
                 if (node.args.length !== 1) throw new Error("nextprime requires 1 argument");
                 return this._nextprime(args[0]);
             }
 
-            if (node.funcName === 'prevprime') {
+            if (node.funcName === 'prevprime' || node.funcName === 'prev_prime') {
                 if (node.args.length !== 1) throw new Error("prevprime requires 1 argument");
                 return this._prevprime(args[0]);
             }
@@ -1060,27 +1060,27 @@ class CAS {
                 return this._charpoly(args[0], args[1]);
             }
 
-            if (node.funcName === 'linearRegression') {
+            if (node.funcName === 'linearRegression' || node.funcName === 'linear_regression') {
                 if (node.args.length !== 1) throw new Error("linearRegression requires 1 argument (list of points)");
                 return this._linearRegression(args[0]);
             }
 
-            if (node.funcName === 'polyRegression') {
+            if (node.funcName === 'polyRegression' || node.funcName === 'poly_regression') {
                 if (node.args.length < 2) throw new Error("polyRegression requires 2 arguments: data, degree");
                 return this._polyRegression(args[0], args[1]);
             }
 
-            if (node.funcName === 'expRegression') {
+            if (node.funcName === 'expRegression' || node.funcName === 'exp_regression') {
                 if (node.args.length !== 1) throw new Error("expRegression requires 1 argument: data");
                 return this._expRegression(args[0]);
             }
 
-            if (node.funcName === 'powerRegression') {
+            if (node.funcName === 'powerRegression' || node.funcName === 'power_regression') {
                 if (node.args.length !== 1) throw new Error("powerRegression requires 1 argument: data");
                 return this._powerRegression(args[0]);
             }
 
-            if (node.funcName === 'logRegression') {
+            if (node.funcName === 'logRegression' || node.funcName === 'log_regression') {
                 if (node.args.length !== 1) throw new Error("logRegression requires 1 argument: data");
                 return this._logRegression(args[0]);
             }
@@ -1200,7 +1200,7 @@ class CAS {
                 return this._irr(args[0]);
             }
 
-            if (node.funcName === 'dot') {
+            if (node.funcName === 'dot' || node.funcName === 'dot_product') {
                 if (node.args.length !== 2) throw new Error("dot requires 2 arguments");
                 // dot(u, v) is u * v (Mul handles dot product for vectors)
                 return new Mul(args[0], args[1]).simplify();
@@ -1261,12 +1261,12 @@ class CAS {
                 return this._mod(args[0], args[1]);
             }
 
-            if (node.funcName === 'modInverse') {
+            if (node.funcName === 'modInverse' || node.funcName === 'mod_inverse') {
                 if (node.args.length !== 2) throw new Error("modInverse requires 2 arguments: a, m");
                 return this._modInverse(args[0], args[1]);
             }
 
-            if (node.funcName === 'modPow') {
+            if (node.funcName === 'modPow' || node.funcName === 'mod_pow') {
                 if (node.args.length !== 3) throw new Error("modPow requires 3 arguments: base, exp, mod");
                 return this._modPow(args[0], args[1], args[2]);
             }
@@ -1426,7 +1426,7 @@ class CAS {
                 if (node.args.length !== 1) throw new Error("eigenvects requires 1 argument");
                 return this._eigenvects(args[0].simplify());
             }
-            if (node.funcName === 'gramschmidt') {
+            if (node.funcName === 'gramschmidt' || node.funcName === 'gram_schmidt') {
                 if (node.args.length !== 1) throw new Error("gramschmidt requires 1 argument (list of vectors)");
                 return this._gramschmidt(args[0].simplify());
             }
@@ -1708,12 +1708,12 @@ class CAS {
                  return this._moment(args[0], args[1]);
             }
 
-            if (node.funcName === 'isSubset') {
+            if (node.funcName === 'isSubset' || node.funcName === 'is_subset') {
                 if (node.args.length !== 2) throw new Error("isSubset requires 2 arguments (lists)");
                 return this._isSubset(args[0], args[1]);
             }
 
-            if (node.funcName === 'cartesianProduct') {
+            if (node.funcName === 'cartesianProduct' || node.funcName === 'cartesian_product') {
                 if (node.args.length !== 2) throw new Error("cartesianProduct requires 2 arguments (lists)");
                 return this._cartesianProduct(args[0], args[1]);
             }
@@ -1806,6 +1806,36 @@ class CAS {
             if (node.funcName === 'isSquare') {
                  if (node.args.length !== 1) throw new Error("isSquare requires 1 argument");
                  return this._isSquare(args[0]);
+            }
+
+            if (node.funcName === 'nullity') {
+                 if (node.args.length !== 1) throw new Error("nullity requires 1 argument (matrix)");
+                 // nullity = dim(kernel(A))
+                 // kernel returns basis vectors
+                 const k = this._kernel(args[0]);
+                 if (k instanceof Vec) return new Num(k.elements.length);
+                 return new Call('nullity', args);
+            }
+
+            if (node.funcName === 'colSpace' || node.funcName === 'col_space') {
+                 if (node.args.length !== 1) throw new Error("colSpace requires 1 argument");
+                 return this._basis(args[0]);
+            }
+
+            if (node.funcName === 'rowSpace' || node.funcName === 'row_space') {
+                 if (node.args.length !== 1) throw new Error("rowSpace requires 1 argument");
+                 const T = this._trans(args[0]);
+                 return this._basis(T);
+            }
+
+            if (['besselJ', 'besselY', 'besselI', 'besselK'].includes(node.funcName)) {
+                 if (node.args.length !== 2) throw new Error(`${node.funcName} requires 2 arguments: v, x`);
+                 return new Call(node.funcName, args);
+            }
+
+            if (['airyAi', 'airyBi'].includes(node.funcName)) {
+                 if (node.args.length !== 1) throw new Error(`${node.funcName} requires 1 argument: x`);
+                 return new Call(node.funcName, args);
             }
 
             if (node.funcName === 'truthTable') {
@@ -1945,7 +1975,7 @@ class CAS {
                 return this._bell(args[0]);
             }
 
-            if (node.funcName === 'isPerfect') {
+            if (node.funcName === 'isPerfect' || node.funcName === 'is_perfect') {
                 if (node.args.length !== 1) throw new Error("isPerfect requires 1 argument");
                 return this._isPerfect(args[0]);
             }
@@ -10083,6 +10113,14 @@ class CAS {
             const sqrt = Math.sqrt(n.value);
             if (Number.isInteger(sqrt)) return new Num(1);
             return new Num(0);
+        }
+        // Check if matrix is square
+        if (n instanceof Vec && n.elements.length > 0) {
+            const rows = n.elements.length;
+            if (n.elements[0] instanceof Vec) {
+                const cols = n.elements[0].elements.length;
+                return new Num(rows === cols ? 1 : 0);
+            }
         }
         return new Call('isSquare', [n]);
     }

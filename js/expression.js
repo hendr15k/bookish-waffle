@@ -2209,6 +2209,59 @@ class Call extends Expr {
             return new Mul(new Mul(coeff, exp), u.diff(varName));
         }
 
+        // Bessel Functions Derivatives
+        // J_v'(x) = 0.5 * (J_{v-1}(x) - J_{v+1}(x))
+        if (this.funcName === 'besselJ') {
+            if (this.args.length === 2) {
+                const v = this.args[0];
+                const x = this.args[1];
+                // diff wrt x (argument)
+                // If v depends on varName, it's much more complex. Assuming order v is constant.
+                const term1 = new Call('besselJ', [new Sub(v, new Num(1)), x]);
+                const term2 = new Call('besselJ', [new Add(v, new Num(1)), x]);
+                const deriv = new Mul(new Num(0.5), new Sub(term1, term2));
+                return new Mul(deriv, x.diff(varName));
+            }
+        }
+        // Y_v'(x) = 0.5 * (Y_{v-1}(x) - Y_{v+1}(x))
+        if (this.funcName === 'besselY') {
+            if (this.args.length === 2) {
+                const v = this.args[0];
+                const x = this.args[1];
+                const term1 = new Call('besselY', [new Sub(v, new Num(1)), x]);
+                const term2 = new Call('besselY', [new Add(v, new Num(1)), x]);
+                const deriv = new Mul(new Num(0.5), new Sub(term1, term2));
+                return new Mul(deriv, x.diff(varName));
+            }
+        }
+        // I_v'(x) = 0.5 * (I_{v-1}(x) + I_{v+1}(x))
+        if (this.funcName === 'besselI') {
+            if (this.args.length === 2) {
+                const v = this.args[0];
+                const x = this.args[1];
+                const term1 = new Call('besselI', [new Sub(v, new Num(1)), x]);
+                const term2 = new Call('besselI', [new Add(v, new Num(1)), x]);
+                const deriv = new Mul(new Num(0.5), new Add(term1, term2));
+                return new Mul(deriv, x.diff(varName));
+            }
+        }
+        // K_v'(x) = -0.5 * (K_{v-1}(x) + K_{v+1}(x))
+        if (this.funcName === 'besselK') {
+            if (this.args.length === 2) {
+                const v = this.args[0];
+                const x = this.args[1];
+                const term1 = new Call('besselK', [new Sub(v, new Num(1)), x]);
+                const term2 = new Call('besselK', [new Add(v, new Num(1)), x]);
+                const deriv = new Mul(new Num(-0.5), new Add(term1, term2));
+                return new Mul(deriv, x.diff(varName));
+            }
+        }
+        // Airy Functions
+        // Ai'(x) -> derivative of Ai is usually denoted Ai'(x).
+        // Ai''(x) = x Ai(x).
+        // We can't express Ai'(x) in terms of Ai(x) simply without defining AiPrime.
+        // Let's leave it symbolic Call('diff', ...) for now unless we introduce airyAiPrime.
+
         if (this.funcName === 'sum') {
             // diff(sum(f, i, a, b), x) = sum(diff(f, x), i, a, b)
             // Assuming limits a, b do not depend on x
@@ -2368,6 +2421,13 @@ class Call extends Expr {
             'psi': '\\psi',
             'digamma': '\\psi'
         };
+
+        if (this.funcName === 'besselJ' && argsTex.length === 2) return `J_{${argsTex[0]}}\\left(${argsTex[1]}\\right)`;
+        if (this.funcName === 'besselY' && argsTex.length === 2) return `Y_{${argsTex[0]}}\\left(${argsTex[1]}\\right)`;
+        if (this.funcName === 'besselI' && argsTex.length === 2) return `I_{${argsTex[0]}}\\left(${argsTex[1]}\\right)`;
+        if (this.funcName === 'besselK' && argsTex.length === 2) return `K_{${argsTex[0]}}\\left(${argsTex[1]}\\right)`;
+        if (this.funcName === 'airyAi') return `\\operatorname{Ai}\\left(${argsTex[0]}\\right)`;
+        if (this.funcName === 'airyBi') return `\\operatorname{Bi}\\left(${argsTex[0]}\\right)`;
 
         if (this.funcName === 'polygamma' && argsTex.length === 2) {
             return `\\psi^{(${argsTex[0]})}\\left(${argsTex[1]}\\right)`;
