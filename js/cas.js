@@ -482,6 +482,11 @@ class CAS {
                      return this._fsolve(eq, varNode, guess);
                  }
 
+                 // Check for Linear System: solve([eq1, eq2], [x, y])
+                 if (eq instanceof Vec && varNode instanceof Vec) {
+                     return this._solveLinearSystem(eq, varNode);
+                 }
+
                  if (!(varNode instanceof Sym) && !(varNode instanceof Vec)) throw new Error("Second argument to solve must be a variable or list of variables");
                  return this._solve(eq, varNode);
             }
@@ -1983,6 +1988,11 @@ class CAS {
             if (node.funcName === 'matrixPow' || node.funcName === 'matrix_pow') {
                 if (node.args.length !== 2) throw new Error("matrixPow requires 2 arguments: matrix, n");
                 return this._matrixPow(args[0], args[1]);
+            }
+
+            if (node.funcName === 'matrixExp' || node.funcName === 'matrix_exp') {
+                if (node.args.length !== 1) throw new Error("matrixExp requires 1 argument: matrix");
+                return this._matrixExp(args[0]);
             }
 
             if (node.funcName === 'kroneckerDelta') {
@@ -8787,7 +8797,36 @@ class CAS {
             const shift2 = checkExp(expr.right, expr.left);
             if (shift2) return shift2;
 
-            // 2. Mult by t^n: L{t^n * f(t)} = (-1)^n * d^n/ds^n F(s)
+            // 2. Heaviside Shift: L{H(t-a)*f(t-a)} = e^(-as)*F(s)
+            // L{H(t-a)*g(t)} = e^(-as)*L{g(t+a)}
+            const checkHeaviside = (term, func) => {
+                if (term instanceof Call && term.funcName === 'heaviside') {
+                    const arg = term.args[0]; // t - a
+                    const poly = this._getPolyCoeffs(arg, t);
+                    if (poly && poly.maxDeg === 1 && poly.coeffs[1].evaluateNumeric() === 1) {
+                        // t - a => coeff[0] is -a
+                        const minusA = poly.coeffs[0] || new Num(0);
+                        const a = new Mul(new Num(-1), minusA).simplify();
+                        // Check if a >= 0? Assuming yes for Laplace
+
+                        // g(t+a)
+                        const gShifted = func.substitute(t, new Add(t, a)).simplify();
+                        const G = this._laplace(gShifted, t, s);
+
+                        // e^(-as)
+                        const expFactor = new Call('exp', [new Mul(new Mul(new Num(-1), a), s)]).simplify();
+                        return new Mul(expFactor, G).simplify();
+                    }
+                }
+                return null;
+            };
+
+            const hShift1 = checkHeaviside(expr.left, expr.right);
+            if (hShift1) return hShift1;
+            const hShift2 = checkHeaviside(expr.right, expr.left);
+            if (hShift2) return hShift2;
+
+            // 3. Mult by t^n: L{t^n * f(t)} = (-1)^n * d^n/ds^n F(s)
             const checkT = (term, func) => {
                 let n = 0;
                 if (term instanceof Sym && term.name === t.name) n = 1;
@@ -8860,6 +8899,29 @@ class CAS {
              if (expr.funcName === 'cos') return new Div(s, denom).simplify();
         }
 
+        // heaviside(t - a) -> e^(-as)/s
+        if (expr instanceof Call && expr.funcName === 'heaviside') {
+            const arg = expr.args[0];
+            const poly = this._getPolyCoeffs(arg, t);
+            if (poly && poly.maxDeg === 1 && poly.coeffs[1].evaluateNumeric() === 1) {
+                // t - a
+                const minusA = poly.coeffs[0] || new Num(0);
+                const a = new Mul(new Num(-1), minusA).simplify();
+                return new Div(new Call('exp', [new Mul(new Mul(new Num(-1), a), s)]), s).simplify();
+            }
+        }
+
+        // dirac(t - a) -> e^(-as)
+        if (expr instanceof Call && expr.funcName === 'dirac') {
+            const arg = expr.args[0];
+            const poly = this._getPolyCoeffs(arg, t);
+            if (poly && poly.maxDeg === 1 && poly.coeffs[1].evaluateNumeric() === 1) {
+                const minusA = poly.coeffs[0] || new Num(0);
+                const a = new Mul(new Num(-1), minusA).simplify();
+                return new Call('exp', [new Mul(new Mul(new Num(-1), a), s)]).simplify();
+            }
+        }
+
         return new Call('laplace', [expr, t, s]);
     }
 
@@ -8869,6 +8931,48 @@ class CAS {
 
         if (expr instanceof Add) return new Add(this._ilaplace(expr.left, s, t), this._ilaplace(expr.right, s, t)).simplify();
         if (expr instanceof Sub) return new Sub(this._ilaplace(expr.left, s, t), this._ilaplace(expr.right, s, t)).simplify();
+
+        // Shift Theorem: exp(-as) * F(s) -> f(t-a)*H(t-a)
+        // Global check for exp factor in Mul or Div numerator
+        const findExpFactor = (node) => {
+             if (node instanceof Call && node.funcName === 'exp') {
+                 // Check argument linear in s: -a*s
+                 const poly = this._getPolyCoeffs(node.args[0], s);
+                 if (poly && poly.maxDeg === 1 && (!poly.coeffs[0] || poly.coeffs[0].value === 0)) {
+                     return { term: node, other: new Num(1) };
+                 }
+             }
+             if (node instanceof Mul) {
+                 const l = findExpFactor(node.left);
+                 if (l) return { term: l.term, other: new Mul(l.other, node.right).simplify() };
+                 const r = findExpFactor(node.right);
+                 if (r) return { term: r.term, other: new Mul(node.left, r.other).simplify() };
+             }
+             if (node instanceof Div) {
+                 // Check numerator
+                 const n = findExpFactor(node.left);
+                 if (n) return { term: n.term, other: new Div(n.other, node.right).simplify() };
+             }
+             return null;
+        };
+
+        const shift = findExpFactor(expr);
+        if (shift) {
+             const expTerm = shift.term;
+             const rest = shift.other;
+
+             const poly = this._getPolyCoeffs(expTerm.args[0], s);
+             const minusA = poly.coeffs[1];
+             const a = new Mul(new Num(-1), minusA).simplify();
+
+             const f = this._ilaplace(rest, s, t);
+             if (!(f instanceof Call && f.funcName === 'ilaplace')) {
+                 const fShifted = f.substitute(t, new Sub(t, a)).simplify();
+                 const heaviside = new Call('heaviside', [new Sub(t, a)]);
+                 return new Mul(heaviside, fShifted).simplify();
+             }
+        }
+
         if (expr instanceof Mul) {
              if (!this._dependsOn(expr.left, s)) return new Mul(expr.left, this._ilaplace(expr.right, s, t)).simplify();
              if (!this._dependsOn(expr.right, s)) return new Mul(expr.right, this._ilaplace(expr.left, s, t)).simplify();
@@ -8889,10 +8993,12 @@ class CAS {
              // 1/s^n
              if (den instanceof Pow && den.left instanceof Sym && den.left.name === s.name && den.right instanceof Num) {
                  const n = den.right.value;
-                 return new Mul(num, new Div(new Pow(t, new Num(n-1)), new Num(this._factorial(n-1)))).simplify();
+                 if (!this._dependsOn(num, s)) {
+                     return new Mul(num, new Div(new Pow(t, new Num(n-1)), new Num(this._factorial(n-1)))).simplify();
+                 }
              }
              if (den instanceof Sym && den.name === s.name) { // 1/s
-                 return num;
+                 if (!this._dependsOn(num, s)) return num;
              }
 
              // 1/(s-a) or 1/(s+a)
@@ -11601,6 +11707,194 @@ class CAS {
 
         const mat = new Vec(rows);
         return this._det(mat);
+    }
+
+    _solveLinearSystem(eqs, vars) {
+        // Solve system of linear equations
+        // eqs: [eq1, eq2, ...], vars: [x, y, ...]
+
+        // Convert to Ax = B
+        // Standardize equations to LHS - RHS = 0
+        const stdEqs = eqs.elements.map(eq => {
+            if (eq instanceof Eq) return new Sub(eq.left, eq.right).simplify();
+            return eq.simplify();
+        });
+
+        const n = stdEqs.length;
+        const m = vars.elements.length;
+
+        // Build Matrix A (nxm) and Vector B (nx1)
+        // eq = a1*x + a2*y + ... - b = 0
+        // eq = Sum(ai*xi) - b
+        // b = - (constant term)
+
+        const rowsA = [];
+        const rowsB = [];
+
+        for(let i=0; i<n; i++) {
+            const eq = stdEqs[i];
+            const rowA = [];
+
+            // Extract coefficients for each variable
+            // Since eq might be mixed, use _getPolyCoeffs approach but it handles one variable.
+            // Or use differentiation? d(eq)/dx gives coeff of x if linear.
+            // But we need to verify linearity.
+
+            // Let's use differentiation as heuristic for coeff extraction.
+            // If eq is linear in vars, diff(eq, v) is the coefficient.
+            // Constant term is eq with vars=0.
+
+            for(let j=0; j<m; j++) {
+                const v = vars.elements[j];
+                const coeff = eq.diff(v).simplify();
+                // Verify coeff does not depend on any variables
+                for(let k=0; k<m; k++) {
+                    if (this._dependsOn(coeff, vars.elements[k])) {
+                        throw new Error("Equation is not linear in " + vars.elements[k]);
+                    }
+                }
+                rowA.push(coeff);
+            }
+            rowsA.push(new Vec(rowA));
+
+            // Constant term B
+            // B is what's on the RHS. eq is LHS - RHS = 0.
+            // So Sum(ai*xi) + C = 0 => Sum = -C.
+            // B_i = -C.
+            // C = eq evaluated at vars=0.
+            let constant = eq;
+            for(const v of vars.elements) {
+                constant = constant.substitute(v, new Num(0));
+            }
+            constant = constant.simplify();
+            rowsB.push(new Mul(new Num(-1), constant).simplify());
+        }
+
+        const A = new Vec(rowsA);
+        const B = new Vec(rowsB);
+
+        // Solve Ax = B
+        // If n=m (square), x = A^-1 * B or Kramers.
+        // Use RREF on [A|B] for general case.
+
+        // Construct Augmented Matrix [A | B]
+        const augRows = [];
+        for(let i=0; i<n; i++) {
+            const row = [...A.elements[i].elements, B.elements[i]];
+            augRows.push(new Vec(row));
+        }
+        const augMat = new Vec(augRows);
+
+        const rrefMat = this._rref(augMat);
+
+        // Extract solution
+        // Back-substitution or interpret RREF
+        // For square non-singular, RREF is [I | x]
+
+        // Check if consistent
+        const solutions = [];
+
+        // Map variables to solution values
+        // If pivot at col j, var j is determined.
+        // If no pivot for col j, var j is free.
+
+        // Simplest case: Unique solution
+        // Check last n rows/cols?
+        // Rows of RREF correspond to equations.
+
+        const rrefRows = rrefMat.elements.length;
+        const rrefCols = rrefMat.elements[0].elements.length;
+
+        // Iterate rows backwards?
+        // Actually, RREF gives explicit values if identity on left.
+
+        // Return a Set of Equations: { x = 1, y = 2 }
+        const resSet = [];
+
+        for(let i=0; i<rrefRows; i++) {
+            // Find pivot (first non-zero)
+            let pivotCol = -1;
+            for(let j=0; j<m; j++) {
+                const val = rrefMat.elements[i].elements[j];
+                // Check if non-zero
+                // Symbolic zero check
+                const isZero = (val instanceof Num && val.value === 0);
+                if (!isZero) {
+                    pivotCol = j;
+                    break;
+                }
+            }
+
+            if (pivotCol === -1) {
+                // Row of zeros. Check RHS (last col).
+                const rhs = rrefMat.elements[i].elements[m];
+                const isZero = (rhs instanceof Num && rhs.value === 0);
+                if (!isZero) {
+                    // 0 = non-zero => No solution
+                    return new Call('set', []); // Empty set? Or specialized "No Solution"
+                }
+                continue;
+            }
+
+            // We have a pivot at var[pivotCol]
+            // var = RHS - sum(other coeffs * other vars)
+            // In RREF, pivot is 1.
+            // var + sum(...) = RHS
+            // var = RHS - sum(...)
+
+            const rhs = rrefMat.elements[i].elements[m];
+            let val = rhs;
+
+            for(let j=pivotCol + 1; j<m; j++) {
+                const coeff = rrefMat.elements[i].elements[j];
+                const term = new Mul(coeff, vars.elements[j]);
+                val = new Sub(val, term);
+            }
+
+            // This expresses var in terms of free variables (if any)
+            resSet.push(new Eq(vars.elements[pivotCol], val.simplify()));
+        }
+
+        return new Call('set', resSet);
+    }
+
+    _matrixExp(matrix) {
+        if (!(matrix instanceof Vec)) throw new Error("matrixExp requires a matrix");
+
+        // Try diagonalization: e^A = P * diag(e^lambda) * P^-1
+        try {
+            const diagRes = this._diagonalize(matrix);
+            const P = diagRes.elements[0];
+            const D = diagRes.elements[1];
+
+            // Exponentiate diagonal elements
+            const expD_rows = [];
+            const n = D.elements.length;
+            for(let i=0; i<n; i++) {
+                const row = [];
+                for(let j=0; j<n; j++) {
+                    if (i === j) {
+                        const val = D.elements[i].elements[j];
+                        row.push(new Call('exp', [val]).simplify());
+                    } else {
+                        row.push(new Num(0));
+                    }
+                }
+                expD_rows.push(new Vec(row));
+            }
+            const expD = new Vec(expD_rows);
+
+            const P_inv = this._inv(P);
+            return new Mul(new Mul(P, expD).simplify(), P_inv).simplify();
+
+        } catch (e) {
+            // Diagonalization failed (e.g. not diagonalizable or symbolic issues)
+            // Fallback?
+            // Taylor series? Sum A^k / k!
+            // Without limits, Taylor is risky.
+            // Return symbolic call.
+            return new Call('matrixExp', [matrix]);
+        }
     }
 }
 
