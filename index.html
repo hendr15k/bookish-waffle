@@ -4260,6 +4260,39 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             entryDiv.style.cursor = 'pointer';
             entryDiv.title = 'Click to insert result into input';
 
+            // Add Copy LaTeX Button
+            if (!isError && latex) {
+                const copyBtn = document.createElement('button');
+                copyBtn.innerHTML = '📋';
+                copyBtn.title = 'Copy LaTeX';
+                copyBtn.className = 'copy-btn'; // Use class for styling hooks if needed
+                // Inline styles for simplicity
+                copyBtn.style.float = 'right';
+                copyBtn.style.background = 'none';
+                copyBtn.style.border = 'none';
+                copyBtn.style.cursor = 'pointer';
+                copyBtn.style.fontSize = '1.2em';
+                copyBtn.style.opacity = '0.5';
+                copyBtn.style.padding = '0 5px';
+                copyBtn.style.zIndex = '10';
+                copyBtn.style.position = 'relative'; // Ensure it's clickable
+
+                copyBtn.onmouseover = () => copyBtn.style.opacity = '1';
+                copyBtn.onmouseout = () => copyBtn.style.opacity = '0.5';
+                copyBtn.onclick = (e) => {
+                    e.stopPropagation(); // Prevent entry click
+                    navigator.clipboard.writeText(latex).then(() => {
+                        const originalText = copyBtn.innerHTML;
+                        copyBtn.innerHTML = '✅';
+                        setTimeout(() => copyBtn.innerHTML = originalText, 1000);
+                    }).catch(err => {
+                        console.error('Failed to copy: ', err);
+                        alert("Failed to copy to clipboard (permission denied?)");
+                    });
+                };
+                entryDiv.appendChild(copyBtn);
+            }
+
             // Only attach click handler if it's NOT a help object (help handles its own clicks)
             if (!(result && result.type === 'help')) {
                 entryDiv.onclick = function() {
