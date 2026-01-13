@@ -774,6 +774,15 @@ class Mul extends BinaryOp {
             return new Pow(r, new Num(l.right.value + 1)).simplify();
         }
 
+        // Logarithm Condense: n * ln(x) -> ln(x^n)
+        if (l instanceof Num && r instanceof Call && (r.funcName === 'ln' || r.funcName === 'log')) {
+             return new Call(r.funcName, [new Pow(r.args[0], l).simplify()]);
+        }
+        // ln(x) * n -> ln(x^n)
+        if (r instanceof Num && l instanceof Call && (l.funcName === 'ln' || l.funcName === 'log')) {
+             return new Call(l.funcName, [new Pow(l.args[0], r).simplify()]);
+        }
+
         // Trigonometric Simplifications
         if (l instanceof Call && r instanceof Call) {
              const is = (n, name) => n.funcName === name;
@@ -1054,6 +1063,17 @@ class Div extends BinaryOp {
         return new Div(num, den);
     }
     integrate(varName) {
+        // sin(x)/x -> Si(x)
+        if (this.right.toString() === varName.toString()) {
+            if (this.left instanceof Call && this.left.funcName === 'sin' && this.left.args[0].toString() === varName.toString()) {
+                return new Call('Si', [varName]);
+            }
+            // cos(x)/x -> Ci(x)
+            if (this.left instanceof Call && this.left.funcName === 'cos' && this.left.args[0].toString() === varName.toString()) {
+                return new Call('Ci', [varName]);
+            }
+        }
+
         const isX2 = (node) => node instanceof Pow && node.left.toString() === varName.toString() && node.right instanceof Num && node.right.value === 2;
         const isConst = (node) => (node instanceof Num) || (node instanceof Sym && node.name !== varName.name);
 
@@ -1942,6 +1962,33 @@ class Call extends Expr {
             }
         }
 
+        if (this.funcName === 'gamma') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Div && arg.left instanceof Num && arg.right instanceof Num) {
+                // gamma(1/2) = sqrt(pi)
+                if (arg.left.value === 1 && arg.right.value === 2) {
+                    return new Call('sqrt', [new Sym('pi')]);
+                }
+                // gamma(3/2) = 0.5 * sqrt(pi)
+                if (arg.left.value === 3 && arg.right.value === 2) {
+                    return new Mul(new Num(0.5), new Call('sqrt', [new Sym('pi')])).simplify();
+                }
+                // gamma(5/2) = 0.75 * sqrt(pi)
+                if (arg.left.value === 5 && arg.right.value === 2) {
+                    return new Mul(new Num(0.75), new Call('sqrt', [new Sym('pi')])).simplify();
+                }
+            }
+            // gamma(n) = (n-1)! for integer n
+            if (arg instanceof Num && Number.isInteger(arg.value) && arg.value > 0) {
+                // Factorial logic is usually in _factorial, but simplify can do small ones
+                if (arg.value <= 10) {
+                    let res = 1;
+                    for(let i=1; i<arg.value; i++) res *= i;
+                    return new Num(res);
+                }
+            }
+        }
+
         return new Call(this.funcName, simpleArgs);
     }
     evaluateNumeric() {
@@ -2038,6 +2085,12 @@ class Call extends Expr {
              const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
              return sign * y;
         }
+        if (this.funcName === 'Si') {
+            return math_Si(argsVal[0]);
+        }
+        if (this.funcName === 'Ci') {
+            return math_Ci(argsVal[0]);
+        }
         if (this.funcName === 'gamma') {
             return math_gamma(argsVal[0]);
         }
@@ -2102,6 +2155,14 @@ class Call extends Expr {
         }
         if (['floor', 'ceil', 'round'].includes(this.funcName)) {
             return new Num(0);
+        }
+        if (this.funcName === 'Si') {
+            // Si'(u) = sin(u)/u * u'
+            return new Mul(new Div(new Call('sin', [u]), u), u.diff(varName));
+        }
+        if (this.funcName === 'Ci') {
+            // Ci'(u) = cos(u)/u * u'
+            return new Mul(new Div(new Call('cos', [u]), u), u.diff(varName));
         }
         if (this.funcName === 'sinc') {
             // diff(sin(x)/x) = (x*cos(x) - sin(x)) / x^2
@@ -2348,6 +2409,14 @@ class Call extends Expr {
                 // abs(x)
                 return new Call('abs', [varName]);
             }
+            if (this.funcName === 'Si') {
+                // x*Si(x) + cos(x)
+                return new Add(new Mul(varName, new Call('Si', [varName])), new Call('cos', [varName]));
+            }
+            if (this.funcName === 'Ci') {
+                // x*Ci(x) - sin(x)
+                return new Sub(new Mul(varName, new Call('Ci', [varName])), new Call('sin', [varName]));
+            }
         }
         return new Call("integrate", [this, varName]);
     }
@@ -2419,7 +2488,9 @@ class Call extends Expr {
             'sign': '\\operatorname{sgn}',
             'erf': '\\operatorname{erf}',
             'psi': '\\psi',
-            'digamma': '\\psi'
+            'digamma': '\\psi',
+            'Si': '\\operatorname{Si}',
+            'Ci': '\\operatorname{Ci}'
         };
 
         if (this.funcName === 'besselJ' && argsTex.length === 2) return `J_{${argsTex[0]}}\\left(${argsTex[1]}\\right)`;
@@ -3263,6 +3334,69 @@ function math_polygamma(n, z) {
     }
 
     return (n % 2 === 0 ? -1 : 1) * res; // (-1)^(n+1)
+}
+
+function math_Si(x) {
+    if (x === 0) return 0;
+    // Series approximation
+    // Si(x) = sum_{k=0} (-1)^k x^(2k+1) / ((2k+1)(2k+1)!)
+    let sum = 0;
+    let term = x; // k=0: x / (1*1!) = x
+    let k = 0;
+    let fact = 1; // (2k+1)!
+    // x term already added
+    sum = x;
+
+    // Iterate
+    for(k=1; k<50; k++) {
+        // term k: (-1)^k * x^(2k+1) / ((2k+1)*(2k+1)!)
+        // prev term (k-1): (-1)^(k-1) * x^(2k-1) / ((2k-1)*(2k-1)!)
+
+        if (Math.abs(x) > 10) {
+            // Asymptotic: pi/2 - cos(x)/x - sin(x)/x^2 ... (for x>0)
+            const sign = x > 0 ? 1 : -1;
+            return sign * Math.PI/2 - Math.cos(x)/x - Math.sin(x)/(x*x);
+        }
+
+        // Update factorial from (2k-1)! to (2k+1)!
+        // (2k+1)! = (2k+1)(2k)(2k-1)!
+        const twoK = 2*k;
+        fact *= twoK * (twoK + 1);
+
+        const num = Math.pow(x, 2*k + 1);
+        const den = (2*k + 1) * fact;
+        const add = (k % 2 === 0 ? 1 : -1) * num / den;
+
+        sum += add;
+        if (Math.abs(add) < 1e-15) break;
+    }
+    return sum;
+}
+
+function math_Ci(x) {
+    if (x <= 0) return NaN; // undefined for x<=0
+    // Ci(x) = gamma + ln(x) + sum_{k=1} (-1)^k x^2k / (2k * (2k)!)
+    const EULER = 0.5772156649;
+    let sum = 0;
+    let fact = 1; // (2k)!
+
+    if (x > 10) {
+        // Asymptotic: sin(x)/x - cos(x)/x^2 ...
+        return Math.sin(x)/x - Math.cos(x)/(x*x);
+    }
+
+    for(let k=1; k<50; k++) {
+        const twoK = 2*k;
+        fact *= (twoK-1) * twoK;
+
+        const num = Math.pow(x, twoK);
+        const den = twoK * fact;
+        const add = (k % 2 === 0 ? 1 : -1) * num / den;
+
+        sum += add;
+        if (Math.abs(add) < 1e-15) break;
+    }
+    return EULER + Math.log(x) + sum;
 }
 
 // Export classes for Global/CommonJS environments
