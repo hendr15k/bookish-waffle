@@ -1072,6 +1072,17 @@ class Div extends BinaryOp {
             if (this.left instanceof Call && this.left.funcName === 'cos' && this.left.args[0].toString() === varName.toString()) {
                 return new Call('Ci', [varName]);
             }
+            // exp(x)/x -> Ei(x)
+            if (this.left instanceof Call && this.left.funcName === 'exp' && this.left.args[0].toString() === varName.toString()) {
+                return new Call('Ei', [varName]);
+            }
+        }
+
+        // 1/ln(x) -> Li(x)
+        if (this.left instanceof Num && this.left.value === 1 &&
+            this.right instanceof Call && (this.right.funcName === 'ln' || this.right.funcName === 'log') &&
+            this.right.args[0].toString() === varName.toString()) {
+            return new Call('Li', [varName]);
         }
 
         const isX2 = (node) => node instanceof Pow && node.left.toString() === varName.toString() && node.right instanceof Num && node.right.value === 2;
@@ -1787,6 +1798,22 @@ class Call extends Expr {
             }
         }
 
+        if (this.funcName === 'Ei') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) {
+                return new Num(math_Ei(arg.value));
+            }
+        }
+        if (this.funcName === 'Li') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) {
+                const val = arg.value;
+                if (val > 0 && val !== 1) {
+                    return new Num(math_Ei(Math.log(val)));
+                }
+            }
+        }
+
         if (this.funcName === 'erf') {
             const arg = simpleArgs[0];
             if (arg instanceof Num) {
@@ -2091,6 +2118,14 @@ class Call extends Expr {
         if (this.funcName === 'Ci') {
             return math_Ci(argsVal[0]);
         }
+        if (this.funcName === 'Ei') {
+            return math_Ei(argsVal[0]);
+        }
+        if (this.funcName === 'Li') {
+            const val = argsVal[0];
+            if (val <= 0 || val === 1) return NaN;
+            return math_Ei(Math.log(val));
+        }
         if (this.funcName === 'gamma') {
             return math_gamma(argsVal[0]);
         }
@@ -2155,6 +2190,14 @@ class Call extends Expr {
         }
         if (['floor', 'ceil', 'round'].includes(this.funcName)) {
             return new Num(0);
+        }
+        if (this.funcName === 'Ei') {
+            // Ei'(u) = exp(u)/u * u'
+            return new Mul(new Div(new Call('exp', [u]), u), u.diff(varName));
+        }
+        if (this.funcName === 'Li') {
+            // Li'(u) = 1/ln(u) * u'
+            return new Mul(new Div(new Num(1), new Call('ln', [u])), u.diff(varName));
         }
         if (this.funcName === 'Si') {
             // Si'(u) = sin(u)/u * u'
@@ -2417,6 +2460,15 @@ class Call extends Expr {
                 // x*Ci(x) - sin(x)
                 return new Sub(new Mul(varName, new Call('Ci', [varName])), new Call('sin', [varName]));
             }
+            if (this.funcName === 'Ei') {
+                // x*Ei(x) - exp(x)
+                return new Sub(new Mul(varName, new Call('Ei', [varName])), new Call('exp', [varName]));
+            }
+            if (this.funcName === 'Li') {
+                // x*Li(x) - Ei(2*ln(x))
+                const term2 = new Call('Ei', [new Mul(new Num(2), new Call('ln', [varName]))]);
+                return new Sub(new Mul(varName, new Call('Li', [varName])), term2);
+            }
         }
         return new Call("integrate", [this, varName]);
     }
@@ -2490,7 +2542,9 @@ class Call extends Expr {
             'psi': '\\psi',
             'digamma': '\\psi',
             'Si': '\\operatorname{Si}',
-            'Ci': '\\operatorname{Ci}'
+            'Ci': '\\operatorname{Ci}',
+            'Ei': '\\operatorname{Ei}',
+            'Li': '\\operatorname{Li}'
         };
 
         if (this.funcName === 'besselJ' && argsTex.length === 2) return `J_{${argsTex[0]}}\\left(${argsTex[1]}\\right)`;
@@ -3397,6 +3451,38 @@ function math_Ci(x) {
         if (Math.abs(add) < 1e-15) break;
     }
     return EULER + Math.log(x) + sum;
+}
+
+function math_Ei(x) {
+    if (x === 0) return -Infinity;
+    // Ei(x) = gamma + ln|x| + sum_{k=1} x^k / (k * k!)
+    // For large positive x, Asymptotic: exp(x)/x * (1 + 1/x + 2!/x^2 + ...)
+
+    if (x > 20) {
+        // Asymptotic
+        let sum = 1;
+        let term = 1;
+        for (let k = 1; k < 10; k++) {
+            term *= k / x;
+            sum += term;
+        }
+        return Math.exp(x) / x * sum;
+    }
+
+    const EULER = 0.5772156649;
+    let sum = 0;
+    let fact = 1; // k!
+
+    for (let k = 1; k < 100; k++) {
+        fact *= k;
+        const num = Math.pow(x, k);
+        const den = k * fact;
+        const add = num / den;
+        sum += add;
+        if (Math.abs(add) < 1e-15) break;
+    }
+
+    return EULER + Math.log(Math.abs(x)) + sum;
 }
 
 // Export classes for Global/CommonJS environments
