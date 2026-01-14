@@ -2469,6 +2469,12 @@ class Call extends Expr {
                 const term2 = new Call('Ei', [new Mul(new Num(2), new Call('ln', [varName]))]);
                 return new Sub(new Mul(varName, new Call('Li', [varName])), term2);
             }
+            if (this.funcName === 'erf') {
+                // x*erf(x) + exp(-x^2)/sqrt(pi)
+                const term1 = new Mul(varName, new Call('erf', [varName]));
+                const term2 = new Div(new Call('exp', [new Mul(new Num(-1), new Pow(varName, new Num(2)))]), new Call('sqrt', [new Sym('pi')]));
+                return new Add(term1, term2);
+            }
         }
         return new Call("integrate", [this, varName]);
     }

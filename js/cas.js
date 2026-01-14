@@ -2119,6 +2119,27 @@ class CAS {
                 return this._wronskian(args[0], args[1]);
             }
 
+            if (node.funcName === 'crt') {
+                if (node.args.length !== 2) throw new Error("crt requires 2 arguments: remainders, moduli");
+                return this._crt(args[0], args[1]);
+            }
+
+            if (node.funcName === 'lagrange') {
+                if (node.args.length !== 1) throw new Error("lagrange requires 1 argument: list of points");
+                return this._lagrange(args[0]);
+            }
+
+            if (node.funcName === 'rk4') {
+                // rk4(f(t,y), t, y, t0, y0, h, n)
+                if (node.args.length !== 7) throw new Error("rk4 requires 7 arguments: f, t, y, t0, y0, h, n");
+                return this._rk4(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
+            }
+
+            if (node.funcName === 'lsq') {
+                if (node.args.length !== 2) throw new Error("lsq requires 2 arguments: Matrix A, Vector b");
+                return this._lsq(args[0], args[1]);
+            }
+
             return new Call(node.funcName, args);
         }
 
@@ -11894,6 +11915,132 @@ class CAS {
             // Without limits, Taylor is risky.
             // Return symbolic call.
             return new Call('matrixExp', [matrix]);
+        }
+    }
+
+    _crt(remainders, moduli) {
+        if (!(remainders instanceof Vec) || !(moduli instanceof Vec)) throw new Error("Arguments must be lists");
+        if (remainders.elements.length !== moduli.elements.length) throw new Error("Lists must be of equal length");
+
+        const a = remainders.elements;
+        const n = moduli.elements;
+        const k = a.length;
+
+        // Verify n_i are pairwise coprime?
+        // Assuming user input is valid for now, or algorithm will fail/produce specific result.
+
+        // Product N = n1 * n2 * ... * nk
+        let N = new Num(1);
+        for(const mod of n) N = new Mul(N, mod).simplify();
+
+        let x = new Num(0);
+
+        for(let i=0; i<k; i++) {
+            const ni = n[i];
+            const ai = a[i];
+            // Ni = N / ni
+            const Ni = new Div(N, ni).simplify();
+            // yi = Ni^-1 mod ni
+            const yi = this._modInverse(Ni, ni);
+            if (yi instanceof Call) return new Call('crt', [remainders, moduli]); // Failed inverse
+
+            // x += ai * Ni * yi
+            const term = new Mul(ai, new Mul(Ni, yi));
+            x = new Add(x, term).simplify();
+        }
+
+        return new Mod(x, N).simplify();
+    }
+
+    _lagrange(points) {
+        if (!(points instanceof Vec)) throw new Error("Argument must be a list of points");
+        const n = points.elements.length;
+        if (n === 0) return new Num(0);
+
+        const x = new Sym('x');
+        let L = new Num(0);
+
+        for(let j=0; j<n; j++) {
+            const pt = points.elements[j];
+            let xj, yj;
+            if (pt instanceof Vec && pt.elements.length >= 2) {
+                xj = pt.elements[0];
+                yj = pt.elements[1];
+            } else {
+                throw new Error("Points must be [x, y]");
+            }
+
+            // Construct basis polynomial lj(x)
+            let lj = new Num(1);
+            for(let i=0; i<n; i++) {
+                if (i === j) continue;
+                const xi = points.elements[i].elements[0];
+
+                // (x - xi) / (xj - xi)
+                const num = new Sub(x, xi);
+                const den = new Sub(xj, xi);
+                const term = new Div(num, den);
+                lj = new Mul(lj, term);
+            }
+
+            L = new Add(L, new Mul(yj, lj));
+        }
+
+        return L.simplify();
+    }
+
+    _rk4(f, tVar, yVar, t0, y0, h, n) {
+        // f(t, y) = y'
+        if (!(tVar instanceof Sym) || !(yVar instanceof Sym)) throw new Error("Variables must be symbols");
+        const steps = n.evaluateNumeric();
+        const hVal = h.evaluateNumeric();
+        let tVal = t0.evaluateNumeric();
+        let yVal = y0.evaluateNumeric();
+
+        if (isNaN(steps) || isNaN(hVal) || isNaN(tVal) || isNaN(yVal)) {
+            // Return symbolic if non-numeric? RK4 is numerical method.
+            throw new Error("RK4 arguments must be numeric");
+        }
+
+        const res = [];
+        res.push(new Vec([new Num(tVal), new Num(yVal)]));
+
+        // Helper to evaluate f(t, y)
+        const evalF = (t, y) => {
+            return f.substitute(tVar, new Num(t)).substitute(yVar, new Num(y)).evaluateNumeric();
+        };
+
+        for(let i=0; i<steps; i++) {
+            const k1 = evalF(tVal, yVal);
+            const k2 = evalF(tVal + hVal/2, yVal + hVal*k1/2);
+            const k3 = evalF(tVal + hVal/2, yVal + hVal*k2/2);
+            const k4 = evalF(tVal + hVal, yVal + hVal*k3);
+
+            const dy = (hVal/6) * (k1 + 2*k2 + 2*k3 + k4);
+            yVal += dy;
+            tVal += hVal;
+
+            res.push(new Vec([new Num(tVal), new Num(yVal)]));
+        }
+
+        return new Vec(res);
+    }
+
+    _lsq(A, b) {
+        if (!(A instanceof Vec) || !(b instanceof Vec)) throw new Error("Arguments must be matrices");
+        // x = (A^T A)^-1 A^T b
+        const AT = this._trans(A);
+        const ATA = new Mul(AT, A).simplify();
+        const ATb = new Mul(AT, b).simplify();
+
+        try {
+            const invATA = this._inv(ATA);
+            return new Mul(invATA, ATb).simplify();
+        } catch(e) {
+            // If singular, use pinv?
+            // x = A^+ b
+            const pinvA = this._pinv(A);
+            return new Mul(pinvA, b).simplify();
         }
     }
 }
