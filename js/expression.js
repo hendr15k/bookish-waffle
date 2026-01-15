@@ -1836,6 +1836,24 @@ class Call extends Expr {
             }
         }
 
+        if (this.funcName === 'erfi') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num && arg.value === 0) return new Num(0);
+            if (arg instanceof Num && arg.value < 0) {
+                 return new Mul(new Num(-1), new Call('erfi', [new Num(-arg.value)])).simplify();
+            }
+            if (arg instanceof Mul && arg.left instanceof Num && arg.left.value < 0) {
+                 return new Mul(new Num(-1), new Call('erfi', [new Mul(new Num(-1), arg).simplify()])).simplify();
+            }
+            // erfi(i*x) = i*erf(x)
+            if (arg instanceof Mul && arg.left instanceof Sym && arg.left.name === 'i') {
+                 return new Mul(new Sym('i'), new Call('erf', [arg.right])).simplify();
+            }
+            if (arg instanceof Sym && arg.name === 'i') {
+                 return new Mul(new Sym('i'), new Call('erf', [new Num(1)])).simplify();
+            }
+        }
+
         if (this.funcName === 'power') {
              // Do not simplify to Pow or Num, keep as 'power' to preserve factorization structure
              return new Call('power', simpleArgs);
@@ -2312,6 +2330,12 @@ class Call extends Expr {
             const exp = new Call('exp', [new Mul(new Num(-1), new Pow(u, new Num(2)))]);
             return new Mul(new Mul(coeff, exp), u.diff(varName));
         }
+        if (this.funcName === 'erfi') {
+            // d/dx erfi(u) = 2/sqrt(pi) * e^(u^2) * u'
+            const coeff = new Div(new Num(2), new Call('sqrt', [new Sym('pi')]));
+            const exp = new Call('exp', [new Pow(u, new Num(2))]);
+            return new Mul(new Mul(coeff, exp), u.diff(varName));
+        }
 
         // Bessel Functions Derivatives
         // J_v'(x) = 0.5 * (J_{v-1}(x) - J_{v+1}(x))
@@ -2469,6 +2493,18 @@ class Call extends Expr {
                 const term2 = new Call('Ei', [new Mul(new Num(2), new Call('ln', [varName]))]);
                 return new Sub(new Mul(varName, new Call('Li', [varName])), term2);
             }
+            if (this.funcName === 'erf') {
+                // x*erf(x) + exp(-x^2)/sqrt(pi)
+                const term1 = new Mul(varName, new Call('erf', [varName]));
+                const term2 = new Div(new Call('exp', [new Mul(new Num(-1), new Pow(varName, new Num(2)))]), new Call('sqrt', [new Sym('pi')]));
+                return new Add(term1, term2);
+            }
+            if (this.funcName === 'erfi') {
+                // x*erfi(x) - exp(x^2)/sqrt(pi)
+                const term1 = new Mul(varName, new Call('erfi', [varName]));
+                const term2 = new Div(new Call('exp', [new Pow(varName, new Num(2))]), new Call('sqrt', [new Sym('pi')]));
+                return new Sub(term1, term2);
+            }
         }
         return new Call("integrate", [this, varName]);
     }
@@ -2544,7 +2580,8 @@ class Call extends Expr {
             'Si': '\\operatorname{Si}',
             'Ci': '\\operatorname{Ci}',
             'Ei': '\\operatorname{Ei}',
-            'Li': '\\operatorname{Li}'
+            'Li': '\\operatorname{Li}',
+            'erfi': '\\operatorname{erfi}'
         };
 
         if (this.funcName === 'besselJ' && argsTex.length === 2) return `J_{${argsTex[0]}}\\left(${argsTex[1]}\\right)`;

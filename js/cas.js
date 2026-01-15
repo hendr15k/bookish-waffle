@@ -3579,8 +3579,10 @@ class CAS {
                     // If factorization successfully broke it down (not just returned the input wrapped)
                     // Important: compare strings or structure.
                     const isFactorCall = (factored instanceof Call && factored.funcName === 'factor');
+                    // Check if factorization actually changed anything to avoid infinite recursion
+                    const isSame = (factored.toString() === expr.toString());
 
-                    if (!isFactorCall) {
+                    if (!isFactorCall && !isSame) {
                         const terms = [];
                         const collect = (n) => {
                             if (n instanceof Mul) {
@@ -3641,6 +3643,56 @@ class CAS {
                                 return new Call("set", unique);
                             }
                         }
+                    }
+
+                    // Factoring failed or yielded no roots. Try Cubic Formula.
+                    if (poly.maxDeg === 3) {
+                        const a = poly.coeffs[3];
+                        const b = poly.coeffs[2] || new Num(0);
+                        const c = poly.coeffs[1] || new Num(0);
+                        const d = poly.coeffs[0] || new Num(0);
+
+                        const a2 = new Pow(a, new Num(2));
+                        const a3 = new Pow(a, new Num(3));
+                        const b2 = new Pow(b, new Num(2));
+                        const b3 = new Pow(b, new Num(3));
+
+                        const pNum = new Sub(new Mul(new Num(3), new Mul(a, c)), b2);
+                        const pDen = new Mul(new Num(3), a2);
+                        const p = new Div(pNum, pDen).simplify();
+
+                        const qNum1 = new Mul(new Num(2), b3);
+                        const qNum2 = new Mul(new Num(9), new Mul(a, new Mul(b, c)));
+                        const qNum3 = new Mul(new Num(27), new Mul(a2, d));
+                        const qNum = new Add(new Sub(qNum1, qNum2), qNum3);
+                        const qDen = new Mul(new Num(27), a3);
+                        const q = new Div(qNum, qDen).simplify();
+
+                        const qHalf = new Div(q, new Num(2));
+                        const pThird = new Div(p, new Num(3));
+                        const D = new Add(new Pow(qHalf, new Num(2)), new Pow(pThird, new Num(3))).simplify();
+
+                        const sqrtD = new Call('sqrt', [D]);
+                        const term1 = new Add(new Mul(new Num(-1), qHalf), sqrtD);
+                        const term2 = new Sub(new Mul(new Num(-1), qHalf), sqrtD);
+
+                        const u = new Call('cbrt', [term1]);
+                        const v = new Call('cbrt', [term2]);
+
+                        const shift = new Div(b, new Mul(new Num(3), a));
+                        const x1 = new Sub(new Add(u, v), shift).simplify();
+
+                        const iSqrt3 = new Mul(new Sym('i'), new Call('sqrt', [new Num(3)]));
+                        const uPlusV = new Add(u, v);
+                        const uMinusV = new Sub(u, v);
+
+                        const t2 = new Add(new Div(new Mul(new Num(-1), uPlusV), new Num(2)), new Mul(new Div(iSqrt3, new Num(2)), uMinusV));
+                        const t3 = new Sub(new Div(new Mul(new Num(-1), uPlusV), new Num(2)), new Mul(new Div(iSqrt3, new Num(2)), uMinusV));
+
+                        const x2 = new Sub(t2, shift).simplify();
+                        const x3 = new Sub(t3, shift).simplify();
+
+                        return new Call('set', [x1, x2, x3]);
                     }
                 }
             }
@@ -5529,6 +5581,64 @@ class CAS {
 
         // Polynomial Factorization
         try {
+            // Check for Difference of Squares: A^2 - B^2
+            if (n instanceof Sub) {
+                const getRoot = (expr, power) => {
+                    if (expr instanceof Pow && expr.right instanceof Num && expr.right.value % power === 0) {
+                        const newExp = expr.right.value / power;
+                        if (newExp === 1) return expr.left;
+                        return new Pow(expr.left, new Num(newExp));
+                    }
+                    if (expr instanceof Num && expr.value > 0) {
+                        const r = Math.pow(expr.value, 1/power);
+                        if (Math.abs(r - Math.round(r)) < 1e-9) return new Num(Math.round(r));
+                    }
+                    return null;
+                };
+
+                const A = getRoot(n.left, 2);
+                const B = getRoot(n.right, 2);
+                if (A && B) {
+                    // (A-B)(A+B)
+                    // Recurse on factors to fully factorize (e.g. x^4 - 1 -> (x^2-1)(x^2+1) -> (x-1)(x+1)(x^2+1))
+                    const f1 = this._factor(new Sub(A, B));
+                    const f2 = this._factor(new Add(A, B));
+                    return new Mul(f1, f2).simplify();
+                }
+
+                // Difference of Cubes: A^3 - B^3 = (A-B)(A^2 + AB + B^2)
+                const A3 = getRoot(n.left, 3);
+                const B3 = getRoot(n.right, 3);
+                if (A3 && B3) {
+                    const term1 = new Sub(A3, B3);
+                    const term2 = new Add(new Add(new Pow(A3, new Num(2)), new Mul(A3, B3)), new Pow(B3, new Num(2)));
+                    return new Mul(this._factor(term1), this._factor(term2)).simplify();
+                }
+            }
+            // Sum of Cubes: A^3 + B^3 = (A+B)(A^2 - AB + B^2)
+            if (n instanceof Add) {
+                const getRoot = (expr, power) => {
+                    if (expr instanceof Pow && expr.right instanceof Num && expr.right.value % power === 0) {
+                        const newExp = expr.right.value / power;
+                        if (newExp === 1) return expr.left;
+                        return new Pow(expr.left, new Num(newExp));
+                    }
+                    if (expr instanceof Num && expr.value > 0) {
+                        const r = Math.pow(expr.value, 1/power);
+                        if (Math.abs(r - Math.round(r)) < 1e-9) return new Num(Math.round(r));
+                    }
+                    return null;
+                };
+
+                const A3 = getRoot(n.left, 3);
+                const B3 = getRoot(n.right, 3);
+                if (A3 && B3) {
+                    const term1 = new Add(A3, B3);
+                    const term2 = new Add(new Sub(new Pow(A3, new Num(2)), new Mul(A3, B3)), new Pow(B3, new Num(2)));
+                    return new Mul(this._factor(term1), this._factor(term2)).simplify();
+                }
+            }
+
             // 1. Identify variable
             const vars = [];
             const findVars = (node) => {
@@ -10681,23 +10791,42 @@ class CAS {
                 const c1 = poly.coeffs[1] || new Num(0);
                 const c0 = poly.coeffs[0] || new Num(0);
 
-                if (c1.evaluateNumeric() === 0 && c2.evaluateNumeric() < 0) {
-                     // -a = c2 => a = -c2
-                     const a = new Mul(new Num(-1), c2).simplify();
-                     const sqrtA = new Call('sqrt', [a]).simplify();
+                if (c1.evaluateNumeric() === 0) {
+                    const c2Val = c2.evaluateNumeric();
+                    if (c2Val < 0) {
+                         // -a = c2 => a = -c2
+                         const a = new Mul(new Num(-1), c2).simplify();
+                         const sqrtA = new Call('sqrt', [a]).simplify();
 
-                     // Integral of exp(-ax^2) = sqrt(pi)/(2*sqrt(a)) * erf(sqrt(a)*x)
-                     const factor = new Div(new Call('sqrt', [new Sym('pi')]), new Mul(new Num(2), sqrtA));
-                     const erfTerm = new Call('erf', [new Mul(sqrtA, varNode)]);
+                         // Integral of exp(-ax^2) = sqrt(pi)/(2*sqrt(a)) * erf(sqrt(a)*x)
+                         const factor = new Div(new Call('sqrt', [new Sym('pi')]), new Mul(new Num(2), sqrtA));
+                         const erfTerm = new Call('erf', [new Mul(sqrtA, varNode)]);
 
-                     let result = new Mul(factor, erfTerm).simplify();
+                         let result = new Mul(factor, erfTerm).simplify();
 
-                     // Handle c0: exp(c0) factor
-                     if (c0.evaluateNumeric() !== 0) {
-                         const C = new Call('exp', [c0]).simplify();
-                         result = new Mul(C, result).simplify();
-                     }
-                     return result;
+                         // Handle c0: exp(c0) factor
+                         if (c0.evaluateNumeric() !== 0) {
+                             const C = new Call('exp', [c0]).simplify();
+                             result = new Mul(C, result).simplify();
+                         }
+                         return result;
+                    } else if (c2Val > 0) {
+                         // a = c2. Integral of exp(ax^2) = sqrt(pi)/(2*sqrt(a)) * erfi(sqrt(a)*x)
+                         const a = c2;
+                         const sqrtA = new Call('sqrt', [a]).simplify();
+
+                         const factor = new Div(new Call('sqrt', [new Sym('pi')]), new Mul(new Num(2), sqrtA));
+                         const erfiTerm = new Call('erfi', [new Mul(sqrtA, varNode)]);
+
+                         let result = new Mul(factor, erfiTerm).simplify();
+
+                         // Handle c0: exp(c0) factor
+                         if (c0.evaluateNumeric() !== 0) {
+                             const C = new Call('exp', [c0]).simplify();
+                             result = new Mul(C, result).simplify();
+                         }
+                         return result;
+                    }
                 }
             }
         }
