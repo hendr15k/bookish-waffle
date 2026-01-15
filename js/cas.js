@@ -986,6 +986,11 @@ class CAS {
                  return new Call('fibonacci', args);
             }
 
+            if (node.funcName === 'catalan') {
+                 if (node.args.length !== 1) throw new Error("catalan requires 1 argument");
+                 return this._catalan(args[0]);
+            }
+
             if (node.funcName === 'gamma') {
                  if (node.args.length !== 1) throw new Error("gamma requires 1 argument");
                  const z = args[0];
@@ -4014,6 +4019,21 @@ class CAS {
         return fn;
     }
 
+    _catalan(n) {
+        if (n instanceof Num && Number.isInteger(n.value) && n.value >= 0) {
+            const N = n.value;
+            // C_n = (2n)! / ((n+1)! n!)
+            // Or iterative: C_0=1, C_{n+1} = sum C_i C_{n-i}
+            // Or C_n = product (n+k)/k for k=2..n
+            let res = 1;
+            for (let k = 2; k <= N; k++) {
+                res *= (N + k) / k;
+            }
+            return new Num(Math.round(res));
+        }
+        return new Call('catalan', [n]);
+    }
+
     _gamma(z) {
         if (z < 0.5) {
             // Reflection formula for negative z or z < 0.5
@@ -6332,8 +6352,46 @@ class CAS {
         if (n instanceof Num && Number.isInteger(n.value)) {
             const val = n.value;
             if (val < 2) return new Num(0);
-            for (let i = 2, s = Math.sqrt(val); i <= s; i++) {
-                if (val % i === 0) return new Num(0);
+            if (val === 2 || val === 3) return new Num(1);
+            if (val % 2 === 0 || val % 3 === 0) return new Num(0);
+
+            // Miller-Rabin Primality Test
+            // Write val-1 = d * 2^s
+            let d = val - 1;
+            let s = 0;
+            while (d % 2 === 0) {
+                d /= 2;
+                s++;
+            }
+
+            const modPow = (base, exp, mod) => {
+                let res = 1n;
+                let b = BigInt(base);
+                let e = BigInt(exp);
+                let m = BigInt(mod);
+                while (e > 0n) {
+                    if (e % 2n === 1n) res = (res * b) % m;
+                    b = (b * b) % m;
+                    e /= 2n;
+                }
+                return Number(res);
+            };
+
+            // Deterministic bases for 64-bit integers
+            const bases = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
+            for (const a of bases) {
+                if (a >= val) break;
+                let x = modPow(a, d, val);
+                if (x === 1 || x === val - 1) continue;
+                let composite = true;
+                for (let r = 1; r < s; r++) {
+                    x = modPow(x, 2, val);
+                    if (x === val - 1) {
+                        composite = false;
+                        break;
+                    }
+                }
+                if (composite) return new Num(0);
             }
             return new Num(1);
         }
@@ -8102,80 +8160,78 @@ class CAS {
         const den = expr.right;
 
         // 2. Find roots of denominator
-        // Improved logic: If solving leads to complex roots for a real quadratic, we might want to avoid splitting
-        // IF we are aiming for real integration (atan).
-        // But partfrac is strictly partial fraction decomposition.
-        // In Complex field, 1/(x^2+1) -> 1/2i(x-i) - 1/2i(x+i).
-        // If we want to support real integration, we should handle irreducible quadratics.
-        // However, this function _partfrac is supposed to return the decomposition.
-        // We will stick to full decomposition if possible, but handle integration separately.
-
         const rootsResult = this._solve(den, varNode);
-        let roots = [];
+        let uniqueRoots = [];
 
         if (rootsResult instanceof Call && rootsResult.funcName === 'set') {
-            roots = rootsResult.args;
+            uniqueRoots = rootsResult.args;
         } else if (rootsResult instanceof Expr && !(rootsResult instanceof Call && rootsResult.funcName === 'solve')) {
-            roots = [rootsResult];
+            uniqueRoots = [rootsResult];
         } else {
-            // Could not solve or no roots
             return new Call('partfrac', [expr, varNode]);
         }
 
-        // 3. Construct Partial Fractions (assuming simple roots for now)
-        // form: sum( Residue_i / (x - r_i) )
-        // Residue at simple pole r is P(r) / Q'(r)
-
         let result = new Num(0);
-        let validDecomp = true;
 
-        // Pre-calculate Q'(x)
-        const denDiff = den.diff(varNode).simplify();
-
-        for (const r of roots) {
-            // Factor: (var - r)
-            const factor = new Sub(varNode, r);
-
-            // Calculate Residue: P(r) / Q'(r)
-
-            let residue;
-
-            try {
-                const numVal = num.substitute(varNode, r).simplify();
-                const denDiffVal = denDiff.substitute(varNode, r).simplify();
-
-                // If denDiffVal is 0, it's a repeated root (order > 1)
-                if ((denDiffVal instanceof Num && denDiffVal.value === 0) || (denDiffVal instanceof Sym && denDiffVal.name === 'NaN')) {
-                    // limit((x-r)*expr, x, r)
-                    const term = new Mul(expr, factor).simplify();
-                    residue = this._limit(term, varNode, r);
+        // For each unique root, find multiplicity
+        for (const r of uniqueRoots) {
+            let mult = 0;
+            let currDen = den;
+            // Check derivatives of denominator at r to find multiplicity
+            for(let k=0; k<10; k++) { // Limit to avoid infinite loops
+                const val = currDen.substitute(varNode, r).evaluateNumeric();
+                if (Math.abs(val) < 1e-9) {
+                    mult++;
+                    currDen = currDen.diff(varNode).simplify();
                 } else {
-                    residue = new Div(numVal, denDiffVal).simplify();
+                    break;
                 }
-
-                if (residue instanceof Sym && (residue.name === 'Infinity' || residue.name === 'NaN')) {
-                    validDecomp = false; break;
-                }
-                // Check if residue still depends on var (should be constant)
-                if (this._dependsOn(residue, varNode)) {
-                     validDecomp = false; break;
-                }
-            } catch (e) {
-                validDecomp = false; break;
             }
+            if (mult === 0) continue; // Not a root?
 
-            const frac = new Div(residue, factor);
-            result = new Add(result, frac);
+            // Partial fraction terms for root r with multiplicity m:
+            // Sum_{k=1}^m A_k / (x-r)^k
+            // where A_k is coeff for (x-r)^-k term.
+            // A_k = 1/(m-k)! * limit( d^(m-k)/dx^(m-k) [ (x-r)^m * P(x)/Q(x) ], x->r )
+
+            // Construct (x-r)^m
+            const factor = new Pow(new Sub(varNode, r), new Num(mult)).simplify();
+            const bigF = new Mul(factor, expr).simplify();
+
+            for (let k = mult; k >= 1; k--) {
+                const order = mult - k;
+                let term = bigF;
+                for(let j=0; j<order; j++) {
+                    term = term.diff(varNode).simplify();
+                }
+
+                // Evaluate at r (limit)
+                let coeff = this._limit(term, varNode, r);
+
+                if (order > 0) {
+                    const fact = this._factorial(order);
+                    coeff = new Div(coeff, new Num(fact)).simplify();
+                }
+
+                if (coeff instanceof Num && coeff.value === 0) continue;
+
+                const denomTerm = new Pow(new Sub(varNode, r), new Num(k)).simplify();
+                result = new Add(result, new Div(coeff, denomTerm));
+            }
         }
 
-        // Check for NaN result (global invalidation)
-        if (result.toString() === "NaN" || result.toString() === "(NaN / NaN)") validDecomp = false;
-
-        if (validDecomp) {
-            return result.simplify();
+        // Check for polynomial part (degree num >= degree den)
+        // P/Q = Poly + Rem/Q. The loop above handles residues (Rem/Q).
+        // We need to add the polynomial part.
+        // Use polynomial division (quo).
+        const pNum = this._getPolyCoeffs(num, varNode);
+        const pDen = this._getPolyCoeffs(den, varNode);
+        if (pNum && pDen && pNum.maxDeg >= pDen.maxDeg) {
+             const divRes = this._quo(num, den);
+             result = new Add(divRes, result);
         }
 
-        return new Call('partfrac', [expr, varNode]);
+        return result.simplify();
     }
 
     _linearizeTrig(expr) {
