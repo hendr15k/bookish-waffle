@@ -2469,6 +2469,12 @@ class Call extends Expr {
                 const term2 = new Call('Ei', [new Mul(new Num(2), new Call('ln', [varName]))]);
                 return new Sub(new Mul(varName, new Call('Li', [varName])), term2);
             }
+            if (this.funcName === 'sinc') {
+                // sinc(x) = sin(x)/x -> integrate is Si(x)
+                // Note: assuming unnormalized sinc (sin(x)/x). If normalized (sin(pi*x)/(pi*x)), would be different.
+                // evaluateNumeric uses sin(x)/x, so Si(x) is correct.
+                return new Call('Si', [varName]);
+            }
         }
         return new Call("integrate", [this, varName]);
     }

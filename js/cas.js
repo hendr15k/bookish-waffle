@@ -906,9 +906,9 @@ class CAS {
                 return this._ones(args[0], args[1]);
             }
 
-            if (node.funcName === 'binomial' || node.funcName === 'comb') {
-                if (node.args.length !== 2) throw new Error("binomial requires 2 arguments");
-                return this._nCr(args[0], args[1]);
+            if (node.funcName === 'binomial' || node.funcName === 'comb' || node.funcName === 'combinations') {
+                if (node.args.length !== 2) throw new Error("combinations requires 2 arguments");
+                return this._combinations(args[0], args[1]);
             }
 
             if (node.funcName === 'divisors') {
@@ -1002,12 +1002,28 @@ class CAS {
 
             if (node.funcName === 'nCr') {
                 if (node.args.length !== 2) throw new Error("nCr requires 2 arguments");
-                return this._nCr(args[0], args[1]);
+                return this._combinations(args[0], args[1]);
             }
 
-            if (node.funcName === 'nPr' || node.funcName === 'perm') {
-                if (node.args.length !== 2) throw new Error("nPr requires 2 arguments");
-                return this._nPr(args[0], args[1]);
+            if (node.funcName === 'nPr' || node.funcName === 'perm' || node.funcName === 'permutations') {
+                if (node.args.length < 1) throw new Error("permutations requires at least 1 argument");
+                const k = node.args.length > 1 ? args[1] : null;
+                return this._permutations(args[0], k);
+            }
+
+            if (node.funcName === 'unique') {
+                if (node.args.length !== 1) throw new Error("unique requires 1 argument");
+                return this._unique(args[0]);
+            }
+
+            if (node.funcName === 'exp2trig') {
+                if (node.args.length !== 1) throw new Error("exp2trig requires 1 argument");
+                return this._exp2trig(args[0]);
+            }
+
+            if (node.funcName === 'trig2exp') {
+                if (node.args.length !== 1) throw new Error("trig2exp requires 1 argument");
+                return this._trig2exp(args[0]);
             }
 
             if (node.funcName === 'isPrime' || node.funcName === 'is_prime') {
@@ -11895,6 +11911,156 @@ class CAS {
             // Return symbolic call.
             return new Call('matrixExp', [matrix]);
         }
+    }
+
+    _combinations(n, k) {
+        if (n instanceof Vec) {
+            // Return list of combinations of elements in n taken k at a time
+            if (!(k instanceof Num && Number.isInteger(k.value) && k.value >= 0)) {
+                return new Call('combinations', [n, k]);
+            }
+            const arr = n.elements;
+            const r = k.value;
+            if (r > arr.length) return new Vec([]);
+            if (r === 0) return new Vec([new Vec([])]);
+
+            const res = [];
+            const helper = (start, combo) => {
+                if (combo.length === r) {
+                    res.push(new Vec([...combo]));
+                    return;
+                }
+                for (let i = start; i < arr.length; i++) {
+                    combo.push(arr[i]);
+                    helper(i + 1, combo);
+                    combo.pop();
+                }
+            };
+            helper(0, []);
+            return new Vec(res);
+        }
+        return this._nCr(n, k);
+    }
+
+    _permutations(n, k) {
+        if (n instanceof Vec) {
+            // Return list of permutations
+            const arr = n.elements;
+            let r = arr.length;
+            if (k && k instanceof Num && Number.isInteger(k.value) && k.value >= 0) {
+                r = k.value;
+            } else if (k) {
+                // k provided but symbolic?
+                return new Call('permutations', [n, k]);
+            }
+
+            if (r > arr.length) return new Vec([]);
+            if (r === 0) return new Vec([new Vec([])]);
+
+            const res = [];
+            const helper = (current, remaining) => {
+                if (current.length === r) {
+                    res.push(new Vec(current));
+                    return;
+                }
+                for (let i = 0; i < remaining.length; i++) {
+                    const next = current.concat([remaining[i]]);
+                    const nextRemaining = remaining.slice(0, i).concat(remaining.slice(i + 1));
+                    helper(next, nextRemaining);
+                }
+            };
+            helper([], arr);
+            return new Vec(res);
+        }
+        // If n is number, k must be provided for nPr
+        if (k) return this._nPr(n, k);
+        // If just permutations(n) where n is number? factorial(n)?
+        // nPr(n, n) = n!
+        return this._nPr(n, n);
+    }
+
+    _unique(list) {
+        if (list instanceof Vec) {
+            const seen = new Set();
+            const res = [];
+            for(const el of list.elements) {
+                const s = el.toString();
+                if (!seen.has(s)) {
+                    seen.add(s);
+                    res.push(el);
+                }
+            }
+            return new Vec(res);
+        }
+        return new Call('unique', [list]);
+    }
+
+    _exp2trig(expr) {
+        expr = expr.expand().simplify();
+        if (expr instanceof Call && expr.funcName === 'exp') {
+            const arg = expr.args[0];
+            // Identify a + bi
+            const parts = this._getComplexParts(arg);
+            const a = parts.re;
+            const b = parts.im;
+
+            // exp(a + bi) = exp(a) * (cos(b) + i*sin(b))
+            if (b instanceof Num && b.value === 0) return expr;
+
+            const term1 = new Call('exp', [a]).simplify();
+            const term2 = new Add(
+                new Call('cos', [b]),
+                new Mul(new Sym('i'), new Call('sin', [b]))
+            ).simplify();
+
+            return new Mul(term1, term2).simplify();
+        }
+        if (expr instanceof BinaryOp) {
+            return new expr.constructor(this._exp2trig(expr.left), this._exp2trig(expr.right)).simplify();
+        }
+        if (expr instanceof Call) {
+            return new Call(expr.funcName, expr.args.map(a => this._exp2trig(a))).simplify();
+        }
+        if (expr instanceof Vec) {
+            return new Vec(expr.elements.map(e => this._exp2trig(e)));
+        }
+        return expr;
+    }
+
+    _trig2exp(expr) {
+        expr = expr.expand().simplify();
+        if (expr instanceof Call) {
+            if (expr.funcName === 'sin') {
+                const x = this._trig2exp(expr.args[0]);
+                // (e^(ix) - e^(-ix)) / 2i
+                const ix = new Mul(new Sym('i'), x);
+                const term1 = new Call('exp', [ix]);
+                const term2 = new Call('exp', [new Mul(new Num(-1), ix)]);
+                return new Div(new Sub(term1, term2), new Mul(new Num(2), new Sym('i'))).simplify();
+            }
+            if (expr.funcName === 'cos') {
+                const x = this._trig2exp(expr.args[0]);
+                // (e^(ix) + e^(-ix)) / 2
+                const ix = new Mul(new Sym('i'), x);
+                const term1 = new Call('exp', [ix]);
+                const term2 = new Call('exp', [new Mul(new Num(-1), ix)]);
+                return new Div(new Add(term1, term2), new Num(2)).simplify();
+            }
+            if (expr.funcName === 'tan') {
+                // sin/cos
+                const sin = this._trig2exp(new Call('sin', expr.args));
+                const cos = this._trig2exp(new Call('cos', expr.args));
+                return new Div(sin, cos).simplify();
+            }
+            return new Call(expr.funcName, expr.args.map(a => this._trig2exp(a))).simplify();
+        }
+        if (expr instanceof BinaryOp) {
+            return new expr.constructor(this._trig2exp(expr.left), this._trig2exp(expr.right)).simplify();
+        }
+        if (expr instanceof Vec) {
+            return new Vec(expr.elements.map(e => this._trig2exp(e)));
+        }
+        return expr;
     }
 }
 
