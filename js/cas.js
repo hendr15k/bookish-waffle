@@ -273,6 +273,55 @@ class CAS {
                 if (node.args.length === 4) {
                     const lower = args[2];
                     const upper = args[3];
+
+                    // Check for Singularities in Interval (e.g. 1/x^2 from -1 to 1)
+                    let den = null;
+                    if (func instanceof Div) den = func.right;
+                    else if (func instanceof Pow && func.right instanceof Num && func.right.value < 0) den = func.left;
+
+                    if (den) {
+                        try {
+                            const roots = this._roots(den, varNode);
+                            const poles = [];
+                            const a = lower.evaluateNumeric();
+                            const b = upper.evaluateNumeric();
+
+                            if (!isNaN(a) && !isNaN(b)) {
+                                if (roots instanceof Vec) {
+                                    for(const r of roots.elements) {
+                                        const rVal = r.evaluateNumeric();
+                                        // Check strictly between a and b
+                                        if (!isNaN(rVal) && rVal > Math.min(a,b) && rVal < Math.max(a,b)) {
+                                            poles.push(rVal);
+                                        }
+                                    }
+                                }
+
+                                if (poles.length > 0) {
+                                    // Dedupe and Sort
+                                    const uniquePoles = [...new Set(poles)].sort((u,v) => u-v);
+                                    let sum = new Num(0);
+                                    let prev = lower;
+
+                                    for(const p of uniquePoles) {
+                                        const pNum = new Num(p);
+                                        // Integrate from prev to p (singularity)
+                                        const part = this.evaluate(new Call('integrate', [func, varNode, prev, pNum]));
+                                        sum = new Add(sum, part);
+                                        prev = pNum;
+                                    }
+                                    // Last segment
+                                    const part = this.evaluate(new Call('integrate', [func, varNode, prev, upper]));
+                                    sum = new Add(sum, part);
+
+                                    return sum.simplify();
+                                }
+                            }
+                        } catch(e) {
+                            // Ignore errors in root finding
+                        }
+                    }
+
                     let indefinite = func.integrate(varNode);
 
                     // Try strategies if direct integration failed
@@ -5028,51 +5077,37 @@ class CAS {
         const cols = matrix.elements[0].elements.length;
         if (rows !== cols) throw new Error("inv requires a square matrix");
 
-        const det = this._det(matrix).simplify();
-        if (det instanceof Num && det.value === 0) throw new Error("Matrix is singular (det=0)");
-
-        // Cofactor matrix
-        const cofactorRows = [];
-        for (let r = 0; r < rows; r++) {
+        // Use Gaussian Elimination (RREF of [A|I]) -> O(n^3)
+        // Construct Augmented Matrix [A | I]
+        const augRows = [];
+        for(let i=0; i<rows; i++) {
             const row = [];
-            for (let c = 0; c < cols; c++) {
-                // Minor
-                const subRows = [];
-                for (let i = 0; i < rows; i++) {
-                    if (i === r) continue;
-                    const subRow = [];
-                    for (let j = 0; j < cols; j++) {
-                        if (j === c) continue;
-                        subRow.push(matrix.elements[i].elements[j]);
-                    }
-                    subRows.push(new Vec(subRow));
-                }
-                const subMatrix = new Vec(subRows);
-                let minor = this._det(subMatrix);
+            // A part
+            for(let j=0; j<cols; j++) row.push(matrix.elements[i].elements[j]);
+            // I part
+            for(let j=0; j<cols; j++) row.push(new Num(i===j ? 1 : 0));
+            augRows.push(new Vec(row));
+        }
+        const augMat = new Vec(augRows);
 
-                // Sign
-                if ((r + c) % 2 !== 0) minor = new Mul(new Num(-1), minor);
-                row.push(minor);
+        const rrefMat = this._rref(augMat);
+
+        // Check for singularity: The left part of RREF must be Identity
+        // Check diagonal elements
+        for(let i=0; i<rows; i++) {
+            const pivot = rrefMat.elements[i].elements[i].simplify();
+            if (pivot instanceof Num && pivot.value === 0) {
+                // If pivot is 0, we have a row of zeros (or swapped away), implies rank < n
+                throw new Error("Matrix is singular");
             }
-            cofactorRows.push(new Vec(row));
         }
 
-        // Adjugate (Transpose of Cofactor)
-        const adjRows = [];
-        for (let c = 0; c < cols; c++) {
-            const row = [];
-            for (let r = 0; r < rows; r++) {
-                row.push(cofactorRows[r].elements[c]);
-            }
-            adjRows.push(new Vec(row));
-        }
-
-        // Multiply by 1/det
+        // Extract right half (Inverse)
         const invRows = [];
-        for (let i = 0; i < rows; i++) {
+        for(let i=0; i<rows; i++) {
             const row = [];
-            for (let j = 0; j < cols; j++) {
-                row.push(new Div(adjRows[i].elements[j], det).simplify());
+            for(let j=cols; j<2*cols; j++) {
+                row.push(rrefMat.elements[i].elements[j]);
             }
             invRows.push(new Vec(row));
         }
