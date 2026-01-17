@@ -1817,23 +1817,28 @@ class Call extends Expr {
         if (this.funcName === 'erf') {
             const arg = simpleArgs[0];
             if (arg instanceof Num) {
-                const val = arg.value;
-                // Use approximation for numeric erf
-                const sign = (val >= 0) ? 1 : -1;
-                const x = Math.abs(val);
-
-                // Abramowitz & Stegun 7.1.26
-                const a1 =  0.254829592;
-                const a2 = -0.284496736;
-                const a3 =  1.421413741;
-                const a4 = -1.453152027;
-                const a5 =  1.061405429;
-                const p  =  0.3275911;
-
-                const t = 1.0 / (1.0 + p * x);
-                const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
-                return new Num(sign * y);
+                return new Num(math_erf(arg.value));
             }
+            if (arg instanceof Mul && arg.left instanceof Num && arg.left.value < 0) {
+                // erf(-x) = -erf(x)
+                return new Mul(new Num(-1), new Call('erf', [new Mul(new Num(-arg.left.value), arg.right).simplify()])).simplify();
+            }
+            if (arg instanceof Num && arg.value === 0) return new Num(0);
+        }
+
+        if (this.funcName === 'erfc') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) {
+                // erfc(0) = 1
+                if (arg.value === 0) return new Num(1);
+                return new Num(1 - math_erf(arg.value));
+            }
+            // erfc(-x) = 2 - erfc(x)
+            if (arg instanceof Mul && arg.left instanceof Num && arg.left.value < 0) {
+                 // erfc(-x) = 2 - erfc(x)
+                 return new Sub(new Num(2), new Call('erfc', [new Mul(new Num(-arg.left.value), arg.right).simplify()])).simplify();
+            }
+            if (arg instanceof Num && arg.value === 0) return new Num(1);
         }
 
         if (this.funcName === 'erfi') {
@@ -1963,8 +1968,54 @@ class Call extends Expr {
             if (arg instanceof Num) {
                 if (arg.value === 0) return new Num(-0.5);
                 if (arg.value === 1) return new Sym('Infinity');
-                if (arg.value === 2) return new Div(new Pow(new Sym('pi'), new Num(2)), new Num(6)).simplify();
-                if (arg.value === 4) return new Div(new Pow(new Sym('pi'), new Num(4)), new Num(90)).simplify();
+                if (Number.isInteger(arg.value)) {
+                    const n = arg.value;
+                    if (n > 0 && n % 2 === 0) {
+                        // zeta(2n) = (-1)^(n+1) * B_2n * (2pi)^(2n) / (2 * (2n)!)
+                        const k = n / 2;
+                        const B = getBernoulliExpr(n);
+                        const piPow = new Pow(new Sym('pi'), new Num(n));
+                        const twoPow = new Pow(new Num(2), new Num(n - 1));
+
+                        // Factorial (2n)!
+                        let fact = 1;
+                        for(let i=2; i<=n; i++) fact *= i;
+
+                        // (-1)^(k+1) * B * 2^(2n-1) * pi^(2n) / (2n)!
+                        // Formula simplified: zeta(2k) = |B_2k| * (2pi)^(2k) / (2 * (2k)!)
+                        // = |B_2k| * 2^(2k) * pi^(2k) / 2 / (2k)!
+                        // = |B_2k| * 2^(2k-1) * pi^(2k) / (2k)!
+
+                        // zeta(2k) is always positive.
+                        // Formula: zeta(2k) = (-1)^(k+1) * B_2k * (2pi)^2k / 2(2k)!
+                        // We use simpler: |B_2k| * (2pi)^2k / 2(2k)!
+                        // If B_2k is Num, we can just take abs. If symbolic (Div), we handle sign.
+
+                        let absB = B;
+                        if (B instanceof Num) absB = new Num(Math.abs(B.value));
+                        else if (B instanceof Div && B.left instanceof Num) absB = new Div(new Num(Math.abs(B.left.value)), B.right).simplify();
+                        else absB = new Call('abs', [B]);
+
+                        const num = new Mul(absB, new Mul(new Pow(new Num(2), new Num(n-1)), piPow));
+                        const den = new Num(fact);
+                        return new Div(num, den).simplify();
+                    }
+                    if (n < 0 && Number.isInteger(n)) {
+                        // zeta(-n) = (-1)^n * B_(n+1) / (n+1)
+                        // B_n is non-zero only for even n (except B1)
+                        // If n is even negative integer (e.g. -2, -4), n+1 is odd => B_odd=0.
+                        // So zeta(-2k) = 0.
+                        if (n % 2 === 0) return new Num(0);
+
+                        // If n is odd negative integer (e.g. -1, -3), n+1 is even => B_even != 0.
+                        // zeta(-1) = -1 * B_2 / 2 = -1/12.
+                        // zeta(-3) = -1 * B_4 / 4 = -(-1/30)/4 = 1/120.
+                        const k = -n; // Positive
+                        const B = getBernoulliExpr(k + 1);
+                        const sign = (k % 2 === 0) ? 1 : -1; // (-1)^(-k) = (-1)^k
+                        return new Div(new Mul(new Num(sign), B), new Num(k + 1)).simplify();
+                    }
+                }
             }
         }
 
@@ -2114,21 +2165,10 @@ class Call extends Expr {
              return NaN;
         }
         if (this.funcName === 'erf') {
-             // Approximation (same logic as simplify or just call it)
-             // But evaluateNumeric returns a number, not Expr.
-             const val = argsVal[0];
-             if (isNaN(val)) return NaN;
-             const sign = (val >= 0) ? 1 : -1;
-             const x = Math.abs(val);
-             const a1 =  0.254829592;
-             const a2 = -0.284496736;
-             const a3 =  1.421413741;
-             const a4 = -1.453152027;
-             const a5 =  1.061405429;
-             const p  =  0.3275911;
-             const t = 1.0 / (1.0 + p * x);
-             const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
-             return sign * y;
+             return math_erf(argsVal[0]);
+        }
+        if (this.funcName === 'erfc') {
+             return 1 - math_erf(argsVal[0]);
         }
         if (this.funcName === 'Si') {
             return math_Si(argsVal[0]);
@@ -2330,6 +2370,12 @@ class Call extends Expr {
             const exp = new Call('exp', [new Mul(new Num(-1), new Pow(u, new Num(2)))]);
             return new Mul(new Mul(coeff, exp), u.diff(varName));
         }
+        if (this.funcName === 'erfc') {
+            // d/dx erfc(u) = -2/sqrt(pi) * e^(-u^2) * u'
+            const coeff = new Div(new Num(-2), new Call('sqrt', [new Sym('pi')]));
+            const exp = new Call('exp', [new Mul(new Num(-1), new Pow(u, new Num(2)))]);
+            return new Mul(new Mul(coeff, exp), u.diff(varName));
+        }
         if (this.funcName === 'erfi') {
             // d/dx erfi(u) = 2/sqrt(pi) * e^(u^2) * u'
             const coeff = new Div(new Num(2), new Call('sqrt', [new Sym('pi')]));
@@ -2498,6 +2544,12 @@ class Call extends Expr {
                 const term1 = new Mul(varName, new Call('erf', [varName]));
                 const term2 = new Div(new Call('exp', [new Mul(new Num(-1), new Pow(varName, new Num(2)))]), new Call('sqrt', [new Sym('pi')]));
                 return new Add(term1, term2);
+            }
+            if (this.funcName === 'erfc') {
+                // x*erfc(x) - exp(-x^2)/sqrt(pi)
+                const term1 = new Mul(varName, new Call('erfc', [varName]));
+                const term2 = new Div(new Call('exp', [new Mul(new Num(-1), new Pow(varName, new Num(2)))]), new Call('sqrt', [new Sym('pi')]));
+                return new Sub(term1, term2);
             }
             if (this.funcName === 'erfi') {
                 // x*erfi(x) - exp(x^2)/sqrt(pi)
@@ -3520,6 +3572,36 @@ function math_Ei(x) {
     }
 
     return EULER + Math.log(Math.abs(x)) + sum;
+}
+
+function math_erf(val) {
+    if (isNaN(val)) return NaN;
+    const sign = (val >= 0) ? 1 : -1;
+    const x = Math.abs(val);
+    const a1 =  0.254829592;
+    const a2 = -0.284496736;
+    const a3 =  1.421413741;
+    const a4 = -1.453152027;
+    const a5 =  1.061405429;
+    const p  =  0.3275911;
+    const t = 1.0 / (1.0 + p * x);
+    const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+    return sign * y;
+}
+
+function getBernoulliExpr(n) {
+    const B = {
+        0: [1, 1], 1: [-1, 2], 2: [1, 6], 4: [-1, 30], 6: [1, 42],
+        8: [-1, 30], 10: [5, 66], 12: [-691, 2730], 14: [7, 6], 16: [-3617, 510],
+        18: [43867, 798], 20: [-174611, 330]
+    };
+    if (B[n]) {
+        const val = B[n];
+        if (val[1] === 1) return new Num(val[0]);
+        return new Div(new Num(val[0]), new Num(val[1]));
+    }
+    // Fallback for n > 20: return symbolic
+    return new Call('bernoulli', [new Num(n)]);
 }
 
 // Export classes for Global/CommonJS environments
