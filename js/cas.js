@@ -1,4 +1,8 @@
 
+const { Expr, Num, Sym, BinaryOp, Add, Sub, Mul, Div, Pow, Call, Assignment, Eq, Vec, FunctionDef, Block, toExpr,
+        And, Or, Xor, Implies, Iff, Not, Mod, Neq, Lt, Gt, Le, Ge, At, BooleanEq,
+        If, While, For, Return, Break, Continue } = require('./expression');
+
 class CAS {
     constructor() {
         this.variables = {
@@ -243,7 +247,17 @@ class CAS {
                 if (node.args.length < 2) throw new Error("diff requires at least 2 arguments");
                 const func = args[0];
                 const varNode = args[1];
-                if (!(varNode instanceof Sym)) throw new Error("Second argument to diff must be a variable");
+
+                // Mixed partials: diff(f, [x, y])
+                if (varNode instanceof Vec) {
+                    let res = func;
+                    for (const v of varNode.elements) {
+                        res = res.diff(v).simplify();
+                    }
+                    return res;
+                }
+
+                if (!(varNode instanceof Sym)) throw new Error("Second argument to diff must be a variable or list of variables");
 
                 let order = 1;
                 if (node.args.length >= 3) {
@@ -269,6 +283,23 @@ class CAS {
                 const func = args[0];
                 const varNode = args[1];
                 if (!(varNode instanceof Sym)) throw new Error("Second argument to integrate must be a variable");
+
+                // Piecewise Integration (Indefinite: integrate branches)
+                if (func instanceof Call && func.funcName === 'piecewise' && node.args.length === 2) {
+                    const newArgs = [];
+                    for(let i=0; i<func.args.length; i+=2) {
+                        // Condition
+                        if (i+1 < func.args.length) {
+                            newArgs.push(func.args[i]);
+                            // Integrate Value
+                            newArgs.push(this.evaluate(new Call('integrate', [func.args[i+1], varNode])));
+                        } else {
+                            // Default case
+                            newArgs.push(this.evaluate(new Call('integrate', [func.args[i], varNode])));
+                        }
+                    }
+                    return new Call('piecewise', newArgs).simplify();
+                }
 
                 if (node.args.length === 4) {
                     const lower = args[2];
@@ -2171,6 +2202,37 @@ class CAS {
             if (node.funcName === 'wronskian') {
                 if (node.args.length !== 2) throw new Error("wronskian requires 2 arguments: list_of_funcs, var");
                 return this._wronskian(args[0], args[1]);
+            }
+
+            if (node.funcName === 'rand' || node.funcName === 'random') {
+                if (node.args.length !== 0) throw new Error("rand takes 0 arguments");
+                return new Num(Math.random());
+            }
+
+            if (node.funcName === 'randint') {
+                if (node.args.length !== 2) throw new Error("randint requires 2 arguments: min, max");
+                return this._randint(args[0], args[1]);
+            }
+
+            if (node.funcName === 'sample') {
+                if (node.args.length !== 2) throw new Error("sample requires 2 arguments: list, k");
+                return this._sample(args[0], args[1]);
+            }
+
+            if (node.funcName === 'map') {
+                if (node.args.length !== 2) throw new Error("map requires 2 arguments: function, list");
+                return this._map(args[0], args[1]);
+            }
+
+            if (node.funcName === 'filter') {
+                if (node.args.length !== 2) throw new Error("filter requires 2 arguments: function, list");
+                return this._filter(args[0], args[1]);
+            }
+
+            if (node.funcName === 'reduce') {
+                if (node.args.length < 2) throw new Error("reduce requires at least 2 arguments: function, list, [init]");
+                const init = node.args.length > 2 ? args[2] : null;
+                return this._reduce(args[0], args[1], init);
             }
 
             return new Call(node.funcName, args);
@@ -12115,6 +12177,101 @@ class CAS {
             // Return symbolic call.
             return new Call('matrixExp', [matrix]);
         }
+    }
+    _randint(min, max) {
+        const a = min.evaluateNumeric();
+        const b = max.evaluateNumeric();
+        if (isNaN(a) || isNaN(b)) return new Call('randint', [min, max]);
+        // min, max inclusive
+        const minVal = Math.ceil(a);
+        const maxVal = Math.floor(b);
+        return new Num(Math.floor(Math.random() * (maxVal - minVal + 1)) + minVal);
+    }
+
+    _sample(list, k) {
+        if (!(list instanceof Vec)) throw new Error("sample requires a list");
+        if (!(k instanceof Num)) return new Call('sample', [list, k]);
+        const n = list.elements.length;
+        const count = k.value;
+        if (count > n) throw new Error("Sample size larger than population");
+
+        // Fisher-Yates shuffle copy
+        const copy = [...list.elements];
+        for (let i = n - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [copy[i], copy[j]] = [copy[j], copy[i]];
+        }
+        return new Vec(copy.slice(0, count));
+    }
+
+    _map(func, list) {
+        if (!(list instanceof Vec)) throw new Error("Second argument to map must be a list");
+        const res = [];
+        for (const el of list.elements) {
+            // Apply func to el
+            // func can be Sym (function name) or FunctionDef?
+            // If Sym, construct Call.
+            // If FunctionDef, we can't pass it directly easily unless we look it up.
+            // Argument 'func' is an expression tree.
+
+            if (func instanceof Sym) {
+                // assume builtin or user function name
+                res.push(this.evaluate(new Call(func.name, [el])));
+            } else if (func instanceof FunctionDef) {
+                // Anonymous lambda not fully supported as argument yet without closure
+                // But if it's a defined function object, we might invoke it?
+                // Usually map takes a name.
+                // If user passed `x -> x^2`, parser handles that? No lambda parser yet.
+                throw new Error("map requires a function name");
+            } else {
+                // Maybe it's a Call object representing a partial application? No.
+                throw new Error("map argument must be a function name");
+            }
+        }
+        return new Vec(res);
+    }
+
+    _filter(func, list) {
+        if (!(list instanceof Vec)) throw new Error("Second argument to filter must be a list");
+        const res = [];
+        for (const el of list.elements) {
+            let val;
+            if (func instanceof Sym) {
+                val = this.evaluate(new Call(func.name, [el]));
+            } else {
+                throw new Error("filter requires a function name");
+            }
+
+            // Check truthiness
+            const num = val.evaluateNumeric();
+            if (!isNaN(num) && num !== 0) {
+                res.push(el);
+            } else if (val instanceof Sym && val.name === 'true') {
+                res.push(el);
+            }
+        }
+        return new Vec(res);
+    }
+
+    _reduce(func, list, init) {
+        if (!(list instanceof Vec)) throw new Error("Second argument to reduce must be a list");
+        const elements = list.elements;
+        if (elements.length === 0) {
+            if (init) return init;
+            throw new Error("Reduce on empty list with no initial value");
+        }
+
+        let acc = init ? init : elements[0];
+        let startIndex = init ? 0 : 1;
+
+        for (let i = startIndex; i < elements.length; i++) {
+            if (func instanceof Sym) {
+                acc = this.evaluate(new Call(func.name, [acc, elements[i]]));
+            } else {
+                throw new Error("reduce requires a function name");
+            }
+        }
+        return acc;
     }
 }
 
