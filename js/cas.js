@@ -817,6 +817,19 @@ class CAS {
                 return this._taylor(expr, varNode, point, order.value);
             }
 
+            if (node.funcName === 'laurent' || node.funcName === 'series') {
+                if (node.args.length < 3) throw new Error("laurent requires 3 or 4 arguments: expression, variable, point, [order]");
+                const expr = args[0];
+                const varNode = args[1];
+                const point = args[2];
+                let order = new Num(6);
+                if (node.args.length >= 4 && args[3] instanceof Num) order = args[3];
+
+                if (!(varNode instanceof Sym)) throw new Error("Second argument to laurent must be a variable");
+
+                return this._laurent(expr, varNode, point, order.value);
+            }
+
             if (node.funcName === 'limit' || node.funcName === 'lim') {
                 // limit(expr, var, point, [dir])
                 if (node.args.length < 3) throw new Error("limit requires 3 arguments: expression, variable, point");
@@ -4054,11 +4067,30 @@ class CAS {
     }
 
     _taylor(expr, varNode, point, order) {
-        // ... (same as before)
+        // Check for singularity at point first?
+        // Naive Taylor expansion: sum f^(n)(a)/n! * (x-a)^n
+        // If f(a) or derivatives are undefined, this returns NaN/Inf.
+
         let result = new Num(0);
         let deriv = expr;
 
         let term = deriv.substitute(varNode, point).simplify();
+
+        // Check for singularity in 0-th term
+        const isBad = (v) => (v instanceof Sym && (v.name === 'Infinity' || v.name === 'infinity' || v.name === 'NaN' || v.name === 'undefined')) ||
+                             (v instanceof Mul && v.left instanceof Num && v.left.value === -1 && (v.right instanceof Sym && (v.right.name === 'Infinity' || v.right.name === 'infinity'))) ||
+                             (v instanceof Num && !isFinite(v.value));
+
+        if (isBad(term)) {
+            // Try Laurent if singularity detected?
+            // Fallback to Laurent automatically could be expensive, but useful.
+            try {
+                return this._laurent(expr, varNode, point, order);
+            } catch(e) {
+                return term; // Return the Infinity/NaN if laurent fails
+            }
+        }
+
         result = term;
 
         for (let n = 1; n <= order; n++) {
@@ -4066,6 +4098,10 @@ class CAS {
             let coeff = deriv.substitute(varNode, point).simplify();
 
             if (coeff instanceof Num && coeff.value === 0) continue;
+            if (isBad(coeff)) {
+                 // Higher order singularity?
+                 return result; // Return partial sum? Or fail?
+            }
 
             const factorial = this._factorial(n);
             const divisor = new Num(factorial);
@@ -4077,8 +4113,63 @@ class CAS {
             const termN = new Mul(termCoeff, power);
             result = new Add(result, termN);
         }
-
         return result.simplify();
+    }
+
+    _laurent(expr, varNode, point, order) {
+        // Attempt to find Laurent Series around 'point'
+        // f(x) = sum a_n (x-point)^n, where n can be negative integer (down to -k)
+        // Heuristic: Determine pole order k such that limit(f(x)*(x-point)^k) is finite.
+
+        const isBad = (v) => (v instanceof Sym && (v.name === 'Infinity' || v.name === 'infinity' || v.name === 'NaN' || v.name === 'undefined')) ||
+                             (v instanceof Mul && v.left instanceof Num && v.left.value === -1 && (v.right instanceof Sym && (v.right.name === 'Infinity' || v.right.name === 'infinity'))) ||
+                             (v instanceof Num && !isFinite(v.value));
+
+        const x_minus_a = new Sub(varNode, point).simplify();
+
+        // 1. Check if simple pole order can be found (up to 10)
+        let k = 0;
+        for(let i = 1; i <= 10; i++) {
+            const factor = new Pow(x_minus_a, new Num(i));
+            const newExpr = new Mul(expr, factor).simplify();
+            // Check limit
+            const l = this._limit(newExpr, varNode, point);
+            const val = l.evaluateNumeric(); // Check numeric value for finiteness
+
+            // If l is symbolic finite or numeric finite
+            if (!isBad(l) && !(l instanceof Sym && l.name.includes('Infinity'))) {
+                k = i;
+                break;
+            }
+        }
+
+        if (k === 0) {
+            // Maybe essential singularity or regular point?
+            // If regular, just use Taylor
+            const val = expr.substitute(varNode, point).simplify();
+            if (!isBad(val)) return this._taylor(expr, varNode, point, order);
+            throw new Error("Could not determine pole order for Laurent series");
+        }
+
+        // 2. Compute Taylor series of g(x) = f(x) * (x-a)^k
+        const factor = new Pow(x_minus_a, new Num(k)).simplify();
+        const g = new Mul(expr, factor).simplify();
+
+        // We need Taylor of g up to order + k to get enough terms
+        // Actually, if we want terms up to (x-a)^order, and we divide by (x-a)^k,
+        // we need g terms up to order + k.
+        // But 'order' in argument usually means highest power? Or number of terms?
+        // Taylor arg 'order' is highest degree n.
+        // We want result degree up to 'order'.
+        // result = g_series / (x-a)^k.
+        // g_series = c0 + c1(x-a) + ... + c_m(x-a)^m
+        // term_m / (x-a)^k = c_m (x-a)^(m-k).
+        // We want m-k <= order => m <= order + k.
+
+        const gSeries = this._taylor(g, varNode, point, order + k);
+
+        // 3. Divide by (x-a)^k
+        return new Div(gSeries, factor).simplify();
     }
 
     _factorial(n) {
@@ -6606,7 +6697,16 @@ class CAS {
 
     _curl(v, vars) {
         if (!(v instanceof Vec) || !(vars instanceof Vec)) throw new Error("Arguments to curl must be vectors");
-        if (v.elements.length !== 3 || vars.elements.length !== 3) throw new Error("Curl requires 3D vectors");
+
+        // 2D Curl (Scalar)
+        if (v.elements.length === 2 && vars.elements.length === 2) {
+             const Fx = v.elements[0], Fy = v.elements[1];
+             const x = vars.elements[0], y = vars.elements[1];
+             // dFy/dx - dFx/dy
+             return new Sub(Fy.diff(x), Fx.diff(y)).simplify();
+        }
+
+        if (v.elements.length !== 3 || vars.elements.length !== 3) throw new Error("Curl requires 3D (vector) or 2D (scalar) vectors");
 
         // curl F = (dFz/dy - dFy/dz, dFx/dz - dFz/dx, dFy/dx - dFx/dy)
         // v = [Fx, Fy, Fz], vars = [x, y, z]
