@@ -323,6 +323,10 @@ class CAS {
                     }
 
                     let indefinite = func.integrate(varNode);
+                    // Evaluate indefinite integral to resolve any remaining sub-integrals (e.g. from splitting)
+                    if (indefinite.toString() !== new Call('integrate', [func, varNode]).toString()) {
+                        indefinite = this.evaluate(indefinite);
+                    }
 
                     // Try strategies if direct integration failed
                     if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
@@ -442,6 +446,11 @@ class CAS {
                 if (specialRes) return specialRes;
 
                 let res = func.integrate(varNode);
+                // If the result is different (e.g. split into parts), evaluate it to trigger CAS recursive handling of sub-integrals
+                if (res.toString() !== new Call('integrate', args).toString()) {
+                     return this.evaluate(res);
+                }
+
                 if (res instanceof Call && res.funcName === 'integrate') {
                      // 1. Try Integration by Substitution (Logarithmic form f'/f and others)
                      const subRes = this._integrateSubstitution(func, varNode);
@@ -2184,6 +2193,24 @@ class CAS {
             if (node.funcName === 'wronskian') {
                 if (node.args.length !== 2) throw new Error("wronskian requires 2 arguments: list_of_funcs, var");
                 return this._wronskian(args[0], args[1]);
+            }
+
+            if (node.funcName === 'line_integral' || node.funcName === 'lineIntegral') {
+                 if (node.args.length < 4) throw new Error("line_integral requires at least 4 arguments: field, path, vars, t");
+                 const a = node.args.length > 4 ? args[4] : null;
+                 const b = node.args.length > 5 ? args[5] : null;
+                 return this._lineIntegral(args[0], args[1], args[2], args[3], a, b);
+            }
+
+            if (node.funcName === 'euler_lagrange' || node.funcName === 'eulerLagrange') {
+                 if (node.args.length < 3) throw new Error("euler_lagrange requires at least 3 arguments: L, q, dq");
+                 const t = node.args.length > 3 ? args[3] : new Sym('t');
+                 return this._eulerLagrange(args[0], args[1], args[2], t);
+            }
+
+            if (node.funcName === 'commutator') {
+                 if (node.args.length !== 2) throw new Error("commutator requires 2 arguments: A, B");
+                 return this._commutator(args[0], args[1]);
             }
 
             return new Call(node.funcName, args);
@@ -4370,6 +4397,25 @@ class CAS {
 
     _integrateTrig(expr, varNode) {
         if (expr instanceof Call) {
+            // sin(ax+b) -> -1/a cos(ax+b)
+            if (expr.funcName === 'sin' && expr.args.length === 1) {
+                const arg = expr.args[0];
+                const poly = this._getPolyCoeffs(arg, varNode);
+                if (poly && poly.maxDeg === 1) {
+                    const a = poly.coeffs[1];
+                    return new Mul(new Div(new Num(-1), a), new Call('cos', [arg])).simplify();
+                }
+            }
+            // cos(ax+b) -> 1/a sin(ax+b)
+            if (expr.funcName === 'cos' && expr.args.length === 1) {
+                const arg = expr.args[0];
+                const poly = this._getPolyCoeffs(arg, varNode);
+                if (poly && poly.maxDeg === 1) {
+                    const a = poly.coeffs[1];
+                    return new Mul(new Div(new Num(1), a), new Call('sin', [arg])).simplify();
+                }
+            }
+
             // tan(x) -> -ln(cos(x))
             if (expr.funcName === 'tan' && expr.args.length === 1 && expr.args[0].toString() === varNode.toString()) {
                 return new Mul(new Num(-1), new Call('ln', [new Call('cos', [varNode])])).simplify();
@@ -9322,34 +9368,73 @@ class CAS {
                  const c1 = polyDen.coeffs[1] || new Num(0);
                  const c0 = polyDen.coeffs[0] || new Num(0);
 
-                 // Check if c1 = 0 (Pure quadratic s^2 + k)
-                 if (c1 instanceof Num && c1.value === 0) {
-                     // c2*s^2 + c0
-                     // = c2 * (s^2 + c0/c2)
-                     const kSq = new Div(c0, c2).simplify();
-                     // Check sign of kSq
-                     // If positive -> sin/cos
-                     // If negative -> sinh/cosh (or exp)
-                     // Let's assume kSq > 0 for now or treat symbolically
-                     const k = new Call('sqrt', [kSq]).simplify();
+                 // Generalized completing square: c2(s^2 + (c1/c2)s + (c0/c2))
+                 // s^2 + (c1/c2)s = (s + c1/2c2)^2 - (c1/2c2)^2
+                 // Denom = c2 * [ (s + alpha)^2 + betaSq ]
+                 // alpha = c1/(2c2)
+                 // betaSq = c0/c2 - alpha^2
 
-                     // Numerator: As + B
-                     const polyNum = this._getPolyCoeffs(num, s);
-                     let A = new Num(0);
-                     let B = num;
-                     if (polyNum && polyNum.maxDeg <= 1) {
-                         A = polyNum.coeffs[1] || new Num(0);
-                         B = polyNum.coeffs[0] || new Num(0);
+                 const alpha = new Div(c1, new Mul(new Num(2), c2)).simplify();
+                 const term1 = new Div(c0, c2).simplify();
+                 const alphaSq = new Pow(alpha, new Num(2)).simplify();
+                 const betaSq = new Sub(term1, alphaSq).simplify();
+
+                 // We shift s -> u - alpha
+                 // Denom becomes c2 * (u^2 + betaSq)
+                 // Numerator (Poly in s) -> Poly in (u-alpha)
+                 // Then apply inverse Laplace to u domain, then mult by exp(-alpha*t)
+
+                 const u = new Sym('__u_ilaplace__');
+                 // num is function of s. Substitute s = u - alpha
+                 // Note: we can't assume num is purely poly in s, but generally ILaplace works on rational functions.
+                 const numShifted = num.substitute(s, new Sub(u, alpha)).simplify();
+
+                 // New Numerator should be linear A*u + B for quadratic denom
+                 // Extract coeffs of u
+                 const polyNumU = this._getPolyCoeffs(numShifted, u);
+
+                 // If not linear, maybe we should recurse or partfrac further, but assuming max deg 1 in num for standard quadratic term
+                 // If degree >= 2, division should have handled it earlier (improper fraction)
+                 if (polyNumU && polyNumU.maxDeg <= 1) {
+                     const A = polyNumU.coeffs[1] || new Num(0);
+                     const B = polyNumU.coeffs[0] || new Num(0);
+
+                     // Form: (A*u + B) / (c2 * (u^2 + betaSq))
+                     // = (A/c2) * u/(u^2+betaSq) + (B/c2) * 1/(u^2+betaSq)
+
+                     const betaSqVal = betaSq.evaluateNumeric();
+                     let f_u;
+
+                     if (!isNaN(betaSqVal) && Math.abs(betaSqVal) < 1e-9) {
+                         // Repeated roots: u^2
+                         // A/c2 * 1/u + B/c2 * 1/u^2
+                         // inv: A/c2 + B/c2 * t
+                         f_u = new Add(new Div(A, c2), new Mul(new Div(B, c2), t));
+                     } else if (!isNaN(betaSqVal) && betaSqVal < 0) {
+                         // Real roots (hyperbolic)
+                         // betaSq = -k^2. Denom u^2 - k^2
+                         const kSq = new Mul(new Num(-1), betaSq).simplify();
+                         const k = new Call('sqrt', [kSq]).simplify();
+                         // u/(u^2-k^2) -> cosh(kt)
+                         // 1/(u^2-k^2) -> 1/k sinh(kt)
+                         const termA = new Mul(new Div(A, c2), new Call('cosh', [new Mul(k, t)]));
+                         const termB = new Mul(new Div(B, new Mul(c2, k)), new Call('sinh', [new Mul(k, t)]));
+                         f_u = new Add(termA, termB);
+                     } else {
+                         // Complex roots (trig)
+                         // betaSq = k^2
+                         const k = new Call('sqrt', [betaSq]).simplify();
+                         // u/(u^2+k^2) -> cos(kt)
+                         // 1/(u^2+k^2) -> 1/k sin(kt)
+                         const termA = new Mul(new Div(A, c2), new Call('cos', [new Mul(k, t)]));
+                         const termB = new Mul(new Div(B, new Mul(c2, k)), new Call('sin', [new Mul(k, t)]));
+                         f_u = new Add(termA, termB);
                      }
 
-                     // Form: (As + B) / (c2(s^2 + k^2))
-                     // = (A/c2) * s/(s^2+k^2) + (B/c2) * 1/(s^2+k^2)
-                     // = (A/c2) * cos(kt) + (B/(c2*k)) * sin(kt)
-
-                     const term1 = new Mul(new Div(A, c2), new Call('cos', [new Mul(k, t)]));
-                     const term2 = new Mul(new Div(B, new Mul(c2, k)), new Call('sin', [new Mul(k, t)]));
-
-                     return new Add(term1, term2).simplify();
+                     // Result: e^(-alpha*t) * f_u(t)
+                     // If alpha is 0, exp is 1.
+                     const expShift = new Call('exp', [new Mul(new Mul(new Num(-1), alpha), t)]).simplify();
+                     return new Mul(expShift, f_u).simplify();
                  }
              }
         }
@@ -12215,6 +12300,67 @@ class CAS {
             // Return symbolic call.
             return new Call('matrixExp', [matrix]);
         }
+    }
+
+    _lineIntegral(field, path, vars, t, a, b) {
+        if (!(field instanceof Vec) || !(path instanceof Vec) || !(vars instanceof Vec)) throw new Error("field, path and vars must be vectors");
+        if (field.elements.length !== path.elements.length || field.elements.length !== vars.elements.length) throw new Error("Dimension mismatch");
+
+        // F(r(t)) . r'(t)
+        // 1. Substitute vars with path components in field
+        let F_r = new Vec(field.elements.map(comp => {
+            let res = comp;
+            for(let i=0; i<vars.elements.length; i++) {
+                res = res.substitute(vars.elements[i], path.elements[i]);
+            }
+            return res.simplify();
+        }));
+
+        // 2. Differentiate path wrt t
+        const dr_dt = new Vec(path.elements.map(comp => comp.diff(t).simplify()));
+
+        // 3. Dot product
+        let dot = new Num(0);
+        for(let i=0; i<field.elements.length; i++) {
+            dot = new Add(dot, new Mul(F_r.elements[i], dr_dt.elements[i]));
+        }
+        dot = dot.simplify();
+
+        // Try to simplify trig identities (e.g. sin^2 + cos^2)
+        dot = this._linearizeTrig(dot).simplify();
+
+        // 4. Integrate
+        if (a && b) {
+            return this.evaluate(new Call('integrate', [dot, t, a, b]));
+        }
+        return this.evaluate(new Call('integrate', [dot, t]));
+    }
+
+    _eulerLagrange(L, q, dq, t) {
+        // dL/dq - d/dt(dL/dq') = 0
+        // returns expression: dL/dq - d/dt(dL/dq')
+
+        const dL_dq = L.diff(q).simplify();
+        const dL_ddq = L.diff(dq).simplify(); // dq represents q'
+
+        // Total time derivative of dL_ddq
+        // d/dt(F(t, q, q')) = dF/dt + dF/dq * q' + dF/dq' * q''
+        // Here q' is dq, q'' is diff(dq, t)
+
+        const term1 = dL_ddq.diff(t); // Partial wrt t
+        const term2 = new Mul(dL_ddq.diff(q), dq); // Partial wrt q * q'
+        const term3 = new Mul(dL_ddq.diff(dq), new Call('diff', [dq, t])); // Partial wrt q' * q''
+
+        const d_dt_dL_ddq = new Add(new Add(term1, term2), term3).simplify();
+
+        return new Sub(dL_dq, d_dt_dL_ddq).simplify();
+    }
+
+    _commutator(A, B) {
+        // [A, B] = AB - BA
+        const AB = new Mul(A, B).simplify();
+        const BA = new Mul(B, A).simplify();
+        return new Sub(AB, BA).simplify();
     }
 }
 
