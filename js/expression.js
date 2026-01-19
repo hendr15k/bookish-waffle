@@ -1859,6 +1859,18 @@ class Call extends Expr {
             }
         }
 
+        if (this.funcName === 'erfinv') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num && arg.value === 0) return new Num(0);
+            if (arg instanceof Num) {
+                return new Num(math_erfinv(arg.value));
+            }
+            // erfinv(-x) = -erfinv(x)
+            if (arg instanceof Mul && arg.left instanceof Num && arg.left.value < 0) {
+                return new Mul(new Num(-1), new Call('erfinv', [new Mul(new Num(-arg.left.value), arg.right).simplify()])).simplify();
+            }
+        }
+
         if (this.funcName === 'power') {
              // Do not simplify to Pow or Num, keep as 'power' to preserve factorization structure
              return new Call('power', simpleArgs);
@@ -2170,6 +2182,9 @@ class Call extends Expr {
         if (this.funcName === 'erfc') {
              return 1 - math_erf(argsVal[0]);
         }
+        if (this.funcName === 'erfinv') {
+             return math_erfinv(argsVal[0]);
+        }
         if (this.funcName === 'Si') {
             return math_Si(argsVal[0]);
         }
@@ -2383,6 +2398,13 @@ class Call extends Expr {
             return new Mul(new Mul(coeff, exp), u.diff(varName));
         }
 
+        if (this.funcName === 'erfinv') {
+            // d/dx erfinv(u) = sqrt(pi)/2 * exp(erfinv(u)^2) * u'
+            const coeff = new Div(new Call('sqrt', [new Sym('pi')]), new Num(2));
+            const exp = new Call('exp', [new Pow(new Call('erfinv', [u]), new Num(2))]);
+            return new Mul(new Mul(coeff, exp), u.diff(varName));
+        }
+
         // Bessel Functions Derivatives
         // J_v'(x) = 0.5 * (J_{v-1}(x) - J_{v+1}(x))
         if (this.funcName === 'besselJ') {
@@ -2557,6 +2579,16 @@ class Call extends Expr {
                 const term2 = new Div(new Call('exp', [new Pow(varName, new Num(2))]), new Call('sqrt', [new Sym('pi')]));
                 return new Sub(term1, term2);
             }
+            if (this.funcName === 'erfinv') {
+                // integral(erfinv(x)) = x*erfinv(x) + exp(-erfinv(x)^2)/sqrt(pi) is WRONG.
+                // Correct: -exp(-erfinv(x)^2)/sqrt(pi) (plus constant) because d/dx(-1/sqrt(pi) * e^(-y^2)) = ... = y.
+                // Let y = erfinv(x). x = erf(y). dx = 2/sqrt(pi) e^-y^2 dy.
+                // int y dx = int y * 2/sqrt(pi) e^-y^2 dy = -1/sqrt(pi) e^-y^2.
+                const arg = new Call('erfinv', [varName]);
+                const expTerm = new Call('exp', [new Mul(new Num(-1), new Pow(arg, new Num(2)))]);
+                const res = new Div(expTerm, new Call('sqrt', [new Sym('pi')]));
+                return new Mul(new Num(-1), res);
+            }
         }
         return new Call("integrate", [this, varName]);
     }
@@ -2633,7 +2665,8 @@ class Call extends Expr {
             'Ci': '\\operatorname{Ci}',
             'Ei': '\\operatorname{Ei}',
             'Li': '\\operatorname{Li}',
-            'erfi': '\\operatorname{erfi}'
+            'erfi': '\\operatorname{erfi}',
+            'erfinv': '\\operatorname{erf}^{-1}'
         };
 
         if (this.funcName === 'besselJ' && argsTex.length === 2) return `J_{${argsTex[0]}}\\left(${argsTex[1]}\\right)`;
@@ -3587,6 +3620,46 @@ function math_erf(val) {
     const t = 1.0 / (1.0 + p * x);
     const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
     return sign * y;
+}
+
+function math_erfinv(x) {
+    // erfinv(x) = invNorm((x+1)/2) / sqrt(2)
+    // Domain (-1, 1)
+    if (x <= -1 || x >= 1) {
+        if (x === 1) return Infinity;
+        if (x === -1) return -Infinity;
+        return NaN;
+    }
+    const p = (x + 1.0) / 2.0;
+    const invNorm = math_invNormStandard(p);
+    return invNorm / Math.SQRT2;
+}
+
+function math_invNormStandard(p) {
+    // Rational approximation for standard normal quantile
+    // Abramowitz and Stegun 26.2.23
+    if (p <= 0) return -Infinity;
+    if (p >= 1) return Infinity;
+    if (Math.abs(p - 0.5) < 1e-15) return 0;
+
+    const c0 = 2.515517;
+    const c1 = 0.802853;
+    const c2 = 0.010328;
+    const d1 = 1.432788;
+    const d2 = 0.189269;
+    const d3 = 0.001308;
+
+    let t, num, den, xp;
+
+    let q = (p < 0.5) ? p : 1.0 - p;
+    t = Math.sqrt(-2.0 * Math.log(q));
+    num = c0 + c1 * t + c2 * t * t;
+    den = 1.0 + d1 * t + d2 * t * t + d3 * t * t * t;
+
+    xp = t - num / den;
+
+    if (p < 0.5) xp = -xp;
+    return xp;
 }
 
 function getBernoulliExpr(n) {
