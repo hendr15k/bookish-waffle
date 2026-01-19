@@ -56,9 +56,15 @@ function testLogRegression() {
         let A, B;
         if (reg.left instanceof Num) {
             A = reg.left.value;
-            // right is Mul(2, ln(x))
+            // right could be Mul(2, ln(x)) or ln(x^2)
             if (reg.right instanceof Mul && reg.right.left instanceof Num) {
                 B = reg.right.left.value;
+            } else if (reg.right instanceof Call && reg.right.funcName === 'ln') {
+                // Check argument x^2
+                const arg = reg.right.args[0];
+                if (arg instanceof Pow && arg.right instanceof Num) {
+                     B = arg.right.value;
+                }
             }
         }
 

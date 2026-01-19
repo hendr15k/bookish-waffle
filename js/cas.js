@@ -1305,6 +1305,12 @@ class CAS {
                 return this._curl(args[0], args[1]);
             }
 
+            if (node.funcName === 'line_integral') {
+                 // line_integral(field, vars, curve, t, start, end)
+                 if (node.args.length !== 6) throw new Error("line_integral requires 6 arguments: field, vars, curve, t, start, end");
+                 return this._lineIntegral(args[0], args[1], args[2], args[3], args[4], args[5]);
+            }
+
             if (node.funcName === 'divergence' || node.funcName === 'div') { // 'div' might conflict with division if not careful, but funcName is safe
                  if (node.args.length !== 2) throw new Error("divergence requires 2 arguments: vector field and list of variables");
                  return this._divergence(args[0], args[1]);
@@ -1403,6 +1409,11 @@ class CAS {
             if (node.funcName === 'euler' || node.funcName === 'phi') {
                 if (node.args.length !== 1) throw new Error("euler requires 1 argument");
                 return this._euler(args[0]);
+            }
+
+            if (node.funcName === 'primitiveRoot') {
+                if (node.args.length !== 1) throw new Error("primitiveRoot requires 1 argument");
+                return this._primitiveRoot(args[0]);
             }
 
             if (node.funcName === 'mode') {
@@ -2156,6 +2167,16 @@ class CAS {
             if (node.funcName === 'convolution') {
                 if (node.args.length !== 3) throw new Error("convolution requires 3 arguments: f, g, t");
                 return this._convolution(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'hypergeometricPDF') {
+                if (node.args.length !== 4) throw new Error("hypergeometricPDF requires 4 arguments: k, M, n, N");
+                return this._hypergeometricPDF(args[0], args[1], args[2], args[3]);
+            }
+
+            if (node.funcName === 'hypergeometricCDF') {
+                if (node.args.length !== 4) throw new Error("hypergeometricCDF requires 4 arguments: k, M, n, N");
+                return this._hypergeometricCDF(args[0], args[1], args[2], args[3]);
             }
 
             if (node.funcName === 'conv') {
@@ -6123,6 +6144,35 @@ class CAS {
         return new Call('binomialPDF', [k, n, p]);
     }
 
+    _hypergeometricPDF(k, M, n, N) {
+        // P(X=k) = comb(M, k) * comb(N-M, n-k) / comb(N, n)
+        // k: successes observed
+        // M: successes in population
+        // n: sample size
+        // N: population size
+        const comb1 = this._nCr(M, k);
+        const comb2 = this._nCr(new Sub(N, M), new Sub(n, k));
+        const comb3 = this._nCr(N, n);
+        return new Div(new Mul(comb1, comb2), comb3).simplify();
+    }
+
+    _hypergeometricCDF(k, M, n, N) {
+        if (k instanceof Num) {
+            let sum = new Num(0);
+            const K = Math.floor(k.value);
+            for(let i=0; i<=K; i++) {
+                sum = new Add(sum, this._hypergeometricPDF(new Num(i), M, n, N)).simplify();
+            }
+            return sum;
+        }
+        return new Call('sum', [
+            new Call('hypergeometricPDF', [new Sym('__i'), M, n, N]),
+            new Sym('__i'),
+            new Num(0),
+            k
+        ]);
+    }
+
     _normalCDF(x, mu, sigma) {
         // 0.5 * (1 + erf((x-mu)/(sigma*sqrt(2))))
         const arg = new Div(new Sub(x, mu), new Mul(sigma, new Call('sqrt', [new Num(2)]))).simplify();
@@ -6766,6 +6816,49 @@ class CAS {
         return new Vec([c1, c2, c3]);
     }
 
+    _lineIntegral(field, vars, curve, t, start, end) {
+        // field: Vector field F(x,y,z)
+        // vars: Vector of variables [x, y, z]
+        // curve: Vector of parametric functions r(t) = [x(t), y(t), z(t)]
+        // t: Parameter variable
+        // start, end: integration bounds
+
+        if (!(field instanceof Vec) || !(vars instanceof Vec) || !(curve instanceof Vec)) {
+            throw new Error("line_integral: field, vars, and curve must be vectors");
+        }
+        if (field.elements.length !== vars.elements.length || field.elements.length !== curve.elements.length) {
+            throw new Error("line_integral: dimension mismatch");
+        }
+        if (!(t instanceof Sym)) throw new Error("line_integral: parameter must be a symbol");
+
+        // 1. Differentiate curve r'(t)
+        const dr = [];
+        for(const comp of curve.elements) {
+            dr.push(comp.diff(t).simplify());
+        }
+
+        // 2. Substitute curve into field F(r(t))
+        // We substitute vars[i] -> curve[i]
+        const F_r = [];
+        for(const comp of field.elements) {
+            let res = comp;
+            for(let i=0; i<vars.elements.length; i++) {
+                res = res.substitute(vars.elements[i], curve.elements[i]);
+            }
+            F_r.push(res.simplify());
+        }
+
+        // 3. Dot product F(r(t)) . r'(t)
+        let dotProd = new Num(0);
+        for(let i=0; i<F_r.length; i++) {
+            dotProd = new Add(dotProd, new Mul(F_r[i], dr[i]));
+        }
+        dotProd = dotProd.simplify();
+
+        // 4. Integrate
+        return this.evaluate(new Call('integrate', [dotProd, t, start, end]));
+    }
+
     _conservative(field, vars) {
         if (!(field instanceof Vec) || !(vars instanceof Vec)) throw new Error("Arguments must be vectors");
         // Check dimension
@@ -7046,6 +7139,49 @@ class CAS {
             return new Num(result);
         }
         return new Call('euler', [n]);
+    }
+
+    _primitiveRoot(n) {
+        n = n.simplify();
+        if (!(n instanceof Num && Number.isInteger(n.value) && n.value > 0)) {
+            return new Call('primitiveRoot', [n]);
+        }
+        const val = n.value;
+        if (val === 1) return new Num(0); // No primitive root for 1? 0? Usually undefined.
+        if (val === 2) return new Num(1);
+
+        // Check if primitive root exists: 2, 4, p^k, 2p^k
+        // We can skip this check and just run the algorithm, returning null if none found,
+        // or just return first generator found.
+        // Algorithm:
+        // phi = phi(n)
+        // factors of phi = p1, p2, ...
+        // check g^((phi)/pi) != 1 mod n for all pi
+        const phi = this._euler(n).value;
+        const factorsVec = this._primeFactors(new Num(phi));
+        // Extract unique factors
+        const factors = new Set();
+        factorsVec.elements.forEach(f => factors.add(f.value));
+
+        for(let g=2; g<val; g++) {
+            // Check gcd(g, n) == 1
+            const gcdVal = (a, b) => !b ? a : gcdVal(b, a % b);
+            if (gcdVal(g, val) !== 1) continue;
+
+            let isRoot = true;
+            for(const p of factors) {
+                // pow(g, phi/p, n)
+                const exp = phi / p;
+                const res = this._modPow(new Num(g), new Num(exp), n);
+                if (res.value === 1) {
+                    isRoot = false;
+                    break;
+                }
+            }
+            if (isRoot) return new Num(g);
+        }
+        // None found
+        return new Sym('NaN'); // Or null
     }
 
     _mode(list) {
