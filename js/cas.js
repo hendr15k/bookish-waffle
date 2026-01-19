@@ -2793,6 +2793,22 @@ class CAS {
         return new Div(new Mul(sign, res), an).simplify();
     }
 
+    _solveInvert(expr, value, varNode) {
+        // Check for Lambert W pattern: x * exp(x) = c
+        if (expr instanceof Mul) {
+            const check = (t1, t2) => {
+                return t1.toString() === varNode.toString() &&
+                       t2 instanceof Call && t2.funcName === 'exp' &&
+                       t2.args[0].toString() === varNode.toString();
+            };
+
+            if (check(expr.left, expr.right) || check(expr.right, expr.left)) {
+                return new Call('LambertW', [value]);
+            }
+        }
+        return null;
+    }
+
     _solveInequality(ineq, varNode) {
         // Normalize to P(x) > 0 (or >=, <, <=)
         // Move everything to Left Side: LHS - RHS
@@ -3822,6 +3838,36 @@ class CAS {
 
             if (diff instanceof Num && diff.value === 0 && !(a instanceof Num && a.value === 0)) {
                 return new Div(new Mul(new Num(-1), b), a).simplify();
+            }
+
+            // Check for Lambert W pattern: x * exp(x) = c or related
+            // Use _solveInvert to detect this pattern if it exists in the simplified expression
+            // The expression is 'expr' = 0.
+            // Move constant term to RHS
+            // Identify constant term
+            let constant = new Num(0);
+            let variablePart = expr;
+
+            if (expr instanceof Add) {
+                 // heuristic split
+                 if (!this._dependsOn(expr.right, varNode)) {
+                     constant = new Mul(new Num(-1), expr.right).simplify();
+                     variablePart = expr.left;
+                 } else if (!this._dependsOn(expr.left, varNode)) {
+                     constant = new Mul(new Num(-1), expr.left).simplify();
+                     variablePart = expr.right;
+                 }
+            } else if (expr instanceof Sub) {
+                 if (!this._dependsOn(expr.right, varNode)) {
+                     constant = expr.right;
+                     variablePart = expr.left;
+                 }
+            }
+
+            // Try solveInvert which handles LambertW
+            const inverted = this._solveInvert(variablePart, constant, varNode);
+            if (inverted && !(inverted instanceof Call && inverted.funcName === 'solve')) {
+                return inverted;
             }
 
             // Attempt Generalized Solving (Trig, Exp, Log, Pow)
