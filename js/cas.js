@@ -1116,7 +1116,7 @@ class CAS {
                 return this._variance(args[0]);
             }
 
-            if (node.funcName === 'std' || node.funcName === 'stddev') {
+            if (node.funcName === 'std' || node.funcName === 'stddev' || node.funcName === 'stdev') {
                 if (node.args.length !== 1) throw new Error("std requires 1 argument (list)");
                 return this._std(args[0]);
             }
@@ -3824,6 +3824,146 @@ class CAS {
                         const x3 = new Sub(t3, shift).simplify();
 
                         return new Call('set', [x1, x2, x3]);
+                    }
+
+                    // Quartic Formula (Ferrari's Method)
+                    if (poly.maxDeg === 4) {
+                        const a = poly.coeffs[4];
+                        const b = poly.coeffs[3] || new Num(0);
+                        const c = poly.coeffs[2] || new Num(0);
+                        const d = poly.coeffs[1] || new Num(0);
+                        const e = poly.coeffs[0] || new Num(0);
+
+                        // Depressed Quartic: y^4 + p*y^2 + q*y + r = 0
+                        // x = y - b/(4a)
+                        const shift = new Div(b, new Mul(new Num(4), a)).simplify();
+
+                        const aSq = new Pow(a, new Num(2));
+                        const bSq = new Pow(b, new Num(2));
+                        const a3 = new Pow(a, new Num(3));
+                        const b3 = new Pow(b, new Num(3));
+                        const b4 = new Pow(b, new Num(4));
+
+                        // p = (8ac - 3b^2) / (8a^2)
+                        const pNum = new Sub(new Mul(new Num(8), new Mul(a, c)), new Mul(new Num(3), bSq));
+                        const pDen = new Mul(new Num(8), aSq);
+                        const p = new Div(pNum, pDen).simplify();
+
+                        // q = (b^3 - 4abc + 8a^2d) / (8a^3)
+                        const qNum1 = b3;
+                        const qNum2 = new Mul(new Num(4), new Mul(a, new Mul(b, c)));
+                        const qNum3 = new Mul(new Num(8), new Mul(aSq, d));
+                        const qNum = new Add(new Sub(qNum1, qNum2), qNum3);
+                        const qDen = new Mul(new Num(8), a3);
+                        const q = new Div(qNum, qDen).simplify();
+
+                        // r = (-3b^4 + 256a^3e - 64a^2bd + 16ab^2c) / (256a^4) -> simpler to use shift subst
+                        // r = e/a - 4*d/a*s + 6*c/a*s^2 - 4*b/a*s^3 + s^4 ?? No.
+                        // r = P(shift)/a? No.
+                        // Use formula: r = (16ab^2c - 64a^2bd + 256a^3e - 3b^4) / 256a^4
+                        const rNum1 = new Mul(new Num(16), new Mul(a, new Mul(bSq, c)));
+                        const rNum2 = new Mul(new Num(64), new Mul(aSq, new Mul(b, d)));
+                        const rNum3 = new Mul(new Num(256), new Mul(a3, e));
+                        const rNum4 = new Mul(new Num(3), b4);
+                        const rNum = new Sub(new Add(new Sub(rNum1, rNum2), rNum3), rNum4);
+                        const rDen = new Mul(new Num(256), new Pow(a, new Num(4)));
+                        const r = new Div(rNum, rDen).simplify();
+
+                        // If q is 0, we have biquadratic y^4 + p*y^2 + r = 0
+                        let ySols = [];
+                        if (q.evaluateNumeric() === 0) {
+                            // y^2 = z => z^2 + pz + r = 0
+                            // z = (-p +/- sqrt(p^2 - 4r)) / 2
+                            const disc = new Sub(new Pow(p, new Num(2)), new Mul(new Num(4), r)).simplify();
+                            const sqrtDisc = new Call('sqrt', [disc]);
+                            const z1 = new Div(new Add(new Mul(new Num(-1), p), sqrtDisc), new Num(2));
+                            const z2 = new Div(new Sub(new Mul(new Num(-1), p), sqrtDisc), new Num(2));
+
+                            ySols.push(new Call('sqrt', [z1]));
+                            ySols.push(new Mul(new Num(-1), new Call('sqrt', [z1])));
+                            ySols.push(new Call('sqrt', [z2]));
+                            ySols.push(new Mul(new Num(-1), new Call('sqrt', [z2])));
+                        } else {
+                            // Resolvent Cubic: m^3 + (p/2)m^2 + ((p^2-4r)/16)m - q^2/64 = 0
+                            // Let's use 8m^3 + 8pm^2 + (2p^2-8r)m - q^2 = 0 (where m is the parameter used in splitting)
+                            // Standard resolvent for splitting into two quadratics:
+                            // y^4 + py^2 + qy + r = (y^2 + ky + lambda)(y^2 - ky + mu)
+                            // leads to resolvent for k^2: z^3 + 2pz^2 + (p^2-4r)z - q^2 = 0.
+                            // Let z = k^2.
+
+                            const resA = new Num(1);
+                            const resB = new Mul(new Num(2), p);
+                            const resC = new Sub(new Pow(p, new Num(2)), new Mul(new Num(4), r));
+                            const resD = new Mul(new Num(-1), new Pow(q, new Num(2)));
+
+                            const resVar = new Sym('__res_z__');
+                            const resCubic = new Add(new Add(new Add(
+                                new Pow(resVar, new Num(3)),
+                                new Mul(resB, new Pow(resVar, new Num(2)))),
+                                new Mul(resC, resVar)),
+                                resD).simplify();
+
+                            const zSolsCall = this._solve(resCubic, resVar);
+
+                            let zVal = null;
+                            // Pick a non-zero root
+                            const zList = [];
+                            if (zSolsCall instanceof Call && zSolsCall.funcName === 'set') {
+                                zSolsCall.args.forEach(s => zList.push(s));
+                            } else if (zSolsCall instanceof Expr && !(zSolsCall instanceof Call && zSolsCall.funcName === 'solve')) {
+                                zList.push(zSolsCall);
+                            }
+
+                            for (const z of zList) {
+                                if (z.evaluateNumeric() !== 0) {
+                                    zVal = z;
+                                    break;
+                                }
+                            }
+                            // If all zero? (implies q=0, but we handled that)
+                            if (!zVal && zList.length > 0) zVal = zList[0];
+
+                            if (zVal) {
+                                const k = new Call('sqrt', [zVal]);
+                                // Two quadratics for y:
+                                // y^2 + k*y + (p + zVal + q/k)/2 = 0
+                                // y^2 - k*y + (p + zVal - q/k)/2 = 0
+                                // Note: q/k term sign depends on root choice.
+                                // Actually: y^2 + ky + (z + p + q/k)/2 = 0 and y^2 - ky + (z + p - q/k)/2 = 0
+
+                                // We want k(B-A) = q. So B-A = q/k. B = (z+p)/2 + q/2k. A = (z+p)/2 - q/2k.
+                                // q1 (A) is y^2 + ky + A. q2 (B) is y^2 - ky + B.
+                                const term1 = new Div(new Sub(new Add(zVal, p), new Div(q, k)), new Num(2)).simplify();
+                                const term2 = new Div(new Add(new Add(zVal, p), new Div(q, k)), new Num(2)).simplify();
+
+                                const q1 = new Add(new Add(new Pow(varNode, new Num(2)), new Mul(k, varNode)), term1);
+                                const q2 = new Add(new Sub(new Pow(varNode, new Num(2)), new Mul(k, varNode)), term2);
+
+                                // Solve q1 = 0, q2 = 0 for y (using varNode as y placeholder)
+                                const s1 = this._solve(q1, varNode);
+                                const s2 = this._solve(q2, varNode);
+
+                                const collect = (s) => {
+                                    if (s instanceof Call && s.funcName === 'set') s.args.forEach(ySols.push.bind(ySols));
+                                    else if (s instanceof Expr && !(s instanceof Call && s.funcName === 'solve')) ySols.push(s);
+                                };
+                                collect(s1);
+                                collect(s2);
+                            }
+                        }
+
+                        // Shift back x = y - shift
+                        const xSols = ySols.map(y => new Sub(y, shift).simplify());
+
+                        // Sort and Return
+                        xSols.sort((a, b) => {
+                            const va = a.evaluateNumeric();
+                            const vb = b.evaluateNumeric();
+                            if (!isNaN(va) && !isNaN(vb)) return va - vb;
+                            return a.toString().localeCompare(b.toString());
+                        });
+
+                        return new Call('set', xSols);
                     }
                 }
             }
