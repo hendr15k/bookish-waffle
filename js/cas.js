@@ -2234,6 +2234,63 @@ class CAS {
                  return this._commutator(args[0], args[1]);
             }
 
+            if (node.funcName === 'gammaPDF') {
+                if (node.args.length !== 3) throw new Error("gammaPDF requires 3 arguments: x, k, theta");
+                return this._gammaPDF(args[0], args[1], args[2]);
+            }
+            if (node.funcName === 'gammaCDF') {
+                if (node.args.length !== 3) throw new Error("gammaCDF requires 3 arguments: x, k, theta");
+                return this._gammaCDF(args[0], args[1], args[2]);
+            }
+            if (node.funcName === 'betaPDF') {
+                if (node.args.length !== 3) throw new Error("betaPDF requires 3 arguments: x, a, b");
+                return this._betaPDF(args[0], args[1], args[2]);
+            }
+            if (node.funcName === 'betaCDF') {
+                if (node.args.length !== 3) throw new Error("betaCDF requires 3 arguments: x, a, b");
+                return this._betaCDF(args[0], args[1], args[2]);
+            }
+            if (node.funcName === 'uniformPDF') {
+                if (node.args.length !== 3) throw new Error("uniformPDF requires 3 arguments: x, a, b");
+                return this._uniformPDF(args[0], args[1], args[2]);
+            }
+            if (node.funcName === 'uniformCDF') {
+                if (node.args.length !== 3) throw new Error("uniformCDF requires 3 arguments: x, a, b");
+                return this._uniformCDF(args[0], args[1], args[2]);
+            }
+            if (node.funcName === 'erfinv') {
+                if (node.args.length !== 1) throw new Error("erfinv requires 1 argument");
+                return this._erfinv(args[0]);
+            }
+            if (node.funcName === 'erfcinv') {
+                if (node.args.length !== 1) throw new Error("erfcinv requires 1 argument");
+                return this._erfcinv(args[0]);
+            }
+            if (node.funcName === 'LambertW') {
+                if (node.args.length !== 1) throw new Error("LambertW requires 1 argument");
+                return this._lambertW(args[0]);
+            }
+            if (node.funcName === 'jacobiSymbol') {
+                if (node.args.length !== 2) throw new Error("jacobiSymbol requires 2 arguments: a, n");
+                return this._jacobiSymbol(args[0], args[1]);
+            }
+            if (node.funcName === 'chebyshevU') {
+                if (node.args.length !== 2) throw new Error("chebyshevU requires 2 arguments: n, x");
+                return this._chebyshevU(args[0], args[1]);
+            }
+            if (node.funcName === 'bernoulliPoly') {
+                if (node.args.length !== 2) throw new Error("bernoulliPoly requires 2 arguments: n, x");
+                return this._bernoulliPoly(args[0], args[1]);
+            }
+            if (node.funcName === 'eulerPoly') {
+                if (node.args.length !== 2) throw new Error("eulerPoly requires 2 arguments: n, x");
+                return this._eulerPoly(args[0], args[1]);
+            }
+            if (node.funcName === 'sinc') {
+                if (node.args.length !== 1) throw new Error("sinc requires 1 argument");
+                return this._sinc(args[0]);
+            }
+
             return new Call(node.funcName, args);
         }
 
@@ -12683,6 +12740,305 @@ class CAS {
         const AB = new Mul(A, B).simplify();
         const BA = new Mul(B, A).simplify();
         return new Sub(AB, BA).simplify();
+    }
+
+    _sinc(x) {
+        x = x.simplify();
+        if (x instanceof Num) {
+            if (x.value === 0) return new Num(1);
+            return new Num(Math.sin(x.value) / x.value);
+        }
+        return new Call('sinc', [x]);
+    }
+
+    _gammaPDF(x, k, theta) {
+         // x^(k-1) * exp(-x/theta) / (theta^k * gamma(k))
+         x = x.simplify(); k = k.simplify(); theta = theta.simplify();
+         if (x instanceof Num && k instanceof Num && theta instanceof Num) {
+             const val = x.value;
+             const K = k.value;
+             const T = theta.value;
+             if (val < 0) return new Num(0);
+             const num = Math.pow(val, K - 1) * Math.exp(-val / T);
+             const den = Math.pow(T, K) * Math.exp(this._gammaln(K));
+             return new Num(num / den);
+         }
+         const term1 = new Pow(x, new Sub(k, new Num(1)));
+         const term2 = new Call('exp', [new Div(new Mul(new Num(-1), x), theta)]);
+         const den = new Mul(new Pow(theta, k), new Call('gamma', [k]));
+         return new Div(new Mul(term1, term2), den).simplify();
+    }
+
+    _gammaCDF(x, k, theta) {
+         // P(k, x/theta)
+         x = x.simplify(); k = k.simplify(); theta = theta.simplify();
+         if (x instanceof Num && k instanceof Num && theta instanceof Num) {
+             return new Num(this._gammap(k.value, x.value / theta.value));
+         }
+         return new Call('gammaCDF', [x, k, theta]);
+    }
+
+    _betaPDF(x, a, b) {
+         // x^(a-1) * (1-x)^(b-1) / B(a, b)
+         x = x.simplify(); a = a.simplify(); b = b.simplify();
+         if (x instanceof Num && a instanceof Num && b instanceof Num) {
+             const val = x.value;
+             const A = a.value;
+             const B = b.value;
+             if (val < 0 || val > 1) return new Num(0);
+             const num = Math.pow(val, A - 1) * Math.pow(1 - val, B - 1);
+             const den = Math.exp(this._gammaln(A) + this._gammaln(B) - this._gammaln(A + B));
+             return new Num(num / den);
+         }
+         const num = new Mul(new Pow(x, new Sub(a, new Num(1))), new Pow(new Sub(new Num(1), x), new Sub(b, new Num(1))));
+         const den = new Call('beta', [a, b]);
+         return new Div(num, den).simplify();
+    }
+
+    _betaCDF(x, a, b) {
+        x = x.simplify(); a = a.simplify(); b = b.simplify();
+        if (x instanceof Num && a instanceof Num && b instanceof Num) {
+             return new Num(this._betainc(x.value, a.value, b.value));
+        }
+        return new Call('betaCDF', [x, a, b]);
+    }
+
+    _uniformPDF(x, a, b) {
+         x = x.simplify(); a = a.simplify(); b = b.simplify();
+         if (x instanceof Num && a instanceof Num && b instanceof Num) {
+             if (x.value >= a.value && x.value <= b.value) {
+                 return new Num(1 / (b.value - a.value));
+             }
+             return new Num(0);
+         }
+         return new Call('uniformPDF', [x, a, b]);
+    }
+
+    _uniformCDF(x, a, b) {
+         x = x.simplify(); a = a.simplify(); b = b.simplify();
+         if (x instanceof Num && a instanceof Num && b instanceof Num) {
+             if (x.value < a.value) return new Num(0);
+             if (x.value > b.value) return new Num(1);
+             return new Num((x.value - a.value) / (b.value - a.value));
+         }
+         return new Call('uniformCDF', [x, a, b]);
+    }
+
+    _lambertW(z) {
+        z = z.simplify();
+        if (z instanceof Num) {
+            const x = z.value;
+            let w = 1;
+            if (x < 0) w = -0.5;
+            if (x === 0) return new Num(0);
+            if (Math.abs(x - Math.E) < 1e-9) return new Num(1);
+
+            for(let i=0; i<10; i++) {
+                const ew = Math.exp(w);
+                const wew = w * ew;
+                const wewz = wew - x;
+                const dw = wewz / (ew * (w + 1) - ((w + 2) * wewz) / (2 * w + 2));
+                w -= dw;
+                if (Math.abs(dw) < 1e-12) break;
+            }
+            return new Num(w);
+        }
+        return new Call('LambertW', [z]);
+    }
+
+    _erfinv(x) {
+         x = x.simplify();
+         if (x instanceof Num) {
+             const z = x.value;
+             if (Math.abs(z) >= 1) return new Sym(z > 0 ? "Infinity" : "-Infinity");
+             const a = 0.147;
+             const ln = Math.log(1 - z*z);
+             const term1 = 2 / (Math.PI * a) + ln / 2;
+             const term2 = ln / a;
+             const val = Math.sqrt(Math.sqrt(term1*term1 - term2) - term1);
+             return new Num(z >= 0 ? val : -val);
+         }
+         return new Call('erfinv', [x]);
+    }
+
+    _erfcinv(x) {
+         x = x.simplify();
+         if (x instanceof Num) {
+             return this._erfinv(new Num(1 - x.value));
+         }
+         return new Call('erfcinv', [x]);
+    }
+
+    _jacobiSymbol(a, n) {
+         a = a.simplify(); n = n.simplify();
+         if (a instanceof Num && n instanceof Num && Number.isInteger(a.value) && Number.isInteger(n.value)) {
+             let A = a.value;
+             let N = n.value;
+             if (N <= 0 || N % 2 === 0) throw new Error("Jacobi symbol undefined for even or non-positive n");
+             A = A % N;
+             let t = 1;
+             while (A !== 0) {
+                 while (A % 2 === 0) {
+                     A /= 2;
+                     const r = N % 8;
+                     if (r === 3 || r === 5) t = -t;
+                 }
+                 const temp = A; A = N; N = temp;
+                 if (A % 4 === 3 && N % 4 === 3) t = -t;
+                 A = A % N;
+             }
+             if (N === 1) return new Num(t);
+             return new Num(0);
+         }
+         return new Call('jacobiSymbol', [a, n]);
+    }
+
+    _chebyshevU(n, x) {
+        n = n.simplify();
+        if (n instanceof Num && Number.isInteger(n.value) && n.value >= 0) {
+             const val = n.value;
+             if (val === 0) return new Num(1);
+             if (val === 1) return new Mul(new Num(2), x).simplify();
+             let u_prev = new Num(1);
+             let u_curr = new Mul(new Num(2), x).simplify();
+
+             for (let i = 1; i < val; i++) {
+                 const term = new Mul(new Mul(new Num(2), x), u_curr);
+                 const u_next = new Sub(term, u_prev).simplify();
+                 u_prev = u_curr;
+                 u_curr = u_next;
+             }
+             return u_curr;
+        }
+        return new Call('chebyshevU', [n, x]);
+    }
+
+    _bernoulliPoly(n, x) {
+        n = n.simplify();
+        if (n instanceof Num && Number.isInteger(n.value) && n.value >= 0) {
+             const N = n.value;
+             let res = new Num(0);
+             for(let k=0; k<=N; k++) {
+                 const bin = this._nCr(new Num(N), new Num(k));
+                 const bn = this._bernoulli(new Num(N-k));
+                 const term = new Mul(new Mul(bin, bn), new Pow(x, new Num(k)));
+                 res = new Add(res, term).simplify();
+             }
+             return res;
+        }
+        return new Call('bernoulliPoly', [n, x]);
+    }
+
+    _eulerPoly(n, x) {
+         n = n.simplify();
+         if (n instanceof Num && Number.isInteger(n.value) && n.value >= 0) {
+              const N = n.value;
+              const b1 = this._bernoulliPoly(new Num(N+1), x);
+              const b2 = this._bernoulliPoly(new Num(N+1), new Div(x, new Num(2)));
+
+              const factor = new Div(new Num(2), new Num(N+1));
+              const term2 = new Mul(new Pow(new Num(2), new Num(N+1)), b2);
+
+              return new Mul(factor, new Sub(b1, term2)).simplify();
+         }
+         return new Call('eulerPoly', [n, x]);
+    }
+
+    _gammap(a, x) {
+        if (x < 0) return 0;
+        if (x === 0) return 0;
+        const gln = this._gammaln(a);
+        if (x < a + 1) {
+            let ap = a;
+            let del = 1 / a;
+            let sum = del;
+            for (let n = 1; n < 100; n++) {
+                ap++;
+                del *= x / ap;
+                sum += del;
+                if (Math.abs(del) < Math.abs(sum) * 1e-7) {
+                     return sum * Math.exp(-x + a * Math.log(x) - gln);
+                }
+            }
+        } else {
+             let b = x + 1 - a;
+             let c = 1 / 1e-30;
+             let d = 1 / b;
+             let h = d;
+             for (let i = 1; i < 100; i++) {
+                 const an = -i * (i - a);
+                 b += 2;
+                 d = an * d + b;
+                 if (Math.abs(d) < 1e-30) d = 1e-30;
+                 c = b + an / c;
+                 if (Math.abs(c) < 1e-30) c = 1e-30;
+                 d = 1 / d;
+                 const del = d * c;
+                 h *= del;
+                 if (Math.abs(del - 1) < 1e-7) break;
+             }
+             return 1 - Math.exp(-x + a * Math.log(x) - gln) * h;
+        }
+        return 0;
+    }
+
+    _gammaln(x) {
+        const p = [
+            0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+            771.32342877765313, -176.61502916214059, 12.507343278686905,
+            -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7
+        ];
+        let y = x;
+        let tmp = x + 7.5;
+        tmp -= (x + 0.5) * Math.log(tmp);
+        let ser = p[0];
+        for (let j = 1; j < p.length; j++) ser += p[j] / ++y;
+        return -tmp + Math.log(2.5066282746310005 * ser / x);
+    }
+
+    _betainc(x, a, b) {
+        if (x === 0) return 0;
+        if (x === 1) return 1;
+        const bt = Math.exp(this._gammaln(a + b) - this._gammaln(a) - this._gammaln(b) + a * Math.log(x) + b * Math.log(1 - x));
+        if (x < (a + 1) / (a + b + 2)) {
+             return bt * this._betacf(x, a, b) / a;
+        } else {
+             return 1 - bt * this._betacf(1 - x, b, a) / b;
+        }
+    }
+
+    _betacf(x, a, b) {
+        const MAXIT = 100;
+        const EPS = 3.0e-7;
+        const FPMIN = 1.0e-30;
+        let qab = a + b;
+        let qap = a + 1.0;
+        let qam = a - 1.0;
+        let c = 1.0;
+        let d = 1.0 - qab * x / qap;
+        if (Math.abs(d) < FPMIN) d = FPMIN;
+        d = 1.0 / d;
+        let h = d;
+        for (let m = 1; m <= MAXIT; m++) {
+            let m2 = 2 * m;
+            let aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+            d = 1.0 + aa * d;
+            if (Math.abs(d) < FPMIN) d = FPMIN;
+            c = 1.0 + aa / c;
+            if (Math.abs(c) < FPMIN) c = FPMIN;
+            d = 1.0 / d;
+            h *= d * c;
+            aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+            d = 1.0 + aa * d;
+            if (Math.abs(d) < FPMIN) d = FPMIN;
+            c = 1.0 + aa / c;
+            if (Math.abs(c) < FPMIN) c = FPMIN;
+            d = 1.0 / d;
+            let del = d * c;
+            h *= del;
+            if (Math.abs(del - 1.0) < EPS) break;
+        }
+        return h;
     }
 }
 
