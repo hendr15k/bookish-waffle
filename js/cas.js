@@ -542,7 +542,12 @@ class CAS {
 
                  // Check for Linear System: solve([eq1, eq2], [x, y])
                  if (eq instanceof Vec && varNode instanceof Vec) {
-                     return this._solveLinearSystem(eq, varNode);
+                     try {
+                         return this._solveLinearSystem(eq, varNode);
+                     } catch (e) {
+                         // Fallback to non-linear system solver
+                         return this._solveNonLinearSystem(eq, varNode);
+                     }
                  }
 
                  if (!(varNode instanceof Sym) && !(varNode instanceof Vec)) throw new Error("Second argument to solve must be a variable or list of variables");
@@ -1303,12 +1308,6 @@ class CAS {
             if (node.funcName === 'curl') {
                 if (node.args.length !== 2) throw new Error("curl requires 2 arguments: vector field and list of variables");
                 return this._curl(args[0], args[1]);
-            }
-
-            if (node.funcName === 'line_integral') {
-                 // line_integral(field, vars, curve, t, start, end)
-                 if (node.args.length !== 6) throw new Error("line_integral requires 6 arguments: field, vars, curve, t, start, end");
-                 return this._lineIntegral(args[0], args[1], args[2], args[3], args[4], args[5]);
             }
 
             if (node.funcName === 'divergence' || node.funcName === 'div') { // 'div' might conflict with division if not careful, but funcName is safe
@@ -2217,7 +2216,7 @@ class CAS {
             }
 
             if (node.funcName === 'line_integral' || node.funcName === 'lineIntegral') {
-                 if (node.args.length < 4) throw new Error("line_integral requires at least 4 arguments: field, path, vars, t");
+                 if (node.args.length < 4) throw new Error("line_integral requires at least 4 arguments: field, vars, path, t");
                  const a = node.args.length > 4 ? args[4] : null;
                  const b = node.args.length > 5 ? args[5] : null;
                  return this._lineIntegral(args[0], args[1], args[2], args[3], a, b);
@@ -12585,6 +12584,131 @@ class CAS {
         return new Call('set', resSet);
     }
 
+    _solveNonLinearSystem(eqsVec, varsVec) {
+        const eqs = eqsVec.elements; // Array of Expr
+        const vars = varsVec.elements; // Array of Sym
+
+        // Normalize eqs to expr = 0
+        const normEqs = eqs.map(e => (e instanceof Eq) ? new Sub(e.left, e.right).simplify() : e.simplify());
+
+        const solutions = []; // Array of Vec (each Vec contains Eq objects)
+
+        // Helper to check dependency
+        const dependsOn = (expr, v) => this._dependsOn(expr, v);
+
+        // Recursive solver
+        const solveRec = (currentEqs, currentVars, currentSol) => {
+            if (currentEqs.length === 0) {
+                // All equations satisfied/consumed
+                // Refine solution: substitute known values into others (back-substitution)
+                let refinedSol = [...currentSol];
+                let changed = true;
+                // Limit iterations to prevent loops if circular dependency (shouldn't happen in solvable system)
+                let limit = 10;
+                while(changed && limit-- > 0) {
+                    changed = false;
+                    for(let i=0; i<refinedSol.length; i++) {
+                        for(let j=0; j<refinedSol.length; j++) {
+                            if (i===j) continue;
+                            const target = refinedSol[i];
+                            const source = refinedSol[j];
+                            const newVal = target.right.substitute(source.left, source.right).simplify();
+                            if (newVal.toString() !== target.right.toString()) {
+                                refinedSol[i] = new Eq(target.left, newVal);
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                solutions.push(new Vec(refinedSol));
+                return;
+            }
+
+            // Heuristic: Pick equation with fewest variables (in currentVars)
+            let bestEqIdx = -1;
+            let bestVarIdx = -1;
+            let minVars = Infinity;
+
+            for(let i=0; i<currentEqs.length; i++) {
+                let varCount = 0;
+                let lastVar = -1;
+                for(let j=0; j<currentVars.length; j++) {
+                    if (dependsOn(currentEqs[i], currentVars[j])) {
+                        varCount++;
+                        lastVar = j; // Index in currentVars
+                    }
+                }
+
+                // Prioritize equations with fewer variables (ideally 1)
+                if (varCount > 0 && varCount < minVars) {
+                    minVars = varCount;
+                    bestEqIdx = i;
+                    bestVarIdx = lastVar;
+                }
+            }
+
+            if (bestEqIdx === -1) {
+                // Equations remain but depend on no remaining variables
+                // Check consistency (all must evaluate to 0)
+                for(const eq of currentEqs) {
+                    const val = eq.evaluateNumeric();
+                    // If it simplifies to non-zero number, it's inconsistent
+                    // Allow small float error
+                    if (!isNaN(val)) {
+                        if (Math.abs(val) > 1e-9) return;
+                    } else if (eq instanceof Num && eq.value !== 0) {
+                        return;
+                    }
+                    // If symbolic (e.g. simplified to 'a' where a is param), we assume consistent or constraints?
+                    // For now assume consistent if we can't prove false.
+                }
+                solutions.push(new Vec(currentSol));
+                return;
+            }
+
+            const eq = currentEqs[bestEqIdx];
+            const v = currentVars[bestVarIdx];
+
+            // Solve eq for v
+            const res = this._solve(eq, v);
+            let sols = [];
+
+            if (res instanceof Call && res.funcName === 'set') {
+                sols = res.args;
+            } else if (res instanceof Eq && res.left.toString() === v.toString()) {
+                sols = [res.right];
+            } else {
+                // _solve returns the expression value for v
+                sols = [res];
+            }
+
+            for(const s of sols) {
+                // Substitute v = s into other equations
+                const nextEqs = [];
+                for(let i=0; i<currentEqs.length; i++) {
+                    if (i === bestEqIdx) continue;
+                    nextEqs.push(currentEqs[i].substitute(v, s).simplify());
+                }
+
+                const nextVars = currentVars.filter((_, idx) => idx !== bestVarIdx);
+                const nextSol = [...currentSol, new Eq(v, s)];
+
+                solveRec(nextEqs, nextVars, nextSol);
+            }
+        };
+
+        solveRec(normEqs, vars, []);
+
+        // Filter unique solutions?
+        // Note: solutions is array of Vec.
+
+        if (solutions.length === 0) {
+             return new Call('set', []); // No solution
+        }
+
+        return new Call('set', solutions);
+    }
+
     _matrixExp(matrix) {
         if (!(matrix instanceof Vec)) throw new Error("matrixExp requires a matrix");
 
@@ -12624,7 +12748,7 @@ class CAS {
         }
     }
 
-    _lineIntegral(field, path, vars, t, a, b) {
+    _lineIntegral(field, vars, path, t, a, b) {
         if (!(field instanceof Vec) || !(path instanceof Vec) || !(vars instanceof Vec)) throw new Error("field, path and vars must be vectors");
         if (field.elements.length !== path.elements.length || field.elements.length !== vars.elements.length) throw new Error("Dimension mismatch");
 
