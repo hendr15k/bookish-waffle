@@ -445,6 +445,10 @@ class CAS {
                 const specialRes = this._integrateSpecial(func, varNode);
                 if (specialRes) return specialRes;
 
+                // 5. Exponential * Trig (Cyclic)
+                const expTrigRes = this._integrateExpTrig(func, varNode);
+                if (expTrigRes) return expTrigRes;
+
                 let res = func.integrate(varNode);
                 // If the result is different (e.g. split into parts), evaluate it to trigger CAS recursive handling of sub-integrals
                 if (res.toString() !== new Call('integrate', args).toString()) {
@@ -551,6 +555,12 @@ class CAS {
                  }
 
                  if (!(varNode instanceof Sym) && !(varNode instanceof Vec)) throw new Error("Second argument to solve must be a variable or list of variables");
+
+                 // Check for Inequality
+                 if (eq instanceof Lt || eq instanceof Gt || eq instanceof Le || eq instanceof Ge) {
+                     return this._solveInequality(eq, varNode);
+                 }
+
                  return this._solve(eq, varNode);
             }
 
@@ -2288,6 +2298,15 @@ class CAS {
             if (node.funcName === 'sinc') {
                 if (node.args.length !== 1) throw new Error("sinc requires 1 argument");
                 return this._sinc(args[0]);
+            }
+
+            if (node.funcName === 'FresnelS') {
+                if (node.args.length !== 1) throw new Error("FresnelS requires 1 argument");
+                return new Call('FresnelS', args);
+            }
+            if (node.funcName === 'FresnelC') {
+                if (node.args.length !== 1) throw new Error("FresnelC requires 1 argument");
+                return new Call('FresnelC', args);
             }
 
             return new Call(node.funcName, args);
@@ -11430,6 +11449,145 @@ class CAS {
             }
         }
         return new Vec(res);
+    }
+
+    _integrateExpTrig(expr, varNode) {
+        // exp(ax+c) * sin(bx+d) or cos
+        if (expr instanceof Mul) {
+            let expPart = null;
+            let trigPart = null;
+            if (expr.left instanceof Call && expr.left.funcName === 'exp') { expPart = expr.left; trigPart = expr.right; }
+            else if (expr.right instanceof Call && expr.right.funcName === 'exp') { expPart = expr.right; trigPart = expr.left; }
+
+            if (expPart && trigPart instanceof Call && (trigPart.funcName === 'sin' || trigPart.funcName === 'cos')) {
+                // Check linearity of arguments
+                const expArg = expPart.args[0];
+                const trigArg = trigPart.args[0];
+
+                const p1 = this._getPolyCoeffs(expArg, varNode);
+                const p2 = this._getPolyCoeffs(trigArg, varNode);
+
+                if (p1 && p1.maxDeg <= 1 && p2 && p2.maxDeg <= 1) {
+                    const a = p1.coeffs[1] || new Num(0);
+                    const c = p1.coeffs[0] || new Num(0);
+                    const b = p2.coeffs[1] || new Num(0);
+                    const d = p2.coeffs[0] || new Num(0);
+
+                    // If a=0, standard trig integral (handled elsewhere, but safe here)
+                    // If b=0, standard exp integral
+
+                    if (a.evaluateNumeric() === 0) return null; // Not exp(ax) type
+                    if (b.evaluateNumeric() === 0) return null;
+
+                    // exp(ax+c) = exp(c) * exp(ax)
+                    // sin(bx+d) = sin(bx+d)
+
+                    // const C_exp = new Call('exp', [c]).simplify();
+                    // const common = new Div(new Call('exp', [new Add(new Mul(a, varNode), c)]), new Add(new Pow(a, new Num(2)), new Pow(b, new Num(2))));
+                    const common = new Div(expPart, new Add(new Pow(a, new Num(2)), new Pow(b, new Num(2))));
+
+                    let term;
+                    if (trigPart.funcName === 'sin') {
+                        // int e^ax sin(bx+d) = e^ax/(a^2+b^2) * (a sin(bx+d) - b cos(bx+d))
+                        const t1 = new Mul(a, new Call('sin', [trigArg]));
+                        const t2 = new Mul(b, new Call('cos', [trigArg]));
+                        term = new Sub(t1, t2);
+                    } else {
+                        // int e^ax cos(bx+d) = e^ax/(a^2+b^2) * (a cos(bx+d) + b sin(bx+d))
+                        const t1 = new Mul(a, new Call('cos', [trigArg]));
+                        const t2 = new Mul(b, new Call('sin', [trigArg]));
+                        term = new Add(t1, t2);
+                    }
+
+                    return new Mul(common, term).simplify();
+                }
+            }
+        }
+        return null;
+    }
+
+    _solveInequality(ineq, varNode) {
+        let lhs, rhs, op;
+        if (ineq instanceof Lt) { op = '<'; lhs = ineq.left; rhs = ineq.right; }
+        else if (ineq instanceof Gt) { op = '>'; lhs = ineq.left; rhs = ineq.right; }
+        else if (ineq instanceof Le) { op = '<='; lhs = ineq.left; rhs = ineq.right; }
+        else if (ineq instanceof Ge) { op = '>='; lhs = ineq.left; rhs = ineq.right; }
+        else return ineq;
+
+        const expr = new Sub(lhs, rhs).simplify();
+
+        // Linear: ax + b < 0
+        const poly = this._getPolyCoeffs(expr, varNode);
+        if (poly && poly.maxDeg === 1) {
+            const a = poly.coeffs[1]; // coeff of x
+            const b = poly.coeffs[0] || new Num(0); // constant
+
+            const aVal = a.evaluateNumeric();
+            if (!isNaN(aVal)) {
+                const rhsVal = new Div(new Mul(new Num(-1), b), a).simplify();
+                if (aVal > 0) {
+                    if (op === '<') return new Lt(varNode, rhsVal);
+                    if (op === '>') return new Gt(varNode, rhsVal);
+                    if (op === '<=') return new Le(varNode, rhsVal);
+                    if (op === '>=') return new Ge(varNode, rhsVal);
+                } else if (aVal < 0) {
+                    // Flip sign
+                    if (op === '<') return new Gt(varNode, rhsVal);
+                    if (op === '>') return new Lt(varNode, rhsVal);
+                    if (op === '<=') return new Ge(varNode, rhsVal);
+                    if (op === '>=') return new Le(varNode, rhsVal);
+                }
+            }
+        }
+
+        // General Method: Find roots, test intervals
+        let rootList = [];
+        try {
+             // Try to find roots
+             const r = this._roots(expr, varNode);
+             if (r instanceof Vec) rootList = r.elements;
+        } catch(e) { }
+
+        // Filter real roots
+        const realRoots = [];
+        for(const r of rootList) {
+            const val = r.evaluateNumeric();
+            if (!isNaN(val)) realRoots.push({val: val, expr: r});
+        }
+
+        realRoots.sort((a, b) => a.val - b.val);
+
+        // Quadratic: (x-r1)(x-r2)
+        if (realRoots.length === 2 && poly && poly.maxDeg === 2) {
+             const r1 = realRoots[0].expr;
+             const r2 = realRoots[1].expr;
+             // Test midpoint
+             const mid = (realRoots[0].val + realRoots[1].val)/2;
+             const valAtMid = expr.substitute(varNode, new Num(mid)).evaluateNumeric();
+
+             // Check operator satisfaction
+             let satisfied = false;
+             if (op === '<') satisfied = valAtMid < 0;
+             if (op === '>') satisfied = valAtMid > 0;
+             if (op === '<=') satisfied = valAtMid <= 0;
+             if (op === '>=') satisfied = valAtMid >= 0;
+
+             if (satisfied) {
+                 // Inside interval (r1, r2)
+                 // r1 < x < r2  => (x > r1) and (x < r2)
+                 const p1 = (op.includes('=')) ? new Ge(varNode, r1) : new Gt(varNode, r1);
+                 const p2 = (op.includes('=')) ? new Le(varNode, r2) : new Lt(varNode, r2);
+                 return new And(p1, p2);
+             } else {
+                 // Outside interval
+                 // x < r1 or x > r2
+                 const p1 = (op.includes('=')) ? new Le(varNode, r1) : new Lt(varNode, r1);
+                 const p2 = (op.includes('=')) ? new Ge(varNode, r2) : new Gt(varNode, r2);
+                 return new Or(p1, p2);
+             }
+        }
+
+        return new Call('solve', [ineq, varNode]);
     }
 
     _integrateSpecial(expr, varNode) {
