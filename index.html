@@ -2235,10 +2235,14 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
     <script src="js/chemistry.js"></script>
     <script src="js/help.js"></script>
     <script src="js/cas.js"></script>
+    <script src="js/gemini_integration.js"></script>
 
     <script>
         // Initialize CAS
-        const cas = new CAS();
+        window.cas = new CAS();
+        window.geminiAdapter = new GeminiAdapter(window.cas);
+        const cas = window.cas; // Keep local ref for existing code
+        const geminiAdapter = window.geminiAdapter;
         const input = document.getElementById('command-input');
         const submitBtn = document.getElementById('submit-btn');
         const history = document.getElementById('history');
