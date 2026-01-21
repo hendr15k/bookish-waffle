@@ -2191,6 +2191,12 @@ class Call extends Expr {
         if (this.funcName === 'Ci') {
             return math_Ci(argsVal[0]);
         }
+        if (this.funcName === 'FresnelS') {
+            return math_fresnelS(argsVal[0]);
+        }
+        if (this.funcName === 'FresnelC') {
+            return math_fresnelC(argsVal[0]);
+        }
         if (this.funcName === 'Ei') {
             return math_Ei(argsVal[0]);
         }
@@ -2405,6 +2411,17 @@ class Call extends Expr {
             return new Mul(new Mul(coeff, exp), u.diff(varName));
         }
 
+        if (this.funcName === 'FresnelS') {
+            // S'(x) = sin(pi/2 x^2)
+            const arg = new Mul(new Div(new Sym('pi'), new Num(2)), new Pow(u, new Num(2)));
+            return new Mul(new Call('sin', [arg]), u.diff(varName));
+        }
+        if (this.funcName === 'FresnelC') {
+            // C'(x) = cos(pi/2 x^2)
+            const arg = new Mul(new Div(new Sym('pi'), new Num(2)), new Pow(u, new Num(2)));
+            return new Mul(new Call('cos', [arg]), u.diff(varName));
+        }
+
         // Bessel Functions Derivatives
         // J_v'(x) = 0.5 * (J_{v-1}(x) - J_{v+1}(x))
         if (this.funcName === 'besselJ') {
@@ -2579,6 +2596,20 @@ class Call extends Expr {
                 const term2 = new Div(new Call('exp', [new Pow(varName, new Num(2))]), new Call('sqrt', [new Sym('pi')]));
                 return new Sub(term1, term2);
             }
+            if (this.funcName === 'FresnelS') {
+                // x S(x) + 1/pi cos(pi/2 x^2)
+                const term1 = new Mul(varName, new Call('FresnelS', [varName]));
+                const arg = new Mul(new Div(new Sym('pi'), new Num(2)), new Pow(varName, new Num(2)));
+                const term2 = new Div(new Call('cos', [arg]), new Sym('pi'));
+                return new Add(term1, term2);
+            }
+            if (this.funcName === 'FresnelC') {
+                // x C(x) - 1/pi sin(pi/2 x^2)
+                const term1 = new Mul(varName, new Call('FresnelC', [varName]));
+                const arg = new Mul(new Div(new Sym('pi'), new Num(2)), new Pow(varName, new Num(2)));
+                const term2 = new Div(new Call('sin', [arg]), new Sym('pi'));
+                return new Sub(term1, term2);
+            }
             if (this.funcName === 'erfinv') {
                 // integral(erfinv(x)) = x*erfinv(x) + exp(-erfinv(x)^2)/sqrt(pi) is WRONG.
                 // Correct: -exp(-erfinv(x)^2)/sqrt(pi) (plus constant) because d/dx(-1/sqrt(pi) * e^(-y^2)) = ... = y.
@@ -2666,7 +2697,9 @@ class Call extends Expr {
             'Ei': '\\operatorname{Ei}',
             'Li': '\\operatorname{Li}',
             'erfi': '\\operatorname{erfi}',
-            'erfinv': '\\operatorname{erf}^{-1}'
+            'erfinv': '\\operatorname{erf}^{-1}',
+            'FresnelS': 'S',
+            'FresnelC': 'C'
         };
 
         if (this.funcName === 'besselJ' && argsTex.length === 2) return `J_{${argsTex[0]}}\\left(${argsTex[1]}\\right)`;
@@ -3660,6 +3693,46 @@ function math_invNormStandard(p) {
 
     if (p < 0.5) xp = -xp;
     return xp;
+}
+
+function math_fresnelS(x) {
+    // Power series for small x
+    // S(x) = sum_{n=0} (-1)^n (pi/2)^(2n+1) x^(4n+3) / ((2n+1)!(4n+3))
+    if (x === 0) return 0;
+    if (x < 0) return -math_fresnelS(-x);
+
+    // For large x, asymptotic expansion or limit 0.5
+    if (x > 10) return 0.5;
+
+    let sum = 0;
+    let fact = 1;
+    const pi2 = Math.PI / 2;
+    for (let n = 0; n < 20; n++) {
+        // (2n+1)!
+        if (n > 0) fact *= (2*n) * (2*n + 1);
+        const num = Math.pow(-1, n) * Math.pow(pi2, 2*n + 1) * Math.pow(x, 4*n + 3);
+        const den = fact * (4*n + 3);
+        sum += num / den;
+    }
+    return sum;
+}
+
+function math_fresnelC(x) {
+    // C(x) = sum_{n=0} (-1)^n (pi/2)^(2n) x^(4n+1) / ((2n)!(4n+1))
+    if (x === 0) return 0;
+    if (x < 0) return -math_fresnelC(-x);
+    if (x > 10) return 0.5;
+
+    let sum = 0;
+    let fact = 1;
+    const pi2 = Math.PI / 2;
+    for (let n = 0; n < 20; n++) {
+        if (n > 0) fact *= (2*n - 1) * (2*n);
+        const num = Math.pow(-1, n) * Math.pow(pi2, 2*n) * Math.pow(x, 4*n + 1);
+        const den = fact * (4*n + 1);
+        sum += num / den;
+    }
+    return sum;
 }
 
 function getBernoulliExpr(n) {
