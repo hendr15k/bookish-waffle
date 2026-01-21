@@ -12341,11 +12341,37 @@ class CAS {
         // exp(-a*abs(t)) -> 2a / (a^2 + w^2)
         // 1 -> 2*pi*delta(w) (Not handled nicely, but possible)
 
-        // Gaussian: exp(-a*t^2)
+        // 1. Constant c -> 2*pi*c*delta(w)
+        if (!this._dependsOn(expr, t)) {
+            return new Mul(
+                new Mul(new Num(2), new Sym('pi')),
+                new Mul(expr, new Call('delta', [w]))
+            ).simplify();
+        }
+
+        // 2. exp(i*a*t) -> 2*pi*delta(w-a)
         if (expr instanceof Call && expr.funcName === 'exp') {
              const arg = expr.args[0];
-             // check -a*t^2
+             // Check for i*a*t
              const poly = this._getPolyCoeffs(arg, t);
+             if (poly && poly.maxDeg === 1) {
+                 const c1 = poly.coeffs[1]; // Coeff of t
+                 // We want c1 = i*a. So a = c1/i = -i*c1
+                 // Check if c1 contains i
+                 // Or we just return 2*pi*delta(w - c1/i)
+                 // But strictly this formula is for real 'a' in exp(iat).
+                 // If c1 is real (exp(at)), FT depends on 'a'. If a>0, unstable?
+                 // Standard distribution theory: exp(iat) -> 2pi delta(w-a).
+                 // Let's assume c1 is purely imaginary? Or general?
+                 // Let's output 2*pi*delta(w - c1/i)
+                 const shift = new Div(c1, new Sym('i')).simplify();
+                 return new Mul(
+                     new Mul(new Num(2), new Sym('pi')),
+                     new Call('delta', [new Sub(w, shift)])
+                 ).simplify();
+             }
+
+             // Gaussian: exp(-a*t^2)
              if (poly && poly.maxDeg === 2) {
                  const c2 = poly.coeffs[2];
                  // const c1 = poly.coeffs[1]; // Shift?
@@ -12368,8 +12394,72 @@ class CAS {
              }
         }
 
+        // 3. Trigonometric: cos(at), sin(at)
+        if (expr instanceof Call && (expr.funcName === 'cos' || expr.funcName === 'sin')) {
+             const arg = expr.args[0];
+             const poly = this._getPolyCoeffs(arg, t);
+             if (poly && poly.maxDeg === 1) {
+                 const a = poly.coeffs[1]; // a
+                 const b = poly.coeffs[0] || new Num(0); // Phase shift not handled yet
+                 if (b.evaluateNumeric() === 0) {
+                     if (expr.funcName === 'cos') {
+                         // pi * (delta(w-a) + delta(w+a))
+                         return new Mul(
+                             new Sym('pi'),
+                             new Add(
+                                 new Call('delta', [new Sub(w, a)]),
+                                 new Call('delta', [new Add(w, a)])
+                             )
+                         ).simplify();
+                     } else {
+                         // sin(at) -> i*pi * (delta(w+a) - delta(w-a))
+                         // = i*pi * (delta(w+a) - delta(w-a))
+                         return new Mul(
+                             new Mul(new Sym('i'), new Sym('pi')),
+                             new Sub(
+                                 new Call('delta', [new Add(w, a)]),
+                                 new Call('delta', [new Sub(w, a)])
+                             )
+                         ).simplify();
+                     }
+                 }
+             }
+        }
+
+        // 4. Heaviside(t) -> pi*delta(w) + 1/(iw)
+        if (expr instanceof Call && expr.funcName === 'Heaviside') {
+            const arg = expr.args[0];
+            // Assume arg is t for now
+            if (arg.toString() === t.toString()) {
+                const term1 = new Mul(new Sym('pi'), new Call('delta', [w]));
+                const term2 = new Div(new Num(1), new Mul(new Sym('i'), w));
+                return new Add(term1, term2).simplify();
+            }
+        }
+
+        // 5. sign(t) -> 2/(iw)
+        if (expr instanceof Call && expr.funcName === 'sign') {
+            const arg = expr.args[0];
+            if (arg.toString() === t.toString()) {
+                return new Div(new Num(2), new Mul(new Sym('i'), w)).simplify();
+            }
+        }
+
+        // 6. Derivative Property: diff(f(t), t) -> iw * F(w)
+        if (expr instanceof Call && expr.funcName === 'diff') {
+            const f = expr.args[0];
+            const v = expr.args[1];
+            if (v.toString() === t.toString()) {
+                 // iw * FT(f)
+                 return new Mul(
+                     new Mul(new Sym('i'), w),
+                     this._fourierTransform(f, t, w)
+                 ).simplify();
+            }
+        }
+
         // dirac(t - a)
-        if (expr instanceof Call && expr.funcName === 'dirac') {
+        if (expr instanceof Call && (expr.funcName === 'dirac' || expr.funcName === 'delta')) {
             const arg = expr.args[0];
             const poly = this._getPolyCoeffs(arg, t);
             if (poly && poly.maxDeg === 1 && poly.coeffs[1].evaluateNumeric() === 1) {
@@ -12384,7 +12474,63 @@ class CAS {
     }
 
     _inverseFourierTransform(expr, w, t) {
-        // Just inverse of the above
+        expr = expr.expand().simplify();
+
+        if (expr instanceof Add) return new Add(this._inverseFourierTransform(expr.left, w, t), this._inverseFourierTransform(expr.right, w, t)).simplify();
+        if (expr instanceof Sub) return new Sub(this._inverseFourierTransform(expr.left, w, t), this._inverseFourierTransform(expr.right, w, t)).simplify();
+        if (expr instanceof Mul) {
+            if (!this._dependsOn(expr.left, w)) return new Mul(expr.left, this._inverseFourierTransform(expr.right, w, t)).simplify();
+            if (!this._dependsOn(expr.right, w)) return new Mul(expr.right, this._inverseFourierTransform(expr.left, w, t)).simplify();
+        }
+
+        // 1. delta(w - a) -> 1/(2pi) * exp(i*a*t)
+        if (expr instanceof Call && (expr.funcName === 'delta' || expr.funcName === 'dirac')) {
+             const arg = expr.args[0];
+             // w - a
+             const poly = this._getPolyCoeffs(arg, w);
+             if (poly && poly.maxDeg === 1 && poly.coeffs[1].evaluateNumeric() === 1) {
+                 const a = new Mul(new Num(-1), poly.coeffs[0] || new Num(0)).simplify();
+                 // 1/2pi * exp(i a t)
+                 const factor = new Div(new Num(1), new Mul(new Num(2), new Sym('pi'))).simplify();
+                 return new Mul(factor, new Call('exp', [new Mul(new Mul(new Sym('i'), a), t)])).simplify();
+             }
+             // delta(w) -> 1/2pi
+             if (arg.toString() === w.toString()) {
+                 return new Div(new Num(1), new Mul(new Num(2), new Sym('pi'))).simplify();
+             }
+        }
+
+        // 2. 1/(iw) -> 1/2 sign(t)?
+        // FT[sign(t)] = 2/(iw) => IFT[2/iw] = sign(t) => IFT[1/iw] = 0.5 sign(t)
+        // FT[Heaviside] = pi delta(w) + 1/iw
+        // IFT[1/iw] = Heaviside(t) - 0.5?
+        // sign(t) = 2H(t) - 1.
+        // IFT[1/iw] = 0.5 * sign(t)
+
+        if (expr instanceof Div) {
+             // check 1/(i*w) or c/(i*w)
+             // simplified: -i/w
+             // expr = k/w
+             if (expr.right.toString() === w.toString()) {
+                 // left is k. IFT[k/w]
+                 // 1/w -> i/2 * sign(t) ?
+                 // FT[sign(t)] = 2/(iw) = -2i/w.
+                 // So FT[ i/2 * sign(t) ] = i/2 * (-2i/w) = 1/w.
+                 // IFT[1/w] = i/2 * sign(t).
+                 // IFT[k/w] = k * i/2 * sign(t).
+                 return new Mul(
+                     new Mul(expr.left, new Div(new Sym('i'), new Num(2))),
+                     new Call('sign', [t])
+                 ).simplify();
+             }
+             // check c / (iw)
+             if (expr.right instanceof Mul && expr.right.right.toString() === w.toString()) {
+                  // c / (k*w) -> c/k * 1/w
+                  // handled above if simplified?
+                  // Div simplify might not separate denominator product
+             }
+        }
+
         return new Call('inverse_fourier_transform', [expr, w, t]);
     }
 
