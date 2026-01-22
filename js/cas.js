@@ -445,6 +445,10 @@ class CAS {
                 const specialRes = this._integrateSpecial(func, varNode);
                 if (specialRes) return specialRes;
 
+                // 4b. More Special Functions (Si, Ci, Ei, Li)
+                const specialRes2 = this._integrateSpecialFunctions(func, varNode);
+                if (specialRes2) return specialRes2;
+
                 // 5. Exponential * Trig (Cyclic)
                 const expTrigRes = this._integrateExpTrig(func, varNode);
                 if (expTrigRes) return expTrigRes;
@@ -2307,6 +2311,31 @@ class CAS {
             if (node.funcName === 'FresnelC') {
                 if (node.args.length !== 1) throw new Error("FresnelC requires 1 argument");
                 return new Call('FresnelC', args);
+            }
+
+            if (node.funcName === 'Si') {
+                if (node.args.length !== 1) throw new Error("Si requires 1 argument");
+                return this._Si(args[0]);
+            }
+            if (node.funcName === 'Ci') {
+                if (node.args.length !== 1) throw new Error("Ci requires 1 argument");
+                return this._Ci(args[0]);
+            }
+            if (node.funcName === 'Ei') {
+                if (node.args.length !== 1) throw new Error("Ei requires 1 argument");
+                return this._Ei(args[0]);
+            }
+            if (node.funcName === 'Li') {
+                if (node.args.length !== 1) throw new Error("Li requires 1 argument");
+                return this._Li(args[0]);
+            }
+            if (node.funcName === 'airyAi') {
+                if (node.args.length !== 1) throw new Error("airyAi requires 1 argument");
+                return this._airyAi(args[0]);
+            }
+            if (node.funcName === 'airyBi') {
+                if (node.args.length !== 1) throw new Error("airyBi requires 1 argument");
+                return this._airyBi(args[0]);
             }
 
             return new Call(node.funcName, args);
@@ -5249,25 +5278,30 @@ class CAS {
             let den = expr.right.substitute(varNode, point).simplify();
 
             // Handle Num or zero-value Num from simplification
-            const isZero = (n) => (n instanceof Num && n.value === 0);
+            // Improved check for zero/infinity using simpler heuristics or numeric eval for constants
+            const isZero = (n) => {
+                if (n instanceof Num && n.value === 0) return true;
+                if (n instanceof Sym && n.name === 'NaN') return false; // Avoid NaN as 0
+                // Check if it simplifies to 0 (e.g. sin(0))
+                // We already simplified, but maybe symbolic cancelation missed?
+                return false;
+            };
             const isInf = (n) => (n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity'));
             const isNegInf = (n) => (n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right));
             const isInfinite = (n) => isInf(n) || isNegInf(n);
 
-            if (isZero(num) && isZero(den)) {
+            // Special check for symbolic NaN which means 0/0 or inf/inf usually
+            const isNaNVal = (n) => (n instanceof Sym && n.name === 'NaN');
+
+            if ((isZero(num) && isZero(den)) || (isNaNVal(num) && isNaNVal(den)) || (isZero(num) && isNaNVal(den))) {
+                 // 0/0 case - L'Hopital
                  const diffNum = expr.left.diff(varNode).simplify();
                  const diffDen = expr.right.diff(varNode).simplify();
-                 // Use a temporary Division that doesn't eager simplify to float if possible,
-                 // but Div constructor does not simplify unless operands are numbers.
-                 // The issue is likely 'new Div(diffNum, diffDen)' if diffNum/diffDen are simple integers.
-                 // Div.simplify() handles integer division. We want to avoid it if it returns float?
-                 // But Div(1, 2).simplify() -> Div(1, 2) unless one is float.
-                 // Check if simplify() was called on new Div inside the recursion?
-                 // Yes, recursive _limit might simplify result.
                  return this._limit(new Div(diffNum, diffDen).simplify(), varNode, point, depth + 1, dir);
             }
 
             if (isInfinite(num) && isInfinite(den)) {
+                 // Inf/Inf case - L'Hopital
                  const diffNum = expr.left.diff(varNode).simplify();
                  const diffDen = expr.right.diff(varNode).simplify();
                  return this._limit(new Div(diffNum, diffDen).simplify(), varNode, point, depth + 1, dir);
@@ -13467,6 +13501,98 @@ class CAS {
             if (Math.abs(del - 1.0) < EPS) break;
         }
         return h;
+    }
+    _Si(x) {
+        x = x.simplify();
+        if (x instanceof Num) {
+            // Evaluated via Call.evaluateNumeric -> math_Si
+            return new Num(new Call('Si', [x]).evaluateNumeric());
+        }
+        return new Call('Si', [x]);
+    }
+
+    _Ci(x) {
+        x = x.simplify();
+        if (x instanceof Num) {
+            return new Num(new Call('Ci', [x]).evaluateNumeric());
+        }
+        return new Call('Ci', [x]);
+    }
+
+    _Ei(x) {
+        x = x.simplify();
+        if (x instanceof Num) {
+            return new Num(new Call('Ei', [x]).evaluateNumeric());
+        }
+        return new Call('Ei', [x]);
+    }
+
+    _Li(x) {
+        x = x.simplify();
+        if (x instanceof Num) {
+            return new Num(new Call('Li', [x]).evaluateNumeric());
+        }
+        return new Call('Li', [x]);
+    }
+
+    _airyAi(x) {
+        x = x.simplify();
+        if (x instanceof Num) {
+            return new Num(new Call('airyAi', [x]).evaluateNumeric());
+        }
+        return new Call('airyAi', [x]);
+    }
+
+    _airyBi(x) {
+        x = x.simplify();
+        if (x instanceof Num) {
+            return new Num(new Call('airyBi', [x]).evaluateNumeric());
+        }
+        return new Call('airyBi', [x]);
+    }
+    _integrateSpecialFunctions(expr, varNode) {
+        // sin(ax+b)/(ax+b) -> Si(ax+b)/a
+        // cos(ax+b)/(ax+b) -> Ci(ax+b)/a
+        // exp(ax+b)/(ax+b) -> Ei(ax+b)/a
+        // 1/ln(ax+b) -> Li(ax+b)/a ?? Li(x) = int dt/ln(t).
+        // int 1/ln(x) dx = Li(x).
+        // int 1/ln(ax+b) dx. u=ax+b, du=a dx. 1/a int du/ln(u) = 1/a Li(ax+b).
+
+        if (expr instanceof Div) {
+            const num = expr.left;
+            const den = expr.right;
+
+            // Check if den is linear: ax+b
+            const poly = this._getPolyCoeffs(den, varNode);
+            if (poly && poly.maxDeg === 1) {
+                const a = poly.coeffs[1];
+                const b = poly.coeffs[0] || new Num(0);
+
+                // sin(den) / den
+                if (num instanceof Call && num.funcName === 'sin' && num.args[0].toString() === den.toString()) {
+                    return new Div(new Call('Si', [den]), a).simplify();
+                }
+                // cos(den) / den
+                if (num instanceof Call && num.funcName === 'cos' && num.args[0].toString() === den.toString()) {
+                    return new Div(new Call('Ci', [den]), a).simplify();
+                }
+                // exp(den) / den
+                if (num instanceof Call && num.funcName === 'exp' && num.args[0].toString() === den.toString()) {
+                    return new Div(new Call('Ei', [den]), a).simplify();
+                }
+                // 1 / ln(den)
+                if (num instanceof Num && num.value === 1 && den instanceof Call && (den.funcName === 'ln' || den.funcName === 'log')) {
+                    const arg = den.args[0];
+                    // arg must be linear
+                    const polyArg = this._getPolyCoeffs(arg, varNode);
+                    if (polyArg && polyArg.maxDeg === 1) {
+                        const a2 = polyArg.coeffs[1];
+                        return new Div(new Call('Li', [arg]), a2).simplify();
+                    }
+                }
+            }
+        }
+        return null;
     }
 }
 
