@@ -481,6 +481,15 @@ class Add extends BinaryOp {
              }
         }
 
+        // (A - B) + B -> A
+        if (l instanceof Sub) {
+            if (l.right.toString() === r.toString()) return l.left;
+        }
+        // A + (B - A) -> B
+        if (r instanceof Sub) {
+            if (r.right.toString() === l.toString()) return r.left;
+        }
+
         return new Add(l, r);
     }
     evaluateNumeric() { return this.left.evaluateNumeric() + this.right.evaluateNumeric(); }
@@ -611,6 +620,25 @@ class Sub extends BinaryOp {
                  if (f1 === 'cosh' && f2 === 'sinh') return new Num(1);
                  if (f1 === 'sinh' && f2 === 'cosh') return new Num(-1);
              }
+        }
+
+        // (A + B) - A -> B
+        if (l instanceof Add) {
+            if (l.left.toString() === r.toString()) return l.right;
+            if (l.right.toString() === r.toString()) return l.left;
+        }
+        // A - (A + B) -> -B
+        if (r instanceof Add) {
+             if (r.left.toString() === l.toString()) return new Mul(new Num(-1), r.right).simplify();
+             if (r.right.toString() === l.toString()) return new Mul(new Num(-1), r.left).simplify();
+        }
+        // (A - B) - A -> -B
+        if (l instanceof Sub) {
+             if (l.left.toString() === r.toString()) return new Mul(new Num(-1), l.right).simplify();
+        }
+        // A - (A - B) -> B
+        if (r instanceof Sub) {
+             if (r.left.toString() === l.toString()) return r.right;
         }
 
         return new Sub(l, r);
