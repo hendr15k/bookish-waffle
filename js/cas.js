@@ -1181,6 +1181,12 @@ class CAS {
                 return this._logRegression(args[0]);
             }
 
+            if (node.funcName === 'interpolate') {
+                 if (node.args.length === 2) return this._interpolate(args[0], args[1]);
+                 if (node.args.length === 3) return this._interpolate(args[0], args[1], args[2]);
+                 throw new Error("interpolate requires 2 or 3 arguments: (points, var) or (xList, yList, var)");
+            }
+
             if (node.funcName === 'normalPDF') {
                 if (node.args.length !== 3) throw new Error("normalPDF requires 3 arguments: x, mu, sigma");
                 return this._normalPDF(args[0], args[1], args[2]);
@@ -2309,6 +2315,15 @@ class CAS {
                 return new Call('FresnelC', args);
             }
 
+            if (node.funcName === 'EllipticK') {
+                if (node.args.length !== 1) throw new Error("EllipticK requires 1 argument");
+                return new Call('EllipticK', args);
+            }
+            if (node.funcName === 'EllipticE') {
+                if (node.args.length !== 1) throw new Error("EllipticE requires 1 argument");
+                return new Call('EllipticE', args);
+            }
+
             return new Call(node.funcName, args);
         }
 
@@ -2529,6 +2544,28 @@ class CAS {
                 return new Mul(expr.right, this._sumSymbolic(expr.left, varNode, start, end)).simplify();
             }
         }
+
+        // Geometric Series Check: R = term(k+1)/term(k)
+        try {
+            const nextTerm = expr.substitute(varNode, new Add(varNode, new Num(1))).simplify();
+            const ratio = new Div(nextTerm, expr).simplify();
+
+            if (!this._dependsOn(ratio, varNode)) {
+                // It is a geometric series with ratio 'ratio'
+                // Sum = first * (ratio^count - 1) / (ratio - 1)
+                const first = expr.substitute(varNode, start).simplify();
+                const count = new Add(new Sub(end, start), new Num(1)).simplify();
+
+                // Check if ratio is 1 (linear, already handled by constant check but safety)
+                if (ratio instanceof Num && ratio.value === 1) {
+                    return new Mul(first, count).simplify();
+                }
+
+                const num = new Sub(new Pow(ratio, count), new Num(1));
+                const den = new Sub(ratio, new Num(1));
+                return new Mul(first, new Div(num, den)).simplify();
+            }
+        } catch(e) {}
 
         // Normalize sum(..., k, 1, n)
         // If start != 1, sum(f(k), k, a, b) = sum(f(j+a-1), j, 1, b-a+1)
@@ -10458,6 +10495,65 @@ class CAS {
 
         // A + B * ln(x)
         return new Add(new Num(A), new Mul(new Num(B), new Call('ln', [new Sym('x')]))).simplify();
+    }
+
+    _interpolate(arg1, arg2, arg3) {
+        let xList = [];
+        let yList = [];
+        let varNode = null;
+
+        if (arg1 instanceof Vec && arg2 instanceof Vec && arg3 instanceof Sym) {
+            // interpolate(xList, yList, var)
+            xList = arg1.elements;
+            yList = arg2.elements;
+            varNode = arg3;
+        } else if (arg1 instanceof Vec && arg2 instanceof Sym) {
+            // interpolate(points, var)
+            varNode = arg2;
+            for(const pt of arg1.elements) {
+                if (pt instanceof Vec && pt.elements.length >= 2) {
+                    xList.push(pt.elements[0]);
+                    yList.push(pt.elements[1]);
+                } else {
+                    throw new Error("Points must be vectors [x, y]");
+                }
+            }
+        } else {
+            // Symbolic fallback
+            const args = [arg1, arg2];
+            if (arg3) args.push(arg3);
+            return new Call('interpolate', args);
+        }
+
+        if (xList.length !== yList.length) throw new Error("x and y lists must have equal length");
+        if (xList.length === 0) return new Num(0);
+
+        const n = xList.length;
+        let L = new Num(0);
+
+        for(let j=0; j<n; j++) {
+            const xj = xList[j];
+            const yj = yList[j];
+
+            // Basis polynomial lj(x)
+            let num = new Num(1);
+            let den = new Num(1);
+
+            for(let i=0; i<n; i++) {
+                if (i === j) continue;
+                const xi = xList[i];
+                // (x - xi)
+                num = new Mul(num, new Sub(varNode, xi));
+                // (xj - xi)
+                den = new Mul(den, new Sub(xj, xi));
+            }
+
+            // term = yj * num / den
+            const term = new Mul(yj, new Div(num, den));
+            L = new Add(L, term);
+        }
+
+        return L.simplify();
     }
 
     _kron(A, B) {
