@@ -3761,6 +3761,29 @@ class CAS {
             return this._solve(expr.left, varNode);
         }
 
+        if (expr instanceof Mul) {
+            const dep1 = this._dependsOn(expr.left, varNode);
+            const dep2 = this._dependsOn(expr.right, varNode);
+
+            if (dep1 && dep2) {
+                const s1 = this._solve(expr.left, varNode);
+                const s2 = this._solve(expr.right, varNode);
+                // Merge solutions
+                const sols = [];
+                const collect = (s) => {
+                    if (s instanceof Call && s.funcName === 'set') s.args.forEach(collect);
+                    else sols.push(s);
+                };
+                collect(s1);
+                collect(s2);
+                return new Call('set', sols);
+            } else if (dep1) {
+                return this._solve(expr.left, varNode);
+            } else if (dep2) {
+                return this._solve(expr.right, varNode);
+            }
+        }
+
         // Expand to ensure polynomial form for identification
         expr = expr.expand().simplify();
 
@@ -8889,12 +8912,24 @@ class CAS {
         let uniqueRoots = [];
 
         if (rootsResult instanceof Call && rootsResult.funcName === 'set') {
-            uniqueRoots = rootsResult.args;
+            uniqueRoots = rootsResult.args.map(r => r.expand().simplify());
         } else if (rootsResult instanceof Expr && !(rootsResult instanceof Call && rootsResult.funcName === 'solve')) {
-            uniqueRoots = [rootsResult];
+            uniqueRoots = [rootsResult.expand().simplify()];
         } else {
             return new Call('partfrac', [expr, varNode]);
         }
+
+        // Deduplicate roots
+        const uniqueMap = {};
+        const dedupedRoots = [];
+        for (const r of uniqueRoots) {
+            const s = r.toString();
+            if (!uniqueMap[s]) {
+                uniqueMap[s] = true;
+                dedupedRoots.push(r);
+            }
+        }
+        uniqueRoots = dedupedRoots;
 
         let result = new Num(0);
 
@@ -8904,8 +8939,20 @@ class CAS {
             let currDen = den;
             // Check derivatives of denominator at r to find multiplicity
             for(let k=0; k<10; k++) { // Limit to avoid infinite loops
-                const val = currDen.substitute(varNode, r).evaluateNumeric();
-                if (Math.abs(val) < 1e-9) {
+                let valExpr = currDen.substitute(varNode, r).simplify();
+                // Try expand if not zero, to handle symbolic cancellation (e.g. sqrt(a^2)-a)
+                if (!(valExpr instanceof Num && valExpr.value === 0)) {
+                    valExpr = valExpr.expand().simplify();
+                }
+
+                let isZero = false;
+                if (valExpr instanceof Num && Math.abs(valExpr.value) < 1e-9) isZero = true;
+                else {
+                    const numVal = valExpr.evaluateNumeric();
+                    if (!isNaN(numVal) && Math.abs(numVal) < 1e-9) isZero = true;
+                }
+
+                if (isZero) {
                     mult++;
                     currDen = currDen.diff(varNode).simplify();
                 } else {

@@ -1478,6 +1478,16 @@ class Pow extends BinaryOp {
         const l = this.left.expand();
         const r = this.right.expand();
 
+        // (a * b)^n -> a^n * b^n
+        if (l instanceof Mul && r instanceof Num && Number.isInteger(r.value)) {
+            return new Mul(new Pow(l.left, r).expand(), new Pow(l.right, r).expand()).simplify();
+        }
+
+        // (a / b)^n -> a^n / b^n
+        if (l instanceof Div && r instanceof Num && Number.isInteger(r.value)) {
+            return new Div(new Pow(l.left, r).expand(), new Pow(l.right, r).expand()).simplify();
+        }
+
         // (a + b)^n
         if (r instanceof Num && Number.isInteger(r.value) && r.value > 1) {
             const n = r.value;
