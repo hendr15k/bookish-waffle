@@ -496,6 +496,16 @@ class Sub extends BinaryOp {
         const l = this.left.simplify();
         const r = this.right.simplify();
 
+        // Cancellation: (A+B)-A -> B, (A+B)-B -> A
+        if (l instanceof Add) {
+            if (l.left.toString() === r.toString()) return l.right;
+            if (l.right.toString() === r.toString()) return l.left;
+        }
+        // (A-B)-A -> -B
+        if (l instanceof Sub) {
+            if (l.left.toString() === r.toString()) return new Mul(new Num(-1), l.right).simplify();
+        }
+
         // Vector subtraction
         if (l instanceof Vec && r instanceof Vec) {
             if (l.elements.length !== r.elements.length) throw new Error("Vector length mismatch in subtraction");
@@ -1814,6 +1824,19 @@ class Call extends Expr {
             }
         }
 
+        if (this.funcName === 'EllipticK') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) {
+                return new Num(math_EllipticK(arg.value));
+            }
+        }
+        if (this.funcName === 'EllipticE') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) {
+                return new Num(math_EllipticE(arg.value));
+            }
+        }
+
         if (this.funcName === 'erf') {
             const arg = simpleArgs[0];
             if (arg instanceof Num) {
@@ -2197,6 +2220,12 @@ class Call extends Expr {
         if (this.funcName === 'FresnelC') {
             return math_fresnelC(argsVal[0]);
         }
+        if (this.funcName === 'EllipticK') {
+            return math_EllipticK(argsVal[0]);
+        }
+        if (this.funcName === 'EllipticE') {
+            return math_EllipticE(argsVal[0]);
+        }
         if (this.funcName === 'Ei') {
             return math_Ei(argsVal[0]);
         }
@@ -2420,6 +2449,29 @@ class Call extends Expr {
             // C'(x) = cos(pi/2 x^2)
             const arg = new Mul(new Div(new Sym('pi'), new Num(2)), new Pow(u, new Num(2)));
             return new Mul(new Call('cos', [arg]), u.diff(varName));
+        }
+
+        if (this.funcName === 'EllipticK') {
+            // dK/dk = E(k)/(k(1-k^2)) - K(k)/k
+            // = (E(k) - (1-k^2)K(k)) / (k(1-k^2))
+            const k = u;
+            const E = new Call('EllipticE', [k]);
+            const K = new Call('EllipticK', [k]);
+            const k2 = new Pow(k, new Num(2));
+            const oneMinusK2 = new Sub(new Num(1), k2);
+
+            const num = new Sub(E, new Mul(oneMinusK2, K));
+            const den = new Mul(k, oneMinusK2);
+            return new Mul(new Div(num, den), k.diff(varName));
+        }
+
+        if (this.funcName === 'EllipticE') {
+            // dE/dk = (E(k) - K(k)) / k
+            const k = u;
+            const E = new Call('EllipticE', [k]);
+            const K = new Call('EllipticK', [k]);
+            const num = new Sub(E, K);
+            return new Mul(new Div(num, k), k.diff(varName));
         }
 
         // Bessel Functions Derivatives
@@ -2699,7 +2751,9 @@ class Call extends Expr {
             'erfi': '\\operatorname{erfi}',
             'erfinv': '\\operatorname{erf}^{-1}',
             'FresnelS': 'S',
-            'FresnelC': 'C'
+            'FresnelC': 'C',
+            'EllipticK': 'K',
+            'EllipticE': 'E'
         };
 
         if (this.funcName === 'besselJ' && argsTex.length === 2) return `J_{${argsTex[0]}}\\left(${argsTex[1]}\\right)`;
@@ -3733,6 +3787,52 @@ function math_fresnelC(x) {
         sum += num / den;
     }
     return sum;
+}
+
+function math_EllipticK(k) {
+    if (Math.abs(k) >= 1) return Infinity;
+    if (k === 0) return Math.PI / 2;
+    let a = 1;
+    let b = Math.sqrt(1 - k*k);
+    for(let i=0; i<100; i++) {
+        let an = (a + b) / 2;
+        let bn = Math.sqrt(a * b);
+        if (Math.abs(a - b) < 1e-15) { a = an; break; }
+        a = an;
+        b = bn;
+    }
+    return Math.PI / (2 * a);
+}
+
+function math_EllipticE(k) {
+    if (Math.abs(k) > 1) return NaN;
+    if (Math.abs(k) === 1) return 1;
+    if (k === 0) return Math.PI / 2;
+
+    let a = 1;
+    let b = Math.sqrt(1 - k*k);
+    let sum = 0.5 * k * k; // n=0 term
+    let p = 1; // 2^0
+
+    // First step of EllipticK to get K value at end?
+    // We can run AGM loop and sum simultaneously
+
+    for(let i=0; i<100; i++) {
+        let an = (a + b) / 2;
+        let bn = Math.sqrt(a * b);
+
+        let c_sq = Math.pow((a - b)/2, 2);
+        sum += p * c_sq;
+
+        p *= 2;
+
+        if (Math.abs(a - b) < 1e-15) { a = an; break; }
+        a = an;
+        b = bn;
+    }
+
+    const K = Math.PI / (2 * a);
+    return K * (1 - sum);
 }
 
 function getBernoulliExpr(n) {
