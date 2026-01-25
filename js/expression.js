@@ -922,6 +922,15 @@ class Mul extends BinaryOp {
             return new Mul(r, l).simplify();
         }
 
+        // Distribute (-1) over Subtraction: -1 * (A - B) -> B - A
+        if (l instanceof Num && l.value === -1 && r instanceof Sub) {
+            return new Sub(r.right, r.left).simplify();
+        }
+        // Distribute (-1) over Addition: -1 * (A + B) -> (-A - B)
+        if (l instanceof Num && l.value === -1 && r instanceof Add) {
+            return new Sub(new Mul(new Num(-1), r.left).simplify(), r.right).simplify();
+        }
+
         // x * x -> x^2
         if (l.toString() === r.toString()) {
             return new Pow(l, new Num(2));
@@ -1754,11 +1763,15 @@ class Call extends Expr {
                 if (arg.value >= 0) {
                     const sqrtVal = Math.sqrt(arg.value);
                     if (Number.isInteger(sqrtVal)) return new Num(sqrtVal);
-                    // Return symbolic sqrt if not integer?
-                    // But we must avoid infinite loop if we return Call('sqrt') and simplify calls this.
-                    // We can just return the Call object (this) if we haven't changed args,
-                    // or a new Call with simplified args.
-                    // Since simpleArgs are simplified, we just return new Call.
+
+                    // Simplify radical for integer: sqrt(8) -> 2*sqrt(2)
+                    if (Number.isInteger(arg.value)) {
+                        const simp = math_intSqrtSimplify(arg.value);
+                        if (simp && simp.coeff !== 1) {
+                            return new Mul(new Num(simp.coeff), new Call('sqrt', [new Num(simp.radical)])).simplify();
+                        }
+                    }
+
                     return new Call('sqrt', simpleArgs);
                 }
                 // sqrt(-x)
@@ -1965,6 +1978,17 @@ class Call extends Expr {
             const arg = simpleArgs[0];
             // exp(ln(x)) -> x
             if (arg instanceof Call && arg.funcName === 'ln') return arg.args[0];
+            // exp(n * ln(x)) -> x^n
+            if (arg instanceof Mul) {
+                if (arg.right instanceof Call && arg.right.funcName === 'ln') {
+                    // n * ln(x) -> x^n
+                    return new Pow(arg.right.args[0], arg.left).simplify();
+                }
+                if (arg.left instanceof Call && arg.left.funcName === 'ln') {
+                    // ln(x) * n -> x^n
+                    return new Pow(arg.left.args[0], arg.right).simplify();
+                }
+            }
             if (arg instanceof Num && arg.value === 0) return new Num(1);
             if (arg instanceof Num && arg.value === 1) return new Sym('e');
         }
@@ -4121,6 +4145,33 @@ function getBernoulliExpr(n) {
     }
     // Fallback for n > 20: return symbolic
     return new Call('bernoulli', [new Num(n)]);
+}
+
+function math_intSqrtSimplify(n) {
+    if (n < 0) return null;
+    if (n === 0) return { coeff: 1, radical: 0 };
+    if (n === 1) return { coeff: 1, radical: 1 };
+
+    let coeff = 1;
+    let radical = n;
+
+    // Check 2
+    while (radical % 4 === 0) {
+        coeff *= 2;
+        radical /= 4;
+    }
+
+    // Check odd factors
+    let limit = Math.floor(Math.sqrt(radical));
+    for (let k = 3; k <= limit; k += 2) {
+        let k2 = k*k;
+        if (k2 > radical) break;
+        while (radical % k2 === 0) {
+            coeff *= k;
+            radical /= k2;
+        }
+    }
+    return { coeff, radical };
 }
 
 // Export classes for Global/CommonJS environments
