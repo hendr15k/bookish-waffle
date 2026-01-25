@@ -141,6 +141,129 @@ function toExpr(other) {
     throw new Error("Cannot convert to Expr: " + other);
 }
 
+function getPolyCoeffs(expr, varNode) {
+    if (!varNode) return null;
+    const x = varNode;
+    const getTermInfo = (term) => {
+        if (term instanceof Num) return { deg: 0, coeff: term.value };
+        if (term instanceof Sym && term.name === x.name) return { deg: 1, coeff: 1 };
+        if (term instanceof Mul && term.left instanceof Num && term.right instanceof Sym && term.right.name === x.name) return { deg: 1, coeff: term.left.value };
+        if (term instanceof Mul && term.right instanceof Num && term.left instanceof Sym && term.left.name === x.name) return { deg: 1, coeff: term.right.value };
+        if (term instanceof Pow && term.left instanceof Sym && term.left.name === x.name && term.right instanceof Num && Number.isInteger(term.right.value) && term.right.value >= 0) return { deg: term.right.value, coeff: 1 };
+        if (term instanceof Mul && term.left instanceof Num && term.right instanceof Pow && term.right.left instanceof Sym && term.right.left.name === x.name && term.right.right instanceof Num && Number.isInteger(term.right.right.value)) {
+            return { deg: term.right.right.value, coeff: term.left.value };
+        }
+        if (term instanceof Mul && term.left instanceof Num && term.left.value === -1 && term.right instanceof Sym && term.right.name === x.name) return { deg: 1, coeff: -1 };
+        return null;
+    };
+
+    const terms = [];
+    const collectTerms = (e, sign = 1) => {
+        if (e instanceof Add) { collectTerms(e.left, sign); collectTerms(e.right, sign); }
+        else if (e instanceof Sub) { collectTerms(e.left, sign); collectTerms(e.right, -sign); }
+        else terms.push({ expr: e, sign });
+    };
+    collectTerms(expr);
+
+    const coeffs = {};
+    let maxDeg = 0;
+    for(const item of terms) {
+        const info = getTermInfo(item.expr);
+        if (info) {
+            const deg = info.deg;
+            const val = info.coeff * item.sign;
+            coeffs[deg] = (coeffs[deg] || 0) + val;
+            if (deg > maxDeg) maxDeg = deg;
+        } else {
+            return null; // Not a polynomial in x
+        }
+    }
+
+    const P = [];
+    for(let i=0; i<=maxDeg; i++) P[i] = coeffs[i] || 0;
+    while(P.length > 0 && Math.abs(P[P.length-1]) < 1e-15) P.pop();
+    return P;
+}
+
+function polyRem(P, Q) {
+    if (Q.length === 0) throw new Error("Divide by zero polynomial");
+    let R = [...P];
+    const m = Q.length - 1;
+    const lc = Q[m];
+    while (R.length - 1 >= m) {
+        const degR = R.length - 1;
+        const factor = R[degR] / lc;
+        const degDiff = degR - m;
+        for(let i=0; i<=m; i++) {
+            R[i + degDiff] -= factor * Q[i];
+        }
+        while(R.length > 0 && Math.abs(R[R.length-1]) < 1e-15) R.pop();
+    }
+    return R;
+}
+
+function polyQuotient(P, Q) {
+    if (Q.length === 0) throw new Error("Divide by zero");
+    let R = [...P];
+    let Quot = new Array(Math.max(0, R.length - Q.length + 1)).fill(0);
+    const m = Q.length - 1;
+    const lc = Q[m];
+    while(R.length - 1 >= m) {
+        const degR = R.length - 1;
+        const factor = R[degR] / lc;
+        const degDiff = degR - m;
+        Quot[degDiff] = factor;
+        for(let i=0; i<=m; i++) {
+            R[i + degDiff] -= factor * Q[i];
+        }
+        while(R.length > 0 && Math.abs(R[R.length-1]) < 1e-15) R.pop();
+    }
+    while(Quot.length > 0 && Math.abs(Quot[Quot.length-1]) < 1e-15) Quot.pop();
+    return Quot;
+}
+
+function polyGcd(P, Q) {
+    let a = P;
+    let b = Q;
+    while (b.length > 0 && !(b.length === 1 && Math.abs(b[0]) < 1e-15)) {
+        const r = polyRem(a, b);
+        a = b;
+        b = r;
+    }
+    if (a.length > 0) {
+        const lc = a[a.length-1];
+        if (Math.abs(lc) > 1e-15) {
+            for(let i=0; i<a.length; i++) a[i] /= lc;
+        }
+    }
+    return a;
+}
+
+function polyFromCoeffs(coeffs, varNode) {
+    if (coeffs.length === 0) return new Num(0);
+    let res = new Num(0);
+    for(let i=0; i<coeffs.length; i++) {
+        const c = coeffs[i];
+        if (Math.abs(c) < 1e-15) continue;
+        const intVal = Math.round(c);
+        const numNode = (Math.abs(c - intVal) < 1e-10) ? new Num(intVal) : new Num(c);
+
+        let term;
+        if (i === 0) term = numNode;
+        else if (i === 1) term = (Math.abs(c-1)<1e-10) ? varNode : ((Math.abs(c+1)<1e-10) ? new Mul(new Num(-1), varNode) : new Mul(numNode, varNode));
+        else {
+            const pow = new Pow(varNode, new Num(i));
+            if (Math.abs(c - 1) < 1e-10) term = pow;
+            else if (Math.abs(c + 1) < 1e-10) term = new Mul(new Num(-1), pow);
+            else term = new Mul(numNode, pow);
+        }
+
+        if (res instanceof Num && res.value === 0) res = term;
+        else res = new Add(res, term);
+    }
+    return res;
+}
+
 function polyDiv(numerator, denominator) {
     // Basic synthetic division for P(x) / (x - c)
     // First, extract coefficients of numerator.
@@ -1043,25 +1166,43 @@ class Div extends BinaryOp {
             return new Pow(baseL, newExp).simplify();
         }
 
-        // Polynomial Division Simplification
-        // Check if denominator is linear: x - c or x + c
-        if (r instanceof Sub && r.left instanceof Sym && r.right instanceof Num) {
-            // Denominator: x - c. Root is c.
-            const x = r.left;
-            const c = r.right;
-            const remainder = l.substitute(x, c).simplify();
-            if (remainder instanceof Num && remainder.value === 0) {
-                 return polyDiv(l, r);
+        // Polynomial GCD Simplification
+        const getVar = (node) => {
+            if (node instanceof Sym && node.name !== 'pi' && node.name !== 'e' && node.name !== 'i') return node;
+            if (node instanceof Pow && node.left instanceof Sym) return node.left;
+            if (node instanceof BinaryOp) return getVar(node.left) || getVar(node.right);
+            return null;
+        };
+        const varNode = getVar(l) || getVar(r);
+
+        if (varNode) {
+            const P = getPolyCoeffs(l, varNode);
+            const Q = getPolyCoeffs(r, varNode);
+            if (P && Q) {
+                // Check if denominator constant (handled by coeff extraction but verify)
+                if (Q.length <= 1) {
+                    // Constant denominator, already handled by Num/Div rules usually, but coeff division?
+                    // e.g. (2x+2)/2 -> x+1
+                    if (Q.length === 1 && Q[0] !== 0) {
+                        const resCoeffs = P.map(c => c / Q[0]);
+                        return polyFromCoeffs(resCoeffs, varNode);
+                    }
+                } else {
+                    const G = polyGcd(P, Q);
+                    // If gcd degree > 0 or (degree=0 and value != 1)
+                    if (G.length > 1 || (G.length === 1 && Math.abs(G[0] - 1) > 1e-9)) {
+                        // Divide num and den by G
+                        const newNumCoeffs = polyQuotient(P, G);
+                        const newDenCoeffs = polyQuotient(Q, G);
+
+                        const newNum = polyFromCoeffs(newNumCoeffs, varNode);
+                        const newDen = polyFromCoeffs(newDenCoeffs, varNode);
+
+                        if (newDenCoeffs.length === 1 && Math.abs(newDenCoeffs[0] - 1) < 1e-9) return newNum;
+                        return new Div(newNum, newDen);
+                    }
+                }
             }
-        }
-        if (r instanceof Add && r.left instanceof Sym && r.right instanceof Num) {
-             // Denominator: x + c. Root is -c.
-             const x = r.left;
-             const c = new Num(-r.right.value);
-             const remainder = l.substitute(x, c).simplify();
-             if (remainder instanceof Num && remainder.value === 0) {
-                 return polyDiv(l, r);
-             }
         }
 
         return new Div(l, r);
@@ -2120,6 +2261,14 @@ class Call extends Expr {
             }
         }
 
+        if (['besselJ', 'besselY', 'besselI', 'besselK', 'hyp2f1'].includes(this.funcName)) {
+             const allNum = simpleArgs.every(a => a instanceof Num);
+             if (allNum) {
+                 const val = new Call(this.funcName, simpleArgs).evaluateNumeric();
+                 if (!isNaN(val)) return new Num(val);
+             }
+        }
+
         return new Call(this.funcName, simpleArgs);
     }
     evaluateNumeric() {
@@ -2258,6 +2407,12 @@ class Call extends Expr {
                 return math_polygamma(argsVal[0], argsVal[1]);
             }
         }
+        if (this.funcName === 'besselJ') return math_besselJ(argsVal[0], argsVal[1]);
+        if (this.funcName === 'besselY') return math_besselY(argsVal[0], argsVal[1]);
+        if (this.funcName === 'besselI') return math_besselI(argsVal[0], argsVal[1]);
+        if (this.funcName === 'besselK') return math_besselK(argsVal[0], argsVal[1]);
+        if (this.funcName === 'hyp2f1') return math_hyp2f1(argsVal[0], argsVal[1], argsVal[2], argsVal[3]);
+
         return NaN; // Unknown
     }
     diff(varName) {
@@ -2521,6 +2676,23 @@ class Call extends Expr {
                 return new Mul(deriv, x.diff(varName));
             }
         }
+        if (this.funcName === 'hyp2f1') {
+            if (this.args.length === 4) {
+                const a = this.args[0];
+                const b = this.args[1];
+                const c = this.args[2];
+                const z = this.args[3];
+                // d/dz hyp2f1(a,b,c,z) = a*b/c * hyp2f1(a+1, b+1, c+1, z) * z'
+                const coeff = new Div(new Mul(a, b), c);
+                const nextF = new Call('hyp2f1', [
+                    new Add(a, new Num(1)),
+                    new Add(b, new Num(1)),
+                    new Add(c, new Num(1)),
+                    z
+                ]);
+                return new Mul(new Mul(coeff, nextF), z.diff(varName));
+            }
+        }
         // Airy Functions
         // Ai'(x) -> derivative of Ai is usually denoted Ai'(x).
         // Ai''(x) = x Ai(x).
@@ -2762,6 +2934,10 @@ class Call extends Expr {
         if (this.funcName === 'besselK' && argsTex.length === 2) return `K_{${argsTex[0]}}\\left(${argsTex[1]}\\right)`;
         if (this.funcName === 'airyAi') return `\\operatorname{Ai}\\left(${argsTex[0]}\\right)`;
         if (this.funcName === 'airyBi') return `\\operatorname{Bi}\\left(${argsTex[0]}\\right)`;
+
+        if (this.funcName === 'hyp2f1' && argsTex.length === 4) {
+             return `{}_2F_1\\left(${argsTex[0]}, ${argsTex[1]}; ${argsTex[2]}; ${argsTex[3]}\\right)`;
+        }
 
         if (this.funcName === 'polygamma' && argsTex.length === 2) {
             return `\\psi^{(${argsTex[0]})}\\left(${argsTex[1]}\\right)`;
@@ -3833,6 +4009,65 @@ function math_EllipticE(k) {
 
     const K = Math.PI / (2 * a);
     return K * (1 - sum);
+}
+
+function math_besselJ(v, x) {
+    if (x === 0) return (v === 0) ? 1 : 0;
+    // Simple series for small x
+    if (Math.abs(x) < 10) {
+        let sum = 0;
+        for(let k=0; k<50; k++) {
+            const num = Math.pow(-1, k) * Math.pow(x/2, 2*k + v);
+            const den = math_gamma(k + 1) * math_gamma(k + v + 1); // factorial(k)*gamma
+            sum += num / den;
+            if (Math.abs(num/den) < 1e-15 * Math.abs(sum)) break;
+        }
+        return sum;
+    }
+    // Asymptotic for large x
+    return Math.sqrt(2 / (Math.PI * x)) * Math.cos(x - v * Math.PI / 2 - Math.PI / 4);
+}
+
+function math_besselY(v, x) {
+    if (Number.isInteger(v)) {
+        const eps = 1e-10;
+        return (math_besselJ(v + eps, x) * Math.cos((v + eps) * Math.PI) - math_besselJ(-(v + eps), x)) / Math.sin((v + eps) * Math.PI);
+    }
+    return (math_besselJ(v, x) * Math.cos(v * Math.PI) - math_besselJ(-v, x)) / Math.sin(v * Math.PI);
+}
+
+function math_besselI(v, x) {
+    if (Math.abs(x) < 20) {
+        let sum = 0;
+        for(let k=0; k<50; k++) {
+            const num = Math.pow(x/2, 2*k + v);
+            const den = math_gamma(k + 1) * math_gamma(k + v + 1);
+            sum += num / den;
+            if (Math.abs(num/den) < 1e-15 * Math.abs(sum)) break;
+        }
+        return sum;
+    }
+    return Math.exp(x) / Math.sqrt(2 * Math.PI * x);
+}
+
+function math_besselK(v, x) {
+    if (Number.isInteger(v)) {
+        const eps = 1e-10;
+        return Math.PI / 2 * (math_besselI(-(v+eps), x) - math_besselI(v+eps, x)) / Math.sin((v+eps) * Math.PI);
+    }
+    return Math.PI / 2 * (math_besselI(-v, x) - math_besselI(v, x)) / Math.sin(v * Math.PI);
+}
+
+function math_hyp2f1(a, b, c, z) {
+    if (Math.abs(z) >= 1) return NaN;
+    let sum = 1;
+    let term = 1;
+    for(let n=0; n<100; n++) {
+        term *= (a + n) * (b + n) / ((c + n) * (n + 1)) * z;
+        sum += term;
+        if (Math.abs(term) < 1e-15 * Math.abs(sum)) break;
+    }
+    return sum;
 }
 
 function getBernoulliExpr(n) {
