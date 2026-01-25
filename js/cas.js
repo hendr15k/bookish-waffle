@@ -477,10 +477,15 @@ class CAS {
 
                      // 4. Try Trigonometric Reduction (Power Reduction)
                      // e.g. sin(x)^2 -> (1-cos(2x))/2
-                     const reduced = this._linearizeTrig(func).simplify();
+                     let reduced = this._linearizeTrig(func).simplify();
+
+                     // Expand to separate terms (e.g. (1-cos)(1+cos) -> 1 - cos^2)
+                     reduced = reduced.expand().simplify();
+
                      if (reduced.toString() !== func.toString()) {
                          const redInt = reduced.integrate(varNode).simplify();
-                         if (!(redInt instanceof Call && redInt.funcName === 'integrate')) return redInt;
+                         // We rely on outer evaluation to resolve any generated integrals
+                         return redInt;
                      }
 
                      // Try Integration by Parts
@@ -2533,6 +2538,23 @@ class CAS {
         return sum;
     }
 
+    _sumPowers(p, n) {
+        // Sum k^p from 1 to n using Faulhaber's formula
+        // S_p(n) = 1/(p+1) * sum_{j=0}^p binom(p+1, j) * B_j * n^(p+1-j)
+        // Note: Use Bernoulli numbers B_j^+ where B_1 = 1/2.
+        // Our _bernoulli returns B_j^- (B_1 = -1/2).
+        let sum = new Num(0);
+        for(let j=0; j<=p; j++) {
+            let Bj = this._bernoulli(new Num(j));
+            if (j === 1) Bj = new Num(0.5); // Use B1+
+
+            const bin = this._nCr(new Num(p+1), new Num(j));
+            const term = new Mul(new Mul(bin, Bj), new Pow(n, new Num(p+1-j)));
+            sum = new Add(sum, term);
+        }
+        return new Mul(new Div(new Num(1), new Num(p+1)), sum).simplify();
+    }
+
     _sumSymbolic(expr, varNode, start, end) {
         expr = expr.expand().simplify();
 
@@ -2608,17 +2630,8 @@ class CAS {
         // k^p
         if (expr instanceof Pow && expr.left instanceof Sym && expr.left.name === varNode.name && expr.right instanceof Num) {
             const p = expr.right.value;
-            if (p === 1) return new Div(new Mul(n, new Add(n, new Num(1))), new Num(2)).simplify();
-            if (p === 2) {
-                // n(n+1)(2n+1)/6
-                const term1 = new Mul(n, new Add(n, new Num(1)));
-                const term2 = new Add(new Mul(new Num(2), n), new Num(1));
-                return new Div(new Mul(term1, term2), new Num(6)).simplify();
-            }
-            if (p === 3) {
-                // (n(n+1)/2)^2
-                const base = new Div(new Mul(n, new Add(n, new Num(1))), new Num(2));
-                return new Pow(base, new Num(2)).simplify();
+            if (Number.isInteger(p) && p >= 0) {
+                return this._sumPowers(p, n);
             }
         }
 
@@ -4838,6 +4851,18 @@ class CAS {
 
              if (check('sec', 'tan')) return new Call('sec', [varNode]);
              if (check('csc', 'cot')) return new Mul(new Num(-1), new Call('csc', [varNode]));
+        }
+
+        // Handle c * f(x) where f(x) is trig (e.g. 4*cos(x))
+        if (expr instanceof Mul && expr.left instanceof Num) {
+            const inner = this._integrateTrig(expr.right, varNode);
+            if (inner) return new Mul(expr.left, inner).simplify();
+        }
+
+        // Handle f(x) / c where f(x) is trig (e.g. cos(x)/4)
+        if (expr instanceof Div && expr.right instanceof Num) {
+            const inner = this._integrateTrig(expr.left, varNode);
+            if (inner) return new Div(inner, expr.right).simplify();
         }
 
         return null;
@@ -8974,29 +8999,85 @@ class CAS {
         return result.simplify();
     }
 
+    _trigPowerReduce(expr) {
+        if (!(expr instanceof Pow)) return null;
+        const base = expr.left;
+        const exponent = expr.right;
+        if (!(exponent instanceof Num && Number.isInteger(exponent.value) && exponent.value > 0)) return null;
+        if (!(base instanceof Call)) return null;
+
+        const n = exponent.value;
+        const arg = base.args[0];
+
+        if (base.funcName === 'sin') {
+            // sin^n(x)
+            if (n % 2 === 0) {
+                // Even n = 2k
+                const k = n / 2;
+                let sum = new Num(0);
+                for(let j=0; j<k; j++) {
+                    // (-1)^(k-j) * binom(2k, j) * cos(2(k-j)x)
+                    const sign = (k - j) % 2 === 0 ? 1 : -1;
+                    const bin = this._nCr(new Num(2*k), new Num(j));
+                    const cosTerm = new Call('cos', [new Mul(new Num(2*(k-j)), arg)]).simplify();
+                    const term = new Mul(new Mul(new Num(sign), bin), cosTerm);
+                    sum = new Add(sum, term);
+                }
+                const term0 = new Mul(new Num(0.5), this._nCr(new Num(2*k), new Num(k))); // Central term
+                sum = new Add(sum, term0);
+                return new Mul(new Div(new Num(1), new Num(Math.pow(2, n-1))), sum).simplify();
+            } else {
+                // Odd n = 2k+1
+                const k = (n - 1) / 2;
+                let sum = new Num(0);
+                for(let j=0; j<=k; j++) {
+                    // (-1)^(k-j) * binom(n, j) * sin((n-2j)x)
+                    const sign = (k - j) % 2 === 0 ? 1 : -1;
+                    const bin = this._nCr(new Num(n), new Num(j));
+                    const sinTerm = new Call('sin', [new Mul(new Num(n-2*j), arg)]).simplify();
+                    const term = new Mul(new Mul(new Num(sign), bin), sinTerm);
+                    sum = new Add(sum, term);
+                }
+                return new Mul(new Div(new Num(1), new Num(Math.pow(2, n-1))), sum).simplify();
+            }
+        }
+
+        if (base.funcName === 'cos') {
+            // cos^n(x)
+            let sum = new Num(0);
+            const limit = Math.floor((n-1)/2);
+            for(let j=0; j<=limit; j++) {
+                // binom(n, j) * cos((n-2j)x)
+                const bin = this._nCr(new Num(n), new Num(j));
+                const cosTerm = new Call('cos', [new Mul(new Num(n-2*j), arg)]).simplify();
+                const term = new Mul(bin, cosTerm);
+                sum = new Add(sum, term);
+            }
+            if (n % 2 === 0) {
+                const term0 = new Mul(new Num(0.5), this._nCr(new Num(n), new Num(n/2)));
+                sum = new Add(sum, term0);
+            }
+            return new Mul(new Div(new Num(1), new Num(Math.pow(2, n-1))), sum).simplify();
+        }
+
+        return null;
+    }
+
     _linearizeTrig(expr) {
         if (expr instanceof Add) return new Add(this._linearizeTrig(expr.left), this._linearizeTrig(expr.right)).simplify();
         if (expr instanceof Sub) return new Sub(this._linearizeTrig(expr.left), this._linearizeTrig(expr.right)).simplify();
         if (expr instanceof Div) return new Div(this._linearizeTrig(expr.left), this._linearizeTrig(expr.right)).simplify();
 
         if (expr instanceof Pow) {
-            // Handle sin^2, cos^2
-            if (expr.right instanceof Num && expr.right.value === 2) {
-                const base = expr.left;
-                if (base instanceof Call) {
-                    if (base.funcName === 'sin') {
-                        // (1 - cos(2x))/2
-                        const arg = base.args[0];
-                        return new Div(new Sub(new Num(1), new Call('cos', [new Mul(new Num(2), arg)])), new Num(2)).simplify();
-                    }
-                    if (base.funcName === 'cos') {
-                        // (1 + cos(2x))/2
-                        const arg = base.args[0];
-                        return new Div(new Add(new Num(1), new Call('cos', [new Mul(new Num(2), arg)])), new Num(2)).simplify();
-                    }
-                }
+            const left = this._linearizeTrig(expr.left);
+            const right = this._linearizeTrig(expr.right);
+            const pow = new Pow(left, right);
+
+            if (right instanceof Num && Number.isInteger(right.value) && right.value > 0) {
+                const reduced = this._trigPowerReduce(pow);
+                if (reduced) return reduced;
             }
-            return new Pow(this._linearizeTrig(expr.left), this._linearizeTrig(expr.right));
+            return pow;
         }
 
         if (expr instanceof Mul) {
