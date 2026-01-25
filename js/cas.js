@@ -1035,6 +1035,21 @@ class CAS {
                 return res;
             }
 
+            if (node.funcName === 'xgcd') {
+                if (node.args.length !== 2) throw new Error("xgcd requires 2 arguments: a, b");
+                return this._xgcd(args[0], args[1]);
+            }
+
+            if (node.funcName === 'chineseRemainder' || node.funcName === 'crt') {
+                if (node.args.length !== 2) throw new Error("chineseRemainder requires 2 arguments: list of remainders, list of moduli");
+                return this._chineseRemainder(args[0], args[1]);
+            }
+
+            if (node.funcName === 'isPrimitiveRoot') {
+                if (node.args.length !== 2) throw new Error("isPrimitiveRoot requires 2 arguments: g, n");
+                return this._isPrimitiveRoot(args[0], args[1]);
+            }
+
             if (node.funcName === 'lcm') {
                 if (node.args.length === 1 && args[0] instanceof Vec) {
                     const list = args[0].elements;
@@ -13563,6 +13578,86 @@ class CAS {
             if (Math.abs(del - 1.0) < EPS) break;
         }
         return h;
+    }
+
+    _xgcd(a, b) {
+        a = a.simplify();
+        b = b.simplify();
+        if (a instanceof Num && b instanceof Num) {
+            let old_r = a.value, r = b.value;
+            let old_s = 1, s = 0;
+            let old_t = 0, t = 1;
+
+            while (r !== 0) {
+                const quotient = Math.floor(old_r / r);
+                [old_r, r] = [r, old_r - quotient * r];
+                [old_s, s] = [s, old_s - quotient * s];
+                [old_t, t] = [t, old_t - quotient * t];
+            }
+            // Result: gcd, x, y such that ax+by=gcd
+            // Return vector [gcd, x, y]
+            return new Vec([new Num(old_r), new Num(old_s), new Num(old_t)]);
+        }
+        return new Call('xgcd', [a, b]);
+    }
+
+    _chineseRemainder(remainders, moduli) {
+        if (!(remainders instanceof Vec) || !(moduli instanceof Vec)) throw new Error("Arguments must be lists");
+        const a = remainders.elements;
+        const n = moduli.elements;
+        if (a.length !== n.length) throw new Error("Lists must be of equal length");
+
+        // Compute product M
+        let M = new Num(1);
+        for(const mod of n) M = new Mul(M, mod).simplify();
+
+        let sum = new Num(0);
+        for(let i=0; i<a.length; i++) {
+            const ai = a[i];
+            const ni = n[i];
+            const Mi = new Div(M, ni).simplify();
+            const yi = this._modInverse(Mi, ni);
+            // sum += ai * Mi * yi
+            sum = new Add(sum, new Mul(ai, new Mul(Mi, yi))).simplify();
+        }
+        return this._mod(sum, M);
+    }
+
+    _isPrimitiveRoot(g, n) {
+        g = g.simplify();
+        n = n.simplify();
+        if (g instanceof Num && n instanceof Num) {
+            const G = g.value;
+            const N = n.value;
+            // 1. Check gcd(g, n) == 1
+            const gcdVal = this._gcd(g, n).value;
+            if (gcdVal !== 1) return new Num(0);
+
+            // 2. phi = euler(n)
+            const phi = this._euler(n);
+            const PHI = phi.value;
+
+            // 3. Prime factors of phi
+            const factorsVec = this._primeFactors(phi);
+            const factors = [];
+            // De-duplicate
+            const seen = new Set();
+            for(const f of factorsVec.elements) {
+                if (f instanceof Num && !seen.has(f.value)) {
+                    seen.add(f.value);
+                    factors.push(f.value);
+                }
+            }
+
+            // 4. Check g^(phi/p) != 1 mod n for all p
+            for(const p of factors) {
+                const exp = PHI / p;
+                const check = this._modPow(g, new Num(exp), n);
+                if (check.value === 1) return new Num(0);
+            }
+            return new Num(1);
+        }
+        return new Call('isPrimitiveRoot', [g, n]);
     }
 }
 
