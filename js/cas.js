@@ -241,20 +241,27 @@ class CAS {
 
             if (node.funcName === 'diff') {
                 if (node.args.length < 2) throw new Error("diff requires at least 2 arguments");
-                const func = args[0];
-                const varNode = args[1];
-                if (!(varNode instanceof Sym)) throw new Error("Second argument to diff must be a variable");
+                let res = args[0];
+                let currentArgIdx = 1;
 
-                let order = 1;
-                if (node.args.length >= 3) {
-                    const o = args[2];
-                    if (o instanceof Num && Number.isInteger(o.value)) order = o.value;
-                    else return new Call('diff', args); // Symbolic order
-                }
+                while (currentArgIdx < node.args.length) {
+                    const varNode = args[currentArgIdx];
+                    if (!(varNode instanceof Sym)) throw new Error("Argument to diff must be a variable");
+                    currentArgIdx++;
 
-                let res = func;
-                for(let i=0; i<order; i++) {
-                    res = res.diff(varNode).simplify();
+                    let order = 1;
+                    // Check if next arg is order (number)
+                    if (currentArgIdx < node.args.length) {
+                        const o = args[currentArgIdx];
+                        if (o instanceof Num && Number.isInteger(o.value)) {
+                            order = o.value;
+                            currentArgIdx++;
+                        }
+                    }
+
+                    for(let i=0; i<order; i++) {
+                        res = res.diff(varNode).simplify();
+                    }
                 }
                 return res;
             }
@@ -266,6 +273,19 @@ class CAS {
 
             if (node.funcName === 'integrate' || node.funcName === 'int') {
                 if (node.args.length < 2) throw new Error("integrate requires at least 2 arguments");
+
+                // Handle multiple integrals recursively: integrate(f, x, a, b, y, c, d)
+                // If args > 4, it implies multiple variables
+                if (node.args.length > 4) {
+                    // Inner integral: integrate(f, x, a, b)
+                    const innerArgs = args.slice(0, 4);
+                    const inner = this.evaluate(new Call('integrate', innerArgs));
+
+                    // Outer integral: integrate(inner, y, c, d, ...)
+                    const outerArgs = [inner, ...args.slice(4)];
+                    return this.evaluate(new Call('integrate', outerArgs));
+                }
+
                 const func = args[0];
                 const varNode = args[1];
                 if (!(varNode instanceof Sym)) throw new Error("Second argument to integrate must be a variable");
@@ -2342,6 +2362,22 @@ class CAS {
             if (node.funcName === 'EllipticE') {
                 if (node.args.length !== 1) throw new Error("EllipticE requires 1 argument");
                 return new Call('EllipticE', args);
+            }
+
+            if (node.funcName === 'lagrange' || node.funcName === 'lagrangeMultipliers') {
+                // lagrange(f, constraints, vars)
+                if (node.args.length !== 3) throw new Error("lagrange requires 3 arguments: expr, constraints, vars");
+                return this._lagrangeMultiplier(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'unitVector') {
+                if (node.args.length !== 1) throw new Error("unitVector requires 1 argument");
+                return this._unitVector(args[0]);
+            }
+
+            if (node.funcName === 'trigSimplify') {
+                if (node.args.length !== 1) throw new Error("trigSimplify requires 1 argument");
+                return this._trigSimplify(args[0]);
             }
 
             return new Call(node.funcName, args);
@@ -13786,6 +13822,67 @@ class CAS {
             return new Num(1);
         }
         return new Call('isPrimitiveRoot', [g, n]);
+    }
+
+    _lagrangeMultiplier(expr, constraints, vars) {
+        if (!(constraints instanceof Vec) || !(vars instanceof Vec)) throw new Error("Constraints and variables must be lists");
+
+        const g = [];
+        for(const c of constraints.elements) {
+            // constraint c: LHS = RHS -> LHS - RHS = 0
+            if (c instanceof Eq) {
+                g.push(new Sub(c.left, c.right).simplify());
+            } else {
+                g.push(c.simplify());
+            }
+        }
+
+        const x = vars.elements;
+        const lambdas = [];
+        for(let i=0; i<g.length; i++) {
+            lambdas.push(new Sym('lambda_' + (i+1)));
+        }
+
+        // L = f - sum(lambda_i * g_i)
+        let L = expr;
+        for(let i=0; i<g.length; i++) {
+            L = new Sub(L, new Mul(lambdas[i], g[i]));
+        }
+        L = L.simplify();
+
+        // Equations: grad(L) = 0
+        const eqs = [];
+        // dL/dx_i = 0
+        for(const xi of x) {
+            eqs.push(new Eq(L.diff(xi).simplify(), new Num(0)));
+        }
+        // dL/dlambda_i = 0 (constraints)
+        for(const li of lambdas) {
+            eqs.push(new Eq(L.diff(li).simplify(), new Num(0)));
+        }
+
+        const allVars = new Vec([...x, ...lambdas]);
+        return this._solveNonLinearSystem(new Vec(eqs), allVars);
+    }
+
+    _unitVector(v) {
+        if (!(v instanceof Vec)) throw new Error("unitVector requires a vector");
+        // Compute norm manually: sqrt(v . v)
+        const dot = new Mul(v, v).simplify();
+        const n = new Call('sqrt', [dot]).simplify();
+        return new Div(v, n).simplify();
+    }
+
+    _trigSimplify(expr) {
+        // 1. Reduce powers (sin^2 -> 1-cos(2x))
+        let res = this._linearizeTrig(expr).simplify();
+        // 2. Expand
+        res = res.expand().simplify();
+        // 3. Try to combine?
+        // Add.simplify handles basic sin^2+cos^2=1 if coefficients match
+        // Maybe try converting to exponential, simplify, convert back?
+        // For now, this chain is often sufficient for basic identity verification
+        return res;
     }
 }
 

@@ -10,6 +10,19 @@ class Expr {
     evaluateNumeric() { return NaN; }
     diff(varName) { throw new Error("diff not implemented"); }
     integrate(varName) { throw new Error("integrate not implemented for " + this.constructor.name); }
+    dependsOn(varName) {
+        if (this instanceof Sym) return this.name === varName.name;
+        if (this instanceof Num) return false;
+        if (this instanceof BinaryOp) return this.left.dependsOn(varName) || this.right.dependsOn(varName);
+        if (this instanceof Call) return this.args.some(a => a.dependsOn(varName));
+        if (this instanceof Vec) return this.elements.some(e => e.dependsOn(varName));
+        if (this instanceof Pow) return this.left.dependsOn(varName) || this.right.dependsOn(varName);
+        if (this instanceof Assignment) return this.value.dependsOn(varName);
+        if (this instanceof Eq) return this.left.dependsOn(varName) || this.right.dependsOn(varName);
+        if (this instanceof Not) return this.arg.dependsOn(varName);
+        if (this instanceof At) return this.obj.dependsOn(varName) || this.index.dependsOn(varName);
+        return false;
+    }
     expand() {
         // Expand properties like log(a*b) -> log(a) + log(b)
         // Only if user explicitly calls expand()
@@ -976,6 +989,15 @@ class Mul extends BinaryOp {
     integrate(varName) {
         if (this.left instanceof Num) return new Mul(this.left, this.right.integrate(varName));
         if (this.right instanceof Num) return new Mul(this.right, this.left.integrate(varName));
+
+        // Check for constant factors
+        if (!this.left.dependsOn(varName)) {
+            return new Mul(this.left, this.right.integrate(varName));
+        }
+        if (!this.right.dependsOn(varName)) {
+            return new Mul(this.right, this.left.integrate(varName));
+        }
+
         // If varName is not provided or invalid, default to generic Call
         if (!varName) return new Call("integrate", [this]);
         return new Call("integrate", [this, varName]);
