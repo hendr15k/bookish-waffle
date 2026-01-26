@@ -2380,6 +2380,20 @@ class CAS {
                 return this._trigSimplify(args[0]);
             }
 
+            if (node.funcName === 'rk4' || node.funcName === 'ode_solve') {
+                // rk4(diffEq, depVar, indepVar, t0, y0, t1, step)
+                if (node.args.length !== 7) throw new Error("rk4 requires 7 arguments: diffEq, depVar, indepVar, t0, y0, t1, step");
+                return this._rk4(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
+            }
+
+            if (node.funcName === 'gradient_descent' || node.funcName === 'grad_desc') {
+                // gradient_descent(func, vars, start, [alpha], [iter])
+                if (node.args.length < 3) throw new Error("gradient_descent requires at least 3 arguments: func, vars, start");
+                const alpha = node.args.length > 3 ? args[3] : new Num(0.1);
+                const iter = node.args.length > 4 ? args[4] : new Num(100);
+                return this._gradientDescent(args[0], args[1], args[2], alpha, iter);
+            }
+
             return new Call(node.funcName, args);
         }
 
@@ -13883,6 +13897,117 @@ class CAS {
         // Maybe try converting to exponential, simplify, convert back?
         // For now, this chain is often sufficient for basic identity verification
         return res;
+    }
+
+    _rk4(diffEq, depVar, indepVar, t0, y0, t1, step) {
+        if (!(depVar instanceof Sym)) throw new Error("Dependent variable must be a symbol");
+        if (!(indepVar instanceof Sym)) throw new Error("Independent variable must be a symbol");
+
+        // Parse numeric args
+        let T = t0.evaluateNumeric();
+        let Y = y0.evaluateNumeric();
+        const T_end = t1.evaluateNumeric();
+        const H = step.evaluateNumeric();
+
+        if (isNaN(T) || isNaN(Y) || isNaN(T_end) || isNaN(H)) throw new Error("rk4 numeric arguments must evaluate to numbers");
+
+        const points = [];
+        points.push(new Vec([new Num(T), new Num(Y)]));
+
+        // Define function f(t, y)
+        const f = (tVal, yVal) => {
+            // Substitute numeric values
+            let res = diffEq;
+            // Substitute indepVar first (t)
+            res = res.substitute(indepVar, new Num(tVal));
+            // Substitute depVar (y)
+            res = res.substitute(depVar, new Num(yVal));
+
+            const val = res.evaluateNumeric();
+            if (isNaN(val)) throw new Error("rk4 evaluation failed at t=" + tVal + ", y=" + yVal);
+            return val;
+        };
+
+        // Determine direction
+        const direction = (T_end > T) ? 1 : -1;
+        const h = (H > 0 && direction < 0) ? -H : Math.abs(H) * direction; // Ensure step moves towards T_end
+
+        const steps = Math.abs(Math.ceil((T_end - T) / h));
+
+        for(let i=0; i<steps; i++) {
+            const k1 = f(T, Y);
+            const k2 = f(T + h/2, Y + h*k1/2);
+            const k3 = f(T + h/2, Y + h*k2/2);
+            const k4 = f(T + h, Y + h*k3);
+
+            Y = Y + (h/6) * (k1 + 2*k2 + 2*k3 + k4);
+            T = T + h;
+
+            points.push(new Vec([new Num(T), new Num(Y)]));
+        }
+
+        return new Vec(points);
+    }
+
+    _gradientDescent(func, vars, start, alpha, iter) {
+        // vars: Vec or Sym
+        // start: Vec or Num
+        let varList = [];
+        if (vars instanceof Vec) varList = vars.elements;
+        else if (vars instanceof Sym) varList = [vars];
+        else throw new Error("vars must be a list of symbols or a symbol");
+
+        let currentPoint = [];
+        if (start instanceof Vec) {
+            currentPoint = start.elements.map(e => e.evaluateNumeric());
+        } else if (start instanceof Num) {
+            currentPoint = [start.value];
+        } else {
+            // Try evaluate
+            const val = start.evaluateNumeric();
+            if (!isNaN(val)) currentPoint = [val];
+            else throw new Error("start point must be numeric");
+        }
+
+        if (varList.length !== currentPoint.length) throw new Error("Dimension mismatch between vars and start point");
+
+        const lr = alpha.evaluateNumeric();
+        const maxIter = iter.evaluateNumeric();
+
+        if (isNaN(lr) || isNaN(maxIter)) throw new Error("Invalid learning rate or iterations");
+
+        // Compute symbolic gradients
+        const grads = varList.map(v => func.diff(v).simplify());
+
+        // Evaluation helper
+        const evalGrads = (pt) => {
+            return grads.map(g => {
+                let val = g;
+                for(let i=0; i<varList.length; i++) {
+                    val = val.substitute(varList[i], new Num(pt[i]));
+                }
+                const num = val.evaluateNumeric();
+                if (isNaN(num)) throw new Error("Gradient evaluation failed");
+                return num;
+            });
+        };
+
+        for(let k=0; k<maxIter; k++) {
+            const gradVals = evalGrads(currentPoint);
+
+            // Check convergence? (norm of grad < epsilon)
+            let normSq = 0;
+            for(const g of gradVals) normSq += g*g;
+            if (normSq < 1e-12) break;
+
+            // Update: x = x - alpha * grad
+            for(let i=0; i<currentPoint.length; i++) {
+                currentPoint[i] -= lr * gradVals[i];
+            }
+        }
+
+        if (currentPoint.length === 1) return new Num(currentPoint[0]);
+        return new Vec(currentPoint.map(x => new Num(x)));
     }
 }
 
