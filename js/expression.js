@@ -2928,6 +2928,12 @@ class Call extends Expr {
                 const res = new Div(expTerm, new Call('sqrt', [new Sym('pi')]));
                 return new Mul(new Num(-1), res);
             }
+            if (this.funcName === 'LambertW' || this.funcName === 'lambertw') {
+                // x * (W(x) - 1 + 1/W(x))
+                const W = new Call('lambertw', [varName]);
+                const term = new Add(new Sub(W, new Num(1)), new Div(new Num(1), W));
+                return new Mul(varName, term);
+            }
         }
         return new Call("integrate", [this, varName]);
     }

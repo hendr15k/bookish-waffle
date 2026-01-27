@@ -323,18 +323,58 @@ class CAS {
                                     let sum = new Num(0);
                                     let prev = lower;
 
+                                    const isInf = (n) => {
+                                        if (n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity')) return true;
+                                        if (n instanceof Mul && n.left instanceof Num && n.left.value < 0 && (n.right.name === 'Infinity' || n.right.name === 'infinity')) return true;
+                                        // Check for Add containing Infinity (e.g. NaN + Infinity)
+                                        if (n instanceof Add || n instanceof Sub) {
+                                            const hasInf = (x) => isInf(x);
+                                            if (hasInf(n.left) || hasInf(n.right)) return true;
+                                        }
+                                        return false;
+                                    };
+                                    const isNaNExpr = (n) => {
+                                        if (n instanceof Sym && n.name === 'NaN') return true;
+                                        if (n instanceof Num && isNaN(n.value)) return true;
+                                        if (n instanceof Add || n instanceof Sub) {
+                                            const hasNaN = (x) => isNaNExpr(x);
+                                            if (hasNaN(n.left) || hasNaN(n.right)) return true;
+                                        }
+                                        return false;
+                                    };
+
                                     for(const p of uniquePoles) {
                                         const pNum = new Num(p);
                                         // Integrate from prev to p (singularity)
                                         const part = this.evaluate(new Call('integrate', [func, varNode, prev, pNum]));
+
+                                        if (isInf(part)) {
+                                            if (part instanceof Mul && part.left instanceof Num && part.left.value < 0) return part;
+                                            if (part instanceof Sym) return part;
+                                            return new Sym('Infinity');
+                                        }
+                                        if (isNaNExpr(part)) return new Sym('NaN');
+
                                         sum = new Add(sum, part);
                                         prev = pNum;
                                     }
                                     // Last segment
                                     const part = this.evaluate(new Call('integrate', [func, varNode, prev, upper]));
-                                    sum = new Add(sum, part);
+                                    if (isInf(part)) {
+                                        if (part instanceof Mul && part.left instanceof Num && part.left.value < 0) return part;
+                                        if (part instanceof Sym) return part;
+                                        return new Sym('Infinity');
+                                    }
+                                    if (isNaNExpr(part)) return new Sym('NaN');
 
-                                    return sum.simplify();
+                                    sum = new Add(sum, part).simplify();
+                                    if (isInf(sum) || sum.toString().includes('Infinity')) {
+                                         if (sum instanceof Mul && sum.left instanceof Num && sum.left.value < 0) return sum;
+                                         if (sum instanceof Sym) return sum;
+                                         return new Sym('Infinity');
+                                    }
+
+                                    return sum;
                                 }
                             }
                         } catch(e) {
@@ -442,6 +482,26 @@ class CAS {
                     let valLower = indefinite.substitute(varNode, lower);
                     if (isBad(valLower)) {
                          valLower = this._limit(indefinite, varNode, lower, 0, 1);
+                    }
+
+                    // Explicit check for infinite limits to return clean result
+                    const isInf = (n) => (n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity')) ||
+                                         (n instanceof Mul && n.left instanceof Num && n.left.value === -1 && (n.right.name === 'Infinity' || n.right.name === 'infinity'));
+                    const isNaNExpr = (n) => (n instanceof Sym && n.name === 'NaN');
+
+                    if (isNaNExpr(valUpper) || isNaNExpr(valLower)) return new Sym('NaN');
+
+                    if (isInf(valUpper)) {
+                        if (isInf(valLower)) {
+                             const signUpper = (valUpper instanceof Mul) ? -1 : 1;
+                             const signLower = (valLower instanceof Mul) ? -1 : 1;
+                             if (signUpper !== signLower) return valUpper; // Inf - (-Inf) = Inf
+                             return new Sym('NaN'); // Inf - Inf
+                        }
+                        return valUpper;
+                    }
+                    if (isInf(valLower)) {
+                        return new Mul(new Num(-1), valLower).simplify();
                     }
 
                     return new Sub(valUpper, valLower).simplify();
@@ -2625,8 +2685,18 @@ class CAS {
 
             if (!this._dependsOn(ratio, varNode)) {
                 // It is a geometric series with ratio 'ratio'
-                // Sum = first * (ratio^count - 1) / (ratio - 1)
                 const first = expr.substitute(varNode, start).simplify();
+
+                // Check for Infinite Geometric Series
+                if (end instanceof Sym && (end.name === 'Infinity' || end.name === 'infinity')) {
+                    const absRatio = new Call('abs', [ratio]).evaluateNumeric();
+                    if (!isNaN(absRatio) && absRatio < 1) {
+                        // Sum = first / (1 - ratio)
+                        return new Div(first, new Sub(new Num(1), ratio)).simplify();
+                    }
+                }
+
+                // Sum = first * (ratio^count - 1) / (ratio - 1)
                 const count = new Add(new Sub(end, start), new Num(1)).simplify();
 
                 // Check if ratio is 1 (linear, already handled by constant check but safety)
@@ -2639,6 +2709,36 @@ class CAS {
                 return new Mul(first, new Div(num, den)).simplify();
             }
         } catch(e) {}
+
+        // Infinite Sums (p-series)
+        if (end instanceof Sym && (end.name === 'Infinity' || end.name === 'infinity')) {
+            // Check for p-series: k^-p or 1/k^p
+            // We normalized start to 1 below, but this check happens before normalization
+            // If start != 1, we should let normalization happen first.
+            // But normalization rewrites k -> j+shift.
+            // So k^-p becomes (j+shift)^-p. This is Hurwitz Zeta.
+
+            // For now, only support if start=1 (after recursion) or handled here if start=1
+            if (start instanceof Num && start.value === 1) {
+                // Case: k^p where p < -1
+                if (expr instanceof Pow && expr.left instanceof Sym && expr.left.name === varNode.name) {
+                    const p = expr.right;
+                    // If p < -1 (e.g. k^-2), convergent to zeta(-p)
+                    if (p instanceof Num && p.value < -1) {
+                         return new Call('zeta', [new Num(-p.value)]).simplify();
+                    }
+                }
+                // Case: 1 / k^p where p > 1
+                if (expr instanceof Div && expr.left instanceof Num && expr.left.value === 1) {
+                    if (expr.right instanceof Pow && expr.right.left instanceof Sym && expr.right.left.name === varNode.name) {
+                        const p = expr.right.right;
+                        if (p instanceof Num && p.value > 1) {
+                            return new Call('zeta', [p]).simplify();
+                        }
+                    }
+                }
+            }
+        }
 
         // Normalize sum(..., k, 1, n)
         // If start != 1, sum(f(k), k, a, b) = sum(f(j+a-1), j, 1, b-a+1)
