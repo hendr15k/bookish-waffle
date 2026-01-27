@@ -8,6 +8,7 @@ class CAS {
             'j': new Sym('i') // Electrical Engineering imaginary unit
         };
 
+        this.partitionsCache = {0: new Num(1)};
         this.functions = {};
 
         // Unit Conversion Rates (Base: SI units)
@@ -2378,6 +2379,26 @@ class CAS {
             if (node.funcName === 'trigSimplify') {
                 if (node.args.length !== 1) throw new Error("trigSimplify requires 1 argument");
                 return this._trigSimplify(args[0]);
+            }
+
+            if (node.funcName === 'partitions') {
+                if (node.args.length !== 1) throw new Error("partitions requires 1 argument");
+                return this._partitions(args[0]);
+            }
+
+            if (node.funcName === 'egyptian_fraction' || node.funcName === 'egyptian') {
+                if (node.args.length !== 1) throw new Error("egyptian_fraction requires 1 argument");
+                return this._egyptianFraction(args[0]);
+            }
+
+            if (node.funcName === 'is_coprime' || node.funcName === 'isCoprime') {
+                if (node.args.length !== 2) throw new Error("is_coprime requires 2 arguments");
+                return this._isCoprime(args[0], args[1]);
+            }
+
+            if (node.funcName === 'totient_sum' || node.funcName === 'totientSum') {
+                if (node.args.length !== 1) throw new Error("totient_sum requires 1 argument");
+                return this._totientSum(args[0]);
             }
 
             return new Call(node.funcName, args);
@@ -13883,6 +13904,135 @@ class CAS {
         // Maybe try converting to exponential, simplify, convert back?
         // For now, this chain is often sufficient for basic identity verification
         return res;
+    }
+
+    _partitions(n) {
+        n = n.simplify();
+        if (!(n instanceof Num && Number.isInteger(n.value))) {
+            return new Call('partitions', [n]);
+        }
+        const val = n.value;
+        if (val < 0) return new Num(0);
+        if (val === 0) return new Num(1);
+
+        if (this.partitionsCache[val] !== undefined) {
+            return this.partitionsCache[val];
+        }
+
+        // Iteratively fill cache to avoid stack overflow
+        for (let i = 1; i <= val; i++) {
+            if (this.partitionsCache[i] !== undefined) continue;
+
+            let sum = new Num(0);
+            let k = 1;
+            while (true) {
+                const gk1 = k * (3 * k - 1) / 2;
+                if (gk1 > i) break;
+
+                const p1 = this.partitionsCache[i - gk1];
+
+                if (k % 2 === 1) sum = new Add(sum, p1).simplify();
+                else sum = new Sub(sum, p1).simplify();
+
+                const gk2 = k * (3 * k + 1) / 2;
+                if (gk2 > i) break;
+
+                const p2 = this.partitionsCache[i - gk2];
+
+                if (k % 2 === 1) sum = new Add(sum, p2).simplify();
+                else sum = new Sub(sum, p2).simplify();
+
+                k++;
+            }
+            this.partitionsCache[i] = sum;
+        }
+
+        return this.partitionsCache[val];
+    }
+
+    _egyptianFraction(expr) {
+        expr = expr.simplify();
+        let num, den;
+
+        if (expr instanceof Num) {
+            if (Number.isInteger(expr.value)) return new Vec([expr]);
+            return new Call('egyptian_fraction', [expr]);
+        }
+
+        if (expr instanceof Div && expr.left instanceof Num && expr.right instanceof Num) {
+            num = expr.left.value;
+            den = expr.right.value;
+        } else {
+            return new Call('egyptian_fraction', [expr]);
+        }
+
+        if (num === 0) return new Vec([new Num(0)]);
+        if (den === 0) return new Sym('Infinity');
+
+        const res = [];
+
+        const sign = (expr.evaluateNumeric() < 0) ? -1 : 1;
+        num = Math.abs(num);
+        den = Math.abs(den);
+
+        if (num >= den) {
+            const intPart = Math.floor(num / den);
+            if (intPart !== 0) res.push(new Num(sign * intPart));
+            num = num % den;
+        }
+
+        const gcd = (a, b) => !b ? a : gcd(b, a % b);
+
+        while (num > 0) {
+            const d = Math.ceil(den / num);
+            res.push(new Div(new Num(sign), new Num(d)));
+
+            num = num * d - den;
+            den = den * d;
+
+            const g = gcd(num, den);
+            num /= g;
+            den /= g;
+        }
+
+        return new Vec(res);
+    }
+
+    _isCoprime(a, b) {
+        const g = this._gcd(a, b);
+        if (g instanceof Num) {
+            return new Num(g.value === 1 ? 1 : 0);
+        }
+        return new Call('is_coprime', [a, b]);
+    }
+
+    _totientSum(n) {
+        n = n.simplify();
+        if (!(n instanceof Num && Number.isInteger(n.value))) {
+            return new Call('totient_sum', [n]);
+        }
+        const val = n.value;
+        if (val <= 0) return new Num(0);
+        if (val === 1) return new Num(1);
+
+        if (!this.totientSumCache) this.totientSumCache = {};
+        if (this.totientSumCache[val] !== undefined) return this.totientSumCache[val];
+
+        let res = val * (val + 1) / 2;
+        let l = 2;
+        while (l <= val) {
+            const q = Math.floor(val / l);
+            if (q === 0) break;
+            const r = Math.floor(val / q);
+            const count = r - l + 1;
+            const term = this._totientSum(new Num(q)).value;
+            res -= count * term;
+            l = r + 1;
+        }
+
+        const resNum = new Num(res);
+        this.totientSumCache[val] = resNum;
+        return resNum;
     }
 }
 
