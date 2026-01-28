@@ -184,3 +184,8 @@ Matrizen werden als Listen von Listen geschrieben: `[[1,2],[3,4]]`.
 ### Sonstiges
 *   `clear()`: Löscht den Verlauf und alle Variablen.
 *   `help()`: Zeigt eine Liste von Befehlen an.
+
+### Regelungstechnik (Control Systems)
+*   `ss2tf(A, B, C, D)`: Wandelt Zustandsraummodell in Übertragungsfunktion um.
+*   `step(sys)`: Berechnet die Sprungantwort.
+*   `impulse(sys)`: Berechnet die Impulsantwort.

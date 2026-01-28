@@ -883,10 +883,12 @@ class Mul extends BinaryOp {
         }
 
         // Scalar * Vector
-        if (l instanceof Num && r instanceof Vec) {
+        // Check if one is Vector and other is Scalar (Num, Sym, etc, not Matrix unless checking dimensions)
+        // Assume if one is Vec and other is not, it is scalar mult.
+        if (r instanceof Vec && !(l instanceof Vec)) {
             return new Vec(r.elements.map(e => new Mul(l, e).simplify()));
         }
-        if (l instanceof Vec && r instanceof Num) {
+        if (l instanceof Vec && !(r instanceof Vec)) {
             return new Vec(l.elements.map(e => new Mul(e, r).simplify()));
         }
 
@@ -1205,6 +1207,56 @@ class Div extends BinaryOp {
              }
         }
 
+        // Factorial and Gamma Simplification
+        if (l instanceof Call && r instanceof Call && l.funcName === r.funcName) {
+             const name = l.funcName;
+             if (name === 'factorial' || name === 'gamma') {
+                 const n = l.args[0];
+                 const k = r.args[0];
+                 const diff = new Sub(n, k).simplify();
+                 if (diff instanceof Num && Number.isInteger(diff.value)) {
+                     const d = diff.value;
+                     if (name === 'factorial') {
+                         if (d > 0 && d <= 10) {
+                             // n! / (n-d)! = n*(n-1)*...*(n-d+1)
+                             let res = n;
+                             for(let i=1; i<d; i++) {
+                                 res = new Mul(res, new Sub(n, new Num(i))).simplify();
+                             }
+                             return res;
+                         } else if (d < 0 && d >= -10) {
+                             // n! / k! where k > n
+                             const absD = -d;
+                             let den = k;
+                             for(let i=1; i<absD; i++) {
+                                 den = new Mul(den, new Sub(k, new Num(i))).simplify();
+                             }
+                             return new Div(new Num(1), den).simplify();
+                         }
+                     }
+                     if (name === 'gamma') {
+                         // gamma(n) / gamma(k). n = k+d.
+                         // gamma(x+1) = x gamma(x).
+                         // gamma(k+d)/gamma(k) = (k+d-1)...(k)
+                         if (d > 0 && d <= 10) {
+                             let res = new Sub(n, new Num(1)).simplify();
+                             for(let i=1; i<d; i++) {
+                                 res = new Mul(res, new Sub(n, new Num(i+1))).simplify();
+                             }
+                             return res;
+                         } else if (d < 0 && d >= -10) {
+                             const absD = -d;
+                             let den = new Sub(k, new Num(1)).simplify();
+                             for(let i=1; i<absD; i++) {
+                                 den = new Mul(den, new Sub(k, new Num(i+1))).simplify();
+                             }
+                             return new Div(new Num(1), den).simplify();
+                         }
+                     }
+                 }
+             }
+        }
+
         // Simplify Powers in Division: x^a / x^b -> x^(a-b)
         let baseL = l;
         let expL = new Num(1);
@@ -1243,8 +1295,13 @@ class Div extends BinaryOp {
                     // Constant denominator, already handled by Num/Div rules usually, but coeff division?
                     // e.g. (2x+2)/2 -> x+1
                     if (Q.length === 1 && Q[0] !== 0) {
-                        const resCoeffs = P.map(c => c / Q[0]);
-                        return polyFromCoeffs(resCoeffs, varNode);
+                        // Avoid creating floats if possible
+                        // Only divide if all coefficients result in integers (or are close to integers)
+                        const allIntegers = P.every(c => Math.abs((c / Q[0]) - Math.round(c / Q[0])) < 1e-10);
+                        if (allIntegers) {
+                            const resCoeffs = P.map(c => c / Q[0]);
+                            return polyFromCoeffs(resCoeffs, varNode);
+                        }
                     }
                 } else {
                     const G = polyGcd(P, Q);

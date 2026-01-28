@@ -2380,6 +2380,21 @@ class CAS {
                 return this._trigSimplify(args[0]);
             }
 
+            if (node.funcName === 'ss2tf') {
+                if (node.args.length !== 4) throw new Error("ss2tf requires 4 arguments: A, B, C, D");
+                return this._ss2tf(args[0], args[1], args[2], args[3]);
+            }
+
+            if (node.funcName === 'step') {
+                if (node.args.length !== 1) throw new Error("step requires 1 argument: sys");
+                return this._step(args[0]);
+            }
+
+            if (node.funcName === 'impulse') {
+                if (node.args.length !== 1) throw new Error("impulse requires 1 argument: sys");
+                return this._impulse(args[0]);
+            }
+
             return new Call(node.funcName, args);
         }
 
@@ -13883,6 +13898,43 @@ class CAS {
         // Maybe try converting to exponential, simplify, convert back?
         // For now, this chain is often sufficient for basic identity verification
         return res;
+    }
+
+    _ss2tf(A, B, C, D) {
+        if (!(A instanceof Vec) || !(B instanceof Vec) || !(C instanceof Vec) || !(D instanceof Vec)) {
+            throw new Error("Arguments to ss2tf must be matrices");
+        }
+        // H(s) = C * (sI - A)^-1 * B + D
+        const s = new Sym('s');
+        const rows = A.elements.length;
+        // Identity I
+        const I = this._identity(new Num(rows));
+        const sI = new Mul(s, I).simplify();
+        const sI_minus_A = new Sub(sI, A).simplify();
+        const invMat = this._inv(sI_minus_A);
+
+        const term1 = new Mul(C, invMat).simplify();
+        const term2 = new Mul(term1, B).simplify();
+        const H = new Add(term2, D).simplify();
+        return H;
+    }
+
+    _step(sys) {
+        // Step response: Y(s) = H(s) * 1/s
+        // y(t) = ilaplace(Y(s), s, t)
+        // Assume sys depends on 's'
+        const s = new Sym('s');
+        const t = new Sym('t');
+        const Y = new Div(sys, s).simplify();
+        return this._ilaplace(Y, s, t);
+    }
+
+    _impulse(sys) {
+        // Impulse response: Y(s) = H(s) * 1
+        // y(t) = ilaplace(H(s), s, t)
+        const s = new Sym('s');
+        const t = new Sym('t');
+        return this._ilaplace(sys, s, t);
     }
 }
 
