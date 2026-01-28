@@ -2380,6 +2380,21 @@ class CAS {
                 return this._trigSimplify(args[0]);
             }
 
+            if (node.funcName === 'rect') {
+                if (node.args.length !== 2) throw new Error("rect requires 2 arguments: r, theta");
+                return this._rect(args[0], args[1]);
+            }
+
+            if (node.funcName === 'clamp') {
+                if (node.args.length !== 3) throw new Error("clamp requires 3 arguments: x, min, max");
+                return this._clamp(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'map') {
+                if (node.args.length !== 2) throw new Error("map requires 2 arguments: list, func");
+                return this._map(args[0], args[1]);
+            }
+
             return new Call(node.funcName, args);
         }
 
@@ -13871,6 +13886,30 @@ class CAS {
         const dot = new Mul(v, v).simplify();
         const n = new Call('sqrt', [dot]).simplify();
         return new Div(v, n).simplify();
+    }
+
+    _rect(r, theta) {
+        // r * (cos(theta) + i*sin(theta))
+        const cos = new Call('cos', [theta]);
+        const sin = new Call('sin', [theta]);
+        const iSin = new Mul(new Sym('i'), sin);
+        return new Mul(r, new Add(cos, iSin)).simplify();
+    }
+
+    _clamp(val, min, max) {
+        // max(min(val, max), min)
+        return new Call('max', [new Call('min', [val, max]), min]).simplify();
+    }
+
+    _map(list, func) {
+        if (!(list instanceof Vec)) throw new Error("map first argument must be a list");
+        const res = list.elements.map(e => {
+            if (func instanceof Sym) {
+                return new Call(func.name, [e]).simplify();
+            }
+            return new Call('map', [new Vec([e]), func]);
+        });
+        return new Vec(res);
     }
 
     _trigSimplify(expr) {

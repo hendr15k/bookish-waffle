@@ -1632,6 +1632,15 @@ class Pow extends BinaryOp {
              return new Pow(l.right, r).simplify();
         }
 
+        // (c * x)^n -> c^n * x^n (if c, n are numbers)
+        if (l instanceof Mul && l.left instanceof Num && r instanceof Num) {
+             const c = l.left;
+             const x = l.right;
+             const cn = new Pow(c, r).simplify();
+             const xn = new Pow(x, r).simplify();
+             return new Mul(cn, xn).simplify();
+        }
+
         // Simplify roots: (x^a)^(1/b) -> x^(a/b) ?
         // Simplification rule: (a^b)^c = a^(b*c)
         if (l instanceof Pow) {
