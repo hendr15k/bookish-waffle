@@ -2447,6 +2447,9 @@ class Call extends Expr {
         if (this.funcName === 'erfc') {
              return 1 - math_erf(argsVal[0]);
         }
+        if (this.funcName === 'Q') {
+             return 0.5 * (1 - math_erf(argsVal[0] / Math.SQRT2));
+        }
         if (this.funcName === 'erfinv') {
              return math_erfinv(argsVal[0]);
         }

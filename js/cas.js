@@ -1242,6 +1242,12 @@ class CAS {
                 return this._normalCDF(args[0], args[1], args[2]);
             }
 
+            if (node.funcName === 'Q') {
+                if (node.args.length !== 1) throw new Error("Q requires 1 argument");
+                // Q(x) = 0.5 * erfc(x/sqrt(2))
+                return new Mul(new Num(0.5), new Call('erfc', [new Div(args[0], new Call('sqrt', [new Num(2)]))])).simplify();
+            }
+
             if (node.funcName === 'invNorm') {
                 if (node.args.length !== 3) throw new Error("invNorm requires 3 arguments: area, mu, sigma");
                 return this._invNorm(args[0], args[1], args[2]);
@@ -2368,6 +2374,18 @@ class CAS {
                 // lagrange(f, constraints, vars)
                 if (node.args.length !== 3) throw new Error("lagrange requires 3 arguments: expr, constraints, vars");
                 return this._lagrangeMultiplier(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'simplex') {
+                // simplex(c, A, b)
+                if (node.args.length !== 3) throw new Error("simplex requires 3 arguments: objective(c), constraints(A), rhs(b)");
+                return this._simplex(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'groebner') {
+                // groebner(basis, vars)
+                if (node.args.length !== 2) throw new Error("groebner requires 2 arguments: basis(list), vars(list)");
+                return this._groebner(args[0], args[1]);
             }
 
             if (node.funcName === 'unitVector') {
@@ -13350,6 +13368,41 @@ class CAS {
 
         solveRec(normEqs, vars, []);
 
+        if (solutions.length === 0) {
+             // Fallback: Try Groebner Basis
+             try {
+                 // Check if polynomial system
+                 // We limit to small systems to avoid performance issues
+                 if (normEqs.length <= 5 && vars.length <= 5) {
+                     const G = this._groebner(new Vec(normEqs), new Vec(vars));
+
+                     // Check consistency (if G contains non-zero constant)
+                     let inconsistent = false;
+                     for(const g of G.elements) {
+                         if (g instanceof Num && g.value !== 0) inconsistent = true;
+                     }
+
+                     if (!inconsistent) {
+                         // Check if G is simpler? G is a basis.
+                         // If G has the same number of elements or we can solve it?
+                         // We try to solve the system defined by G using the same heuristic solver.
+                         // Often G is triangular or easier.
+                         // We need to avoid infinite loops if G == normEqs (semantically).
+                         // Assuming heuristic solver works better on triangular systems.
+
+                         // Only retry if G is not empty and different from input?
+                         // Just retry once. solveRec will recurse.
+                         const gEqs = G.elements;
+                         if (gEqs.length > 0) {
+                             solveRec(gEqs, vars, []);
+                         }
+                     }
+                 }
+             } catch(e) {
+                 // Groebner failed or timed out
+             }
+        }
+
         // Filter unique solutions?
         // Note: solutions is array of Vec.
 
@@ -13922,6 +13975,412 @@ class CAS {
         // Maybe try converting to exponential, simplify, convert back?
         // For now, this chain is often sufficient for basic identity verification
         return res;
+    }
+
+    _simplex(cVec, AMat, bVec) {
+        if (!(cVec instanceof Vec) || !(AMat instanceof Vec) || !(bVec instanceof Vec)) {
+            throw new Error("simplex arguments must be vectors/matrix");
+        }
+
+        // Convert inputs to numeric arrays
+        const c = cVec.elements.map(e => e.evaluateNumeric());
+        const b = bVec.elements.map(e => e.evaluateNumeric());
+        const A = AMat.elements.map(row => {
+            if (!(row instanceof Vec)) throw new Error("A must be a matrix");
+            return row.elements.map(e => e.evaluateNumeric());
+        });
+
+        if (c.some(isNaN) || b.some(isNaN) || A.some(row => row.some(isNaN))) {
+            return new Call('simplex', [cVec, AMat, bVec]); // Return symbolic if not numeric
+        }
+
+        const m = A.length; // constraints
+        const n = c.length; // variables
+
+        if (A[0].length !== n) throw new Error("Dimension mismatch A/c");
+        if (b.length !== m) throw new Error("Dimension mismatch A/b");
+
+        // Construct Tableau
+        // [ A  I  b ]
+        // [ -c 0  0 ]
+        // Rows: 0 to m-1 (constraints), m (objective)
+        // Cols: 0 to n-1 (vars), n to n+m-1 (slacks), n+m (rhs)
+
+        const tableau = [];
+        for(let i=0; i<m; i++) {
+            const row = [...A[i]];
+            // Add slacks
+            for(let j=0; j<m; j++) row.push(i === j ? 1 : 0);
+            row.push(b[i]);
+            tableau.push(row);
+        }
+        // Objective row: Z - c*x = 0  => -c*x + 0*s = -Z?
+        // We maximize Z = cx.
+        // Tableau bottom row usually minimizes reduced costs.
+        // Standard maximization tableau:
+        // z_j - c_j. For max problem, we stop when all non-negative?
+        // Or coefficients in equation Z - cx = 0.
+        // Row: [-c1, -c2, ..., 0, ..., 0] (RHS 0)
+        // Then we look for negative coeff to increase Z.
+        // Entering rule: Most negative coefficient in bottom row.
+
+        const objRow = [];
+        for(let i=0; i<n; i++) objRow.push(-c[i]);
+        for(let i=0; i<m; i++) objRow.push(0);
+        objRow.push(0); // Objective value Z
+        tableau.push(objRow);
+
+        const width = n + m + 1;
+        const height = m + 1;
+
+        // Iteration limit
+        let iter = 0;
+        const maxIter = 1000;
+
+        while(iter++ < maxIter) {
+            // 1. Find pivot column (entering variable)
+            // Look for most negative value in bottom row (excluding RHS)
+            let minVal = 0;
+            let pivotCol = -1;
+            for(let j=0; j<n+m; j++) {
+                if (tableau[m][j] < minVal) {
+                    minVal = tableau[m][j];
+                    pivotCol = j;
+                }
+            }
+
+            if (pivotCol === -1) {
+                // Optimal reached (no negative reduced costs)
+                break;
+            }
+
+            // 2. Find pivot row (leaving variable)
+            // Min ratio RHS/ColVal for ColVal > 0
+            let minRatio = Infinity;
+            let pivotRow = -1;
+
+            for(let i=0; i<m; i++) {
+                const val = tableau[i][pivotCol];
+                const rhs = tableau[i][width - 1];
+                if (val > 1e-9) {
+                    const ratio = rhs / val;
+                    if (ratio < minRatio) {
+                        minRatio = ratio;
+                        pivotRow = i;
+                    }
+                }
+            }
+
+            if (pivotRow === -1) {
+                throw new Error("Unbounded solution");
+            }
+
+            // 3. Pivot
+            const pivotVal = tableau[pivotRow][pivotCol];
+            // Normalize pivot row
+            for(let j=0; j<width; j++) tableau[pivotRow][j] /= pivotVal;
+
+            // Eliminate other rows
+            for(let i=0; i<height; i++) {
+                if (i !== pivotRow) {
+                    const factor = tableau[i][pivotCol];
+                    for(let j=0; j<width; j++) {
+                        tableau[i][j] -= factor * tableau[pivotRow][j];
+                    }
+                }
+            }
+        }
+
+        // Extract solution
+        // Basic variables correspond to columns with one 1 and rest 0.
+        // x variables are 0..n-1.
+        const xSol = new Array(n).fill(0);
+
+        for(let j=0; j<n; j++) {
+            let ones = 0;
+            let zeros = 0;
+            let oneRow = -1;
+            for(let i=0; i<m; i++) { // Check constraint rows
+                if (Math.abs(tableau[i][j] - 1) < 1e-9) {
+                    ones++;
+                    oneRow = i;
+                } else if (Math.abs(tableau[i][j]) < 1e-9) {
+                    zeros++;
+                }
+            }
+            // Also check objective row? No, basis is defined by A.
+            // If col j is basic, it has one 1 and rest 0 in A part.
+            // And coefficient in obj row should be 0.
+            if (ones === 1 && zeros === m - 1) {
+                xSol[j] = tableau[oneRow][width - 1];
+            }
+        }
+
+        const optimalValue = tableau[m][width - 1]; // Z
+
+        return new Vec([
+            new Vec(xSol.map(val => new Num(val))),
+            new Num(optimalValue)
+        ]);
+    }
+
+    _toTermList(poly, vars) {
+        // poly: Expr, vars: Vec of Sym
+        // Returns list of { coeff: Expr, exponents: [int] }
+        // Assumes poly is expanded
+        const terms = [];
+        const varsList = vars.elements;
+
+        const collect = (expr, sign) => {
+            if (expr instanceof Add) { collect(expr.left, sign); collect(expr.right, sign); return; }
+            if (expr instanceof Sub) { collect(expr.left, sign); collect(expr.right, -sign); return; }
+
+            // Analyze monomial
+            let coeff = new Num(sign);
+            const exponents = new Array(varsList.length).fill(0);
+
+            const factors = [];
+            const getFactors = (e) => {
+                if (e instanceof Mul) { getFactors(e.left); getFactors(e.right); }
+                else factors.push(e);
+            };
+            getFactors(expr);
+
+            for (const f of factors) {
+                let found = false;
+                for (let i = 0; i < varsList.length; i++) {
+                    const v = varsList[i];
+                    if (f.toString() === v.toString()) {
+                        exponents[i] += 1;
+                        found = true;
+                        break;
+                    } else if (f instanceof Pow && f.left.toString() === v.toString() && f.right instanceof Num) {
+                        exponents[i] += f.right.value;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    coeff = new Mul(coeff, f); // Accumulate coefficient
+                }
+            }
+            terms.push({ coeff: coeff.simplify(), exponents: exponents });
+        };
+
+        collect(poly.expand().simplify(), 1);
+
+        // Merge like terms
+        const mergedMap = {}; // key: exponents string -> { coeff, exponents }
+        for (const t of terms) {
+            const key = t.exponents.join(",");
+            if (mergedMap[key]) {
+                mergedMap[key].coeff = new Add(mergedMap[key].coeff, t.coeff).simplify();
+            } else {
+                mergedMap[key] = t;
+            }
+        }
+
+        const res = Object.values(mergedMap).filter(t => {
+            return !(t.coeff instanceof Num && t.coeff.value === 0);
+        });
+
+        // Sort by Lex order (descending)
+        res.sort((a, b) => this._monomialCompare(b.exponents, a.exponents));
+        return res;
+    }
+
+    _monomialCompare(e1, e2) {
+        // Lexicographic compare
+        for (let i = 0; i < e1.length; i++) {
+            if (e1[i] > e2[i]) return 1;
+            if (e1[i] < e2[i]) return -1;
+        }
+        return 0;
+    }
+
+    _termToExpr(term, varsList) {
+        let res = term.coeff;
+        for (let i = 0; i < varsList.length; i++) {
+            if (term.exponents[i] > 0) {
+                const pow = term.exponents[i] === 1 ? varsList[i] : new Pow(varsList[i], new Num(term.exponents[i]));
+                res = new Mul(res, pow);
+            }
+        }
+        return res;
+    }
+
+    _polyFromTermList(terms, varsList) {
+        if (terms.length === 0) return new Num(0);
+        let res = this._termToExpr(terms[0], varsList);
+        for (let i = 1; i < terms.length; i++) {
+            res = new Add(res, this._termToExpr(terms[i], varsList));
+        }
+        return res.simplify();
+    }
+
+    _polyDivMultivariate(fExpr, divisorsExpr, varsVec) {
+        // Returns remainder of f / [g1, ..., gk]
+        const varsList = varsVec.elements;
+        let p = this._toTermList(fExpr, varsVec);
+        const divisors = divisorsExpr.map(d => this._toTermList(d, varsVec));
+        const r = [];
+
+        // p is list of terms, divisors is list of list of terms
+        // All sorted descending lex
+
+        while (p.length > 0) {
+            let divisionOccurred = false;
+            const ltP = p[0]; // Leading term of p
+
+            for (let i = 0; i < divisors.length; i++) {
+                const g = divisors[i];
+                if (g.length === 0) continue;
+                const ltG = g[0];
+
+                // Check if ltG divides ltP
+                let divides = true;
+                const diffExp = [];
+                for (let k = 0; k < varsList.length; k++) {
+                    if (ltP.exponents[k] < ltG.exponents[k]) {
+                        divides = false;
+                        break;
+                    }
+                    diffExp.push(ltP.exponents[k] - ltG.exponents[k]);
+                }
+
+                if (divides) {
+                    // LT(p) / LT(g)
+                    const factorCoeff = new Div(ltP.coeff, ltG.coeff).simplify();
+                    const factor = { coeff: factorCoeff, exponents: diffExp };
+
+                    // p = p - factor * g
+                    // Perform subtraction on term lists
+                    // g * factor
+                    const gScaled = g.map(t => ({
+                        coeff: new Mul(t.coeff, factor.coeff).simplify(),
+                        exponents: t.exponents.map((e, idx) => e + factor.exponents[idx])
+                    }));
+
+                    // Subtract gScaled from p
+                    // Merge p and -gScaled
+                    const newPMap = {};
+                    for (const t of p) newPMap[t.exponents.join(",")] = t.coeff;
+                    for (const t of gScaled) {
+                        const key = t.exponents.join(",");
+                        if (newPMap[key]) {
+                            newPMap[key] = new Sub(newPMap[key], t.coeff).simplify();
+                        } else {
+                            newPMap[key] = new Mul(new Num(-1), t.coeff).simplify();
+                        }
+                    }
+
+                    // Reconstruct p
+                    const newP = [];
+                    for (const key in newPMap) {
+                        const c = newPMap[key];
+                        if (!(c instanceof Num && c.value === 0)) {
+                            newP.push({ coeff: c, exponents: key.split(",").map(Number) });
+                        }
+                    }
+                    newP.sort((a, b) => this._monomialCompare(b.exponents, a.exponents));
+                    p = newP;
+                    divisionOccurred = true;
+                    break;
+                }
+            }
+
+            if (!divisionOccurred) {
+                r.push(ltP);
+                p.shift(); // Remove LT(p) and continue
+            }
+        }
+
+        // r is list of terms, accumulated in reverse order of removal (actually LT removal preserves order roughly, but r is sum of remainders)
+        // Sort r
+        r.sort((a, b) => this._monomialCompare(b.exponents, a.exponents));
+        return this._polyFromTermList(r, varsList);
+    }
+
+    _sPolynomial(fExpr, gExpr, varsVec) {
+        const varsList = varsVec.elements;
+        const f = this._toTermList(fExpr, varsVec);
+        const g = this._toTermList(gExpr, varsVec);
+
+        if (f.length === 0 || g.length === 0) return new Num(0);
+
+        const ltF = f[0];
+        const ltG = g[0];
+
+        // LCM of exponents
+        const lcmExp = [];
+        for (let i = 0; i < varsList.length; i++) {
+            lcmExp.push(Math.max(ltF.exponents[i], ltG.exponents[i]));
+        }
+
+        // Term needed to match LCM
+        const multFExp = lcmExp.map((e, i) => e - ltF.exponents[i]);
+        const multGExp = lcmExp.map((e, i) => e - ltG.exponents[i]);
+
+        // S = coeffG * x^diffF * f - coeffF * x^diffG * g
+        // To avoid fractions, we can cross multiply coeffs: LT(g).coeff * f - LT(f).coeff * g
+        // But standard Buchberger divides by LT coeff to make monic?
+        // Let's use cross multiplication to stay in polynomial ring if possible (integers), or Div if Field.
+        // S = (LCM/LT(f)) * f - (LCM/LT(g)) * g
+
+        // Let termF = x^multFExp, termG = x^multGExp
+        // S = (1/coeffF) * termF * f - (1/coeffG) * termG * g
+        // Ideally we want to clear denominators?
+        // For simplicity: S = (termF * f) / coeffF - (termG * g) / coeffG
+        // Or S = coeffG * termF * f - coeffF * termG * g
+
+        const termF = this._termToExpr({ coeff: new Num(1), exponents: multFExp }, varsList);
+        const termG = this._termToExpr({ coeff: new Num(1), exponents: multGExp }, varsList);
+
+        const part1 = new Mul(new Mul(ltG.coeff, termF), fExpr);
+        const part2 = new Mul(new Mul(ltF.coeff, termG), gExpr);
+
+        return new Sub(part1, part2).expand().simplify();
+    }
+
+    _groebner(basisVec, varsVec) {
+        if (!(basisVec instanceof Vec) || !(varsVec instanceof Vec)) throw new Error("groebner arguments must be vectors");
+
+        let G = [...basisVec.elements]; // Array of Expr
+        let pairs = [];
+
+        for (let i = 0; i < G.length; i++) {
+            for (let j = i + 1; j < G.length; j++) {
+                pairs.push([G[i], G[j]]);
+            }
+        }
+
+        // Limit iterations for safety
+        let iter = 0;
+        const maxIter = 50;
+
+        while (pairs.length > 0 && iter++ < maxIter) {
+            const [f, g] = pairs.pop();
+            const S = this._sPolynomial(f, g, varsVec);
+            const remainder = this._polyDivMultivariate(S, G, varsVec);
+
+            if (!(remainder instanceof Num && remainder.value === 0)) {
+                // Check if remainder is already in G (symbolic check)
+                let exists = false;
+                for (const b of G) if (b.toString() === remainder.toString()) exists = true;
+
+                if (!exists) {
+                    for (const b of G) pairs.push([b, remainder]);
+                    G.push(remainder);
+                }
+            }
+        }
+
+        // Reduce Basis?
+        // A minimal reduced basis is nicer.
+        // 1. Make monic
+        // 2. Reduce each element wrt others
+        // Implementation of full reduced basis is complex. Return raw basis for now.
+        return new Vec(G);
     }
 }
 
