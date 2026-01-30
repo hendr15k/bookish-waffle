@@ -1268,6 +1268,53 @@ class Div extends BinaryOp {
             }
         }
 
+        // Factorial/Gamma Simplification
+        if (l instanceof Call && r instanceof Call && l.funcName === r.funcName) {
+            if (l.funcName === 'factorial') {
+                const a = l.args[0];
+                const b = r.args[0];
+                const diff = new Sub(a, b).simplify();
+                if (diff instanceof Num && Number.isInteger(diff.value)) {
+                    const k = diff.value;
+                    if (k > 0) {
+                        let res = new Num(1);
+                        for(let i=1; i<=k; i++) {
+                            res = new Mul(res, new Add(b, new Num(i)));
+                        }
+                        return res.simplify();
+                    } else if (k < 0) {
+                        let res = new Num(1);
+                        for(let i=1; i<=-k; i++) {
+                            res = new Mul(res, new Add(a, new Num(i)));
+                        }
+                        return new Div(new Num(1), res).simplify();
+                    }
+                }
+            }
+            if (l.funcName === 'gamma') {
+                const a = l.args[0];
+                const b = r.args[0];
+                const diff = new Sub(a, b).simplify();
+                if (diff instanceof Num && Number.isInteger(diff.value)) {
+                    const k = diff.value;
+                    if (k > 0) {
+                        let res = new Num(1);
+                        for(let i=0; i<k; i++) {
+                            res = new Mul(res, new Add(b, new Num(i)));
+                        }
+                        return res.simplify();
+                    } else if (k < 0) {
+                        const m = -k;
+                        let res = new Num(1);
+                        for(let i=1; i<=m; i++) {
+                            res = new Mul(res, new Sub(b, new Num(i)));
+                        }
+                        return new Div(new Num(1), res).simplify();
+                    }
+                }
+            }
+        }
+
         return new Div(l, r);
     }
     evaluateNumeric() { return this.left.evaluateNumeric() / this.right.evaluateNumeric(); }
