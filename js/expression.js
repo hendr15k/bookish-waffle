@@ -1242,9 +1242,13 @@ class Div extends BinaryOp {
                 if (Q.length <= 1) {
                     // Constant denominator, already handled by Num/Div rules usually, but coeff division?
                     // e.g. (2x+2)/2 -> x+1
+                    // Only apply if division is exact to avoid floats (e.g. x/6 -> 0.166x)
                     if (Q.length === 1 && Q[0] !== 0) {
-                        const resCoeffs = P.map(c => c / Q[0]);
-                        return polyFromCoeffs(resCoeffs, varNode);
+                        const allExact = P.every(c => Math.abs(c % Q[0]) < 1e-10);
+                        if (allExact) {
+                            const resCoeffs = P.map(c => c / Q[0]);
+                            return polyFromCoeffs(resCoeffs, varNode);
+                        }
                     }
                 } else {
                     const G = polyGcd(P, Q);
@@ -3294,6 +3298,15 @@ class And extends BinaryOp {
         // Idempotence: A and A -> A
         if (l.toString() === r.toString()) return l;
 
+        // Absorption: A and (A or B) -> A
+        if (r instanceof Or) {
+            if (r.left.toString() === l.toString() || r.right.toString() === l.toString()) return l;
+        }
+        // Absorption: (A or B) and A -> A
+        if (l instanceof Or) {
+            if (l.left.toString() === r.toString() || l.right.toString() === r.toString()) return r;
+        }
+
         // Complementarity: A and not(A) -> false
         if (l instanceof Not && l.arg.toString() === r.toString()) return new Num(0);
         if (r instanceof Not && r.arg.toString() === l.toString()) return new Num(0);
@@ -3339,6 +3352,15 @@ class Or extends BinaryOp {
 
         // Idempotence: A or A -> A
         if (l.toString() === r.toString()) return l;
+
+        // Absorption: A or (A and B) -> A
+        if (r instanceof And) {
+            if (r.left.toString() === l.toString() || r.right.toString() === l.toString()) return l;
+        }
+        // Absorption: (A and B) or A -> A
+        if (l instanceof And) {
+            if (l.left.toString() === r.toString() || l.right.toString() === r.toString()) return r;
+        }
 
         // Complementarity: A or not(A) -> true
         if (l instanceof Not && l.arg.toString() === r.toString()) return new Num(1);
