@@ -2870,6 +2870,48 @@ class Call extends Expr {
                     new Mul(new Num(0.5), new Call('ln', [new Add(new Num(1), new Pow(varName, new Num(2)))]))
                 );
             }
+            // integrate(asinh(x)) = x*asinh(x) - sqrt(x^2+1)
+            if (this.funcName === 'asinh') {
+                return new Sub(
+                    new Mul(varName, new Call('asinh', [varName])),
+                    new Call('sqrt', [new Add(new Pow(varName, new Num(2)), new Num(1))])
+                );
+            }
+            // integrate(acosh(x)) = x*acosh(x) - sqrt(x^2-1)
+            if (this.funcName === 'acosh') {
+                return new Sub(
+                    new Mul(varName, new Call('acosh', [varName])),
+                    new Call('sqrt', [new Sub(new Pow(varName, new Num(2)), new Num(1))])
+                );
+            }
+            // integrate(atanh(x)) = x*atanh(x) + 0.5*ln(1-x^2)
+            if (this.funcName === 'atanh') {
+                return new Add(
+                    new Mul(varName, new Call('atanh', [varName])),
+                    new Mul(new Num(0.5), new Call('ln', [new Sub(new Num(1), new Pow(varName, new Num(2)))]))
+                );
+            }
+            // integrate(acot(x)) = x*acot(x) + 0.5*ln(1+x^2)
+            if (this.funcName === 'acot') {
+                return new Add(
+                    new Mul(varName, new Call('acot', [varName])),
+                    new Mul(new Num(0.5), new Call('ln', [new Add(new Num(1), new Pow(varName, new Num(2)))]))
+                );
+            }
+            // integrate(asec(x)) = x*asec(x) - acosh(x)
+            if (this.funcName === 'asec') {
+                return new Sub(
+                    new Mul(varName, new Call('asec', [varName])),
+                    new Call('acosh', [varName])
+                );
+            }
+            // integrate(acsc(x)) = x*acsc(x) + acosh(x)
+            if (this.funcName === 'acsc') {
+                return new Add(
+                    new Mul(varName, new Call('acsc', [varName])),
+                    new Call('acosh', [varName])
+                );
+            }
             if (this.funcName === 'dirac') {
                 return new Call('heaviside', [varName]);
             }

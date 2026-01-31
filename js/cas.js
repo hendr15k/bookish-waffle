@@ -5665,6 +5665,33 @@ class CAS {
         const cols = matrix.elements[0].elements.length;
         if (rows !== cols) throw new Error("inv requires a square matrix");
 
+        // Optimized 2x2 Inverse for symbolic cleanliness
+        if (rows === 2) {
+            const a = matrix.elements[0].elements[0];
+            const b = matrix.elements[0].elements[1];
+            const c = matrix.elements[1].elements[0];
+            const d = matrix.elements[1].elements[1];
+
+            // det = ad - bc
+            const det = new Sub(new Mul(a, d), new Mul(b, c)).simplify();
+
+            // Check singularity
+            if (det instanceof Num && det.value === 0) throw new Error("Matrix is singular");
+
+            const invDet = new Div(new Num(1), det);
+
+            // Result: 1/det * [[d, -b], [-c, a]]
+            const m00 = new Mul(invDet, d).simplify();
+            const m01 = new Mul(invDet, new Mul(new Num(-1), b)).simplify();
+            const m10 = new Mul(invDet, new Mul(new Num(-1), c)).simplify();
+            const m11 = new Mul(invDet, a).simplify();
+
+            return new Vec([
+                new Vec([m00, m01]),
+                new Vec([m10, m11])
+            ]);
+        }
+
         // Use Gaussian Elimination (RREF of [A|I]) -> O(n^3)
         // Construct Augmented Matrix [A | I]
         const augRows = [];
