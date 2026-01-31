@@ -2295,6 +2295,26 @@ class CAS {
                  return this._commutator(args[0], args[1]);
             }
 
+            if (node.funcName === 'anti_commutator' || node.funcName === 'anticommutator') {
+                 if (node.args.length !== 2) throw new Error("anti_commutator requires 2 arguments: A, B");
+                 return this._antiCommutator(args[0], args[1]);
+            }
+
+            if (node.funcName === 'entropy') {
+                 if (node.args.length !== 1) throw new Error("entropy requires 1 argument (list)");
+                 return this._entropy(args[0]);
+            }
+
+            if (node.funcName === 'kl_divergence' || node.funcName === 'kldiv') {
+                 if (node.args.length !== 2) throw new Error("kl_divergence requires 2 arguments: P, Q");
+                 return this._klDivergence(args[0], args[1]);
+            }
+
+            if (node.funcName === 'black_scholes' || node.funcName === 'blackScholes') {
+                 if (node.args.length !== 6) throw new Error("black_scholes requires 6 arguments: S, K, T, r, sigma, type");
+                 return this._blackScholes(args[0], args[1], args[2], args[3], args[4], args[5]);
+            }
+
             if (node.funcName === 'gammaPDF') {
                 if (node.args.length !== 3) throw new Error("gammaPDF requires 3 arguments: x, k, theta");
                 return this._gammaPDF(args[0], args[1], args[2]);
@@ -2350,6 +2370,11 @@ class CAS {
             if (node.funcName === 'sinc') {
                 if (node.args.length !== 1) throw new Error("sinc requires 1 argument");
                 return this._sinc(args[0]);
+            }
+
+            if (['sigmoid', 'relu', 'softplus'].includes(node.funcName)) {
+                 if (node.args.length !== 1) throw new Error(`${node.funcName} requires 1 argument`);
+                 return new Call(node.funcName, args);
             }
 
             if (node.funcName === 'FresnelS') {
@@ -13511,6 +13536,84 @@ class CAS {
         const AB = new Mul(A, B).simplify();
         const BA = new Mul(B, A).simplify();
         return new Sub(AB, BA).simplify();
+    }
+
+    _antiCommutator(A, B) {
+        // {A, B} = AB + BA
+        const AB = new Mul(A, B).simplify();
+        const BA = new Mul(B, A).simplify();
+        return new Add(AB, BA).simplify();
+    }
+
+    _entropy(list) {
+        if (!(list instanceof Vec)) throw new Error("entropy requires a list");
+        // Shannon Entropy H(X) = -sum p(x) log2(p(x))
+        let sum = new Num(0);
+        for(const p of list.elements) {
+            // p * log2(p)
+            // if p=0, term is 0.
+            if (p instanceof Num && p.value === 0) continue;
+            const term = new Mul(p, new Call('log2', [p]));
+            sum = new Sub(sum, term);
+        }
+        return sum.simplify();
+    }
+
+    _klDivergence(P, Q) {
+        if (!(P instanceof Vec) || !(Q instanceof Vec)) throw new Error("Arguments must be lists");
+        if (P.elements.length !== Q.elements.length) throw new Error("Lists must be equal length");
+        // sum P(i) log2(P(i)/Q(i))
+        let sum = new Num(0);
+        for(let i=0; i<P.elements.length; i++) {
+            const p = P.elements[i];
+            const q = Q.elements[i];
+            if (p instanceof Num && p.value === 0) continue;
+            // log2(p/q)
+            const term = new Mul(p, new Call('log2', [new Div(p, q)]));
+            sum = new Add(sum, term);
+        }
+        return sum.simplify();
+    }
+
+    _blackScholes(S, K, T, r, sigma, type) {
+        // type: 'call' or 'put'
+        // d1 = (ln(S/K) + (r + sigma^2/2)*T) / (sigma*sqrt(T))
+        // d2 = d1 - sigma*sqrt(T)
+        // Call = S * N(d1) - K * e^(-rT) * N(d2)
+        // Put = K * e^(-rT) * N(-d2) - S * N(-d1)
+
+        // Type check
+        let isCall = true;
+        if (type instanceof Sym) {
+            if (type.name.toLowerCase().includes('put')) isCall = false;
+        } else if (type instanceof Num) {
+             // 0 for put? default call.
+        } else {
+             // Try toString
+             if (type.toString().toLowerCase().includes('put')) isCall = false;
+        }
+
+        const sqrtT = new Call('sqrt', [T]).simplify();
+        const sigmaSqrtT = new Mul(sigma, sqrtT).simplify();
+
+        const lnSK = new Call('ln', [new Div(S, K)]).simplify();
+        const rateTerm = new Add(r, new Div(new Pow(sigma, new Num(2)), new Num(2))).simplify();
+        const num = new Add(lnSK, new Mul(rateTerm, T)).simplify();
+
+        const d1 = new Div(num, sigmaSqrtT).simplify();
+        const d2 = new Sub(d1, sigmaSqrtT).simplify();
+
+        const expRT = new Call('exp', [new Mul(new Mul(new Num(-1), r), T)]).simplify();
+
+        if (isCall) {
+            const Nd1 = this._normalCDF(d1, new Num(0), new Num(1));
+            const Nd2 = this._normalCDF(d2, new Num(0), new Num(1));
+            return new Sub(new Mul(S, Nd1), new Mul(new Mul(K, expRT), Nd2)).simplify();
+        } else {
+            const Nmd1 = this._normalCDF(new Mul(new Num(-1), d1), new Num(0), new Num(1));
+            const Nmd2 = this._normalCDF(new Mul(new Num(-1), d2), new Num(0), new Num(1));
+            return new Sub(new Mul(new Mul(K, expRT), Nmd2), new Mul(S, Nmd1)).simplify();
+        }
     }
 
     _sinc(x) {
