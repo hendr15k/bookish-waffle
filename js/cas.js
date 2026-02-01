@@ -327,14 +327,14 @@ class CAS {
                                         const pNum = new Num(p);
                                         // Integrate from prev to p (singularity)
                                         const part = this.evaluate(new Call('integrate', [func, varNode, prev, pNum]));
-                                        sum = new Add(sum, part);
+                                        sum = new Add(sum, part).simplify();
                                         prev = pNum;
                                     }
                                     // Last segment
                                     const part = this.evaluate(new Call('integrate', [func, varNode, prev, upper]));
-                                    sum = new Add(sum, part);
+                                    sum = new Add(sum, part).simplify();
 
-                                    return sum.simplify();
+                                    return sum;
                                 }
                             }
                         } catch(e) {
@@ -3889,6 +3889,52 @@ class CAS {
             return this._solve(expr.left, varNode);
         }
 
+        // Check for Radicals: sqrt(g(x)) involved
+        const radicals = [];
+        const findRadicals = (e) => {
+            if (e instanceof Call && e.funcName === 'sqrt' && this._dependsOn(e, varNode)) {
+                radicals.push(e);
+            } else if (e instanceof Pow && e.right instanceof Num && !Number.isInteger(e.right.value) && this._dependsOn(e, varNode)) {
+                radicals.push(e);
+            } else if (e instanceof Call || e instanceof Add || e instanceof Sub || e instanceof Mul || e instanceof Div || e instanceof Pow) {
+                if (e.args) e.args.forEach(findRadicals);
+                if (e.left) findRadicals(e.left);
+                if (e.right) findRadicals(e.right);
+            }
+        };
+        findRadicals(expr);
+
+        if (radicals.length > 0) {
+            // Pick first radical R
+            const R = radicals[0];
+            const tempS = new Sym('__RADICAL_TEMP_' + Math.floor(Math.random() * 1000000));
+            let exprPoly = expr.substitute(R, tempS).simplify();
+
+            try {
+                // We use our own logic for extracting coefficients linear in tempS
+                const poly = this._getPolyCoeffs(exprPoly, tempS);
+                if (poly && poly.maxDeg === 1) {
+                    // A*S + C = 0 => S = -C/A
+                    const A = poly.coeffs[1];
+                    const C = poly.coeffs[0] || new Num(0);
+                    const rhs = new Div(new Mul(new Num(-1), C), A).simplify();
+
+                    // R = rhs. R is sqrt(B) or B^(1/n)
+                    let B, n;
+                    if (R instanceof Call && R.funcName === 'sqrt') {
+                        B = R.args[0];
+                        n = new Num(2);
+                    } else {
+                        B = R.left;
+                        n = new Div(new Num(1), R.right).simplify();
+                    }
+
+                    const newEq = new Sub(B, new Pow(rhs, n));
+                    return this._solve(newEq, varNode);
+                }
+            } catch(e) {}
+        }
+
         try {
             // Try factoring FIRST if degree > 2, before expanding?
             // No, expanding is needed to know degree.
@@ -4548,12 +4594,17 @@ class CAS {
                              (v instanceof Num && !isFinite(v.value));
 
         if (isBad(term)) {
-            // Try Laurent if singularity detected?
-            // Fallback to Laurent automatically could be expensive, but useful.
-            try {
-                return this._laurent(expr, varNode, point, order);
-            } catch(e) {
-                return term; // Return the Infinity/NaN if laurent fails
+            // Try limit (removable singularity)
+            const l = this._limit(expr, varNode, point);
+            if (!isBad(l)) {
+                term = l;
+            } else {
+                // Try Laurent if singularity detected
+                try {
+                    return this._laurent(expr, varNode, point, order);
+                } catch(e) {
+                    return term; // Return the Infinity/NaN if laurent fails
+                }
             }
         }
 
@@ -4562,6 +4613,12 @@ class CAS {
         for (let n = 1; n <= order; n++) {
             deriv = deriv.diff(varNode).simplify();
             let coeff = deriv.substitute(varNode, point).simplify();
+
+            if (isBad(coeff)) {
+                // Try limit for derivative
+                const l = this._limit(deriv, varNode, point);
+                if (!isBad(l)) coeff = l;
+            }
 
             if (coeff instanceof Num && coeff.value === 0) continue;
             if (isBad(coeff)) {
@@ -4693,6 +4750,7 @@ class CAS {
     }
 
     _gamma(z) {
+        if (z === 0 || (z < 0 && Number.isInteger(z))) return NaN; // Poles
         if (z < 0.5) {
             // Reflection formula for negative z or z < 0.5
             // Gamma(z) * Gamma(1-z) = pi / sin(pi*z)

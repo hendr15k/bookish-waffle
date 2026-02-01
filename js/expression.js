@@ -3750,6 +3750,7 @@ class Continue extends Expr {
 // --- Numeric Helpers ---
 
 function math_gamma(z) {
+    if (z === 0 || (z < 0 && Number.isInteger(z))) return NaN; // Poles
     if (z < 0.5) {
         return Math.PI / (Math.sin(Math.PI * z) * math_gamma(1 - z));
     }
