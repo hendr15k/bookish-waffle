@@ -2413,6 +2413,75 @@ class CAS {
                 return this._map(args[0], args[1]);
             }
 
+            if (node.funcName === 'residue') {
+                if (node.args.length !== 3) throw new Error("residue requires 3 arguments: expr, var, point");
+                return this._residue(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'singularities') {
+                if (node.args.length !== 2) throw new Error("singularities requires 2 arguments: expr, var");
+                return this._singularities(args[0], args[1]);
+            }
+
+            if (node.funcName === 'isContinuous' || node.funcName === 'is_continuous') {
+                if (node.args.length !== 3) throw new Error("isContinuous requires 3 arguments: expr, var, point");
+                return this._isContinuous(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'isDifferentiable' || node.funcName === 'is_differentiable') {
+                if (node.args.length !== 3) throw new Error("isDifferentiable requires 3 arguments: expr, var, point");
+                return this._isDifferentiable(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'routhHurwitz' || node.funcName === 'routh_hurwitz') {
+                if (node.args.length !== 2) throw new Error("routhHurwitz requires 2 arguments: poly, var");
+                return this._routhHurwitz(args[0], args[1]);
+            }
+
+            if (node.funcName === 'plotcontour' || node.funcName === 'contourPlot') {
+                 if (node.args.length < 3) throw new Error("plotcontour requires at least 3 arguments: expression, x, y");
+                 const expr = args[0];
+                 const xVar = args[1];
+                 const yVar = args[2];
+
+                 let xMin = -10, xMax = 10, yMin = -10, yMax = 10;
+                 if (node.args.length >= 7) {
+                     xMin = args[3].evaluateNumeric();
+                     xMax = args[4].evaluateNumeric();
+                     yMin = args[5].evaluateNumeric();
+                     yMax = args[6].evaluateNumeric();
+                 }
+
+                 return {
+                     type: 'plot',
+                     subtype: 'contour',
+                     expr: expr,
+                     varX: xVar,
+                     varY: yVar,
+                     xMin: isNaN(xMin) ? -10 : xMin,
+                     xMax: isNaN(xMax) ? 10 : xMax,
+                     yMin: isNaN(yMin) ? -10 : yMin,
+                     yMax: isNaN(yMax) ? 10 : yMax,
+                     toString: () => `Contour Plot ${expr}`,
+                     toLatex: () => `\\text{Contour Plot } ${expr.toLatex()}`
+                 };
+            }
+
+            if (node.funcName === 're' || node.funcName === 'real') {
+                if (node.args.length !== 1) throw new Error("re requires 1 argument");
+                return this._re(args[0]);
+            }
+
+            if (node.funcName === 'im' || node.funcName === 'imag') {
+                if (node.args.length !== 1) throw new Error("im requires 1 argument");
+                return this._im(args[0]);
+            }
+
+            if (node.funcName === 'conj' || node.funcName === 'conjugate') {
+                if (node.args.length !== 1) throw new Error("conj requires 1 argument");
+                return this._conj(args[0]);
+            }
+
             return new Call(node.funcName, args);
         }
 
@@ -14381,6 +14450,160 @@ class CAS {
         // 2. Reduce each element wrt others
         // Implementation of full reduced basis is complex. Return raw basis for now.
         return new Vec(G);
+    }
+
+    _re(expr) {
+        const c = this._getComplexParts(expr.simplify());
+        return c.re;
+    }
+
+    _im(expr) {
+        const c = this._getComplexParts(expr.simplify());
+        return c.im;
+    }
+
+    _conj(expr) {
+        const c = this._getComplexParts(expr.simplify());
+        return new Sub(c.re, new Mul(new Sym('i'), c.im)).simplify();
+    }
+
+    _residue(expr, varNode, point) {
+        const z_minus_c = new Sub(varNode, point).simplify();
+
+        // 1. Try simple pole: limit((z-c)*f(z))
+        const simpleTerm = new Mul(z_minus_c, expr).simplify();
+        const lim = this._limit(simpleTerm, varNode, point);
+
+        const isBad = (v) => (v instanceof Sym && (v.name === 'Infinity' || v.name === 'infinity' || v.name === 'NaN' || v.name === 'undefined')) ||
+                             (v instanceof Mul && v.left instanceof Num && v.left.value === -1 && (v.right instanceof Sym && (v.right.name === 'Infinity' || v.right.name === 'infinity'))) ||
+                             (v instanceof Num && !isFinite(v.value));
+
+        if (!isBad(lim)) {
+             return lim;
+        }
+
+        // 2. Higher order pole
+        // Try multiplying by (z-c)^k until limit is finite
+        for(let k=2; k<=10; k++) {
+            const term = new Mul(new Pow(z_minus_c, new Num(k)), expr).simplify();
+            const l = this._limit(term, varNode, point);
+
+            if (!isBad(l) && !(l instanceof Num && l.value === 0)) {
+                // Pole of order k
+                // Res = 1/(k-1)! * d^(k-1)/dz^(k-1) [term] evaluated at point
+                const fact = this._factorial(k-1);
+                let deriv = term;
+                for(let i=0; i<k-1; i++) {
+                    deriv = deriv.diff(varNode).simplify();
+                }
+                const res = deriv.substitute(varNode, point).simplify();
+                return new Div(res, new Num(fact)).simplify();
+            }
+        }
+
+        return new Call('residue', [expr, varNode, point]);
+    }
+
+    _singularities(expr, varNode) {
+        // Find roots of denominator
+        let den = new Num(1);
+        if (expr instanceof Div) den = expr.right;
+        else if (expr instanceof Pow && expr.right instanceof Num && expr.right.value < 0) {
+             den = expr.left;
+        }
+
+        if (den instanceof Num) return new Vec([]);
+
+        try {
+            return this._roots(den, varNode);
+        } catch (e) {
+            return new Vec([]);
+        }
+    }
+
+    _isContinuous(expr, varNode, point) {
+        const val = expr.substitute(varNode, point).simplify();
+        const lim = this._limit(expr, varNode, point);
+
+        // Check if val == lim
+        const diff = new Sub(val, lim).simplify();
+        if (diff instanceof Num && Math.abs(diff.value) < 1e-9) return new Num(1);
+
+        // If evaluateNumeric works
+        const vN = val.evaluateNumeric();
+        const lN = lim.evaluateNumeric();
+        if (!isNaN(vN) && !isNaN(lN) && Math.abs(vN - lN) < 1e-9) return new Num(1);
+
+        return new Num(0);
+    }
+
+    _isDifferentiable(expr, varNode, point) {
+        const deriv = expr.diff(varNode).simplify();
+
+        const left = this._limit(deriv, varNode, point, 0, -1);
+        const right = this._limit(deriv, varNode, point, 0, 1);
+
+        const lN = left.evaluateNumeric();
+        const rN = right.evaluateNumeric();
+
+        if (!isNaN(lN) && !isNaN(rN) && isFinite(lN) && isFinite(rN)) {
+             if (Math.abs(lN - rN) > 1e-9) return new Num(0);
+             return new Num(1);
+        }
+
+        const val = deriv.substitute(varNode, point).simplify();
+        const valN = val.evaluateNumeric();
+
+        if (!isNaN(valN) && isFinite(valN)) return new Num(1);
+
+        return new Num(0);
+    }
+
+    _routhHurwitz(poly, varNode) {
+        const info = this._getPolyCoeffs(poly, varNode);
+        if (!info) throw new Error("Argument must be a polynomial");
+
+        const n = info.maxDeg;
+        const coeffs = [];
+        for(let i=n; i>=0; i--) {
+            coeffs.push(info.coeffs[i] || new Num(0));
+        }
+
+        // Rows
+        const rows = [];
+        const r0 = [];
+        const r1 = [];
+
+        for(let i=0; i<coeffs.length; i+=2) r0.push(coeffs[i]);
+        for(let i=1; i<coeffs.length; i+=2) r1.push(coeffs[i]);
+
+        while(r0.length > r1.length) r1.push(new Num(0));
+        while(r1.length > r0.length) r0.push(new Num(0));
+
+        rows.push(new Vec(r0));
+        rows.push(new Vec(r1));
+
+        const width = r0.length;
+
+        for(let i=2; i<=n; i++) {
+            const prev1 = rows[i-1].elements;
+            const prev2 = rows[i-2].elements;
+            const current = [];
+
+            const pivot = prev1[0];
+
+            for(let j=0; j<width-1; j++) {
+                const term1 = new Mul(prev1[0], prev2[j+1] || new Num(0));
+                const term2 = new Mul(prev2[0], prev1[j+1] || new Num(0));
+                const num = new Sub(term1, term2);
+                const val = new Div(num, pivot).simplify();
+                current.push(val);
+            }
+            current.push(new Num(0));
+            rows.push(new Vec(current));
+        }
+
+        return new Vec(rows);
     }
 }
 
