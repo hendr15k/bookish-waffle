@@ -917,6 +917,14 @@ class Mul extends BinaryOp {
         if (l instanceof Num && l.value === 1) return r;
         if (r instanceof Num && r.value === 1) return l;
 
+        // x * dirac(x) -> 0
+        if (r instanceof Call && (r.funcName === 'dirac' || r.funcName === 'delta') && r.args.length === 1) {
+            if (l.toString() === r.args[0].toString()) return new Num(0);
+        }
+        if (l instanceof Call && (l.funcName === 'dirac' || l.funcName === 'delta') && l.args.length === 1) {
+            if (r.toString() === l.args[0].toString()) return new Num(0);
+        }
+
         // Scalar Associativity: c1 * (c2 * x) -> (c1*c2) * x
         if (l instanceof Num && r instanceof Mul && r.left instanceof Num) {
             return new Mul(new Num(l.value * r.left.value), r.right).simplify();
@@ -1987,6 +1995,8 @@ class Call extends Expr {
             // ln(e) -> 1
             if (arg instanceof Sym && arg.name === 'e') return new Num(1);
             if (arg instanceof Num && arg.value === 1) return new Num(0);
+            if (arg instanceof Sym && (arg.name === 'Infinity' || arg.name === 'infinity')) return new Sym('Infinity');
+            if (arg instanceof Num && arg.value === 0) return new Mul(new Num(-1), new Sym('Infinity'));
         }
         if (this.funcName === 'log') {
             const arg = simpleArgs[0];
@@ -2026,6 +2036,10 @@ class Call extends Expr {
             }
             if (arg instanceof Num && arg.value === 0) return new Num(1);
             if (arg instanceof Num && arg.value === 1) return new Sym('e');
+            // exp(Infinity) -> Infinity
+            if (arg instanceof Sym && (arg.name === 'Infinity' || arg.name === 'infinity')) return new Sym('Infinity');
+            // exp(-Infinity) -> 0
+            if (arg instanceof Mul && arg.left instanceof Num && arg.left.value === -1 && (arg.right instanceof Sym && (arg.right.name === 'Infinity' || arg.right.name === 'infinity'))) return new Num(0);
         }
         if (this.funcName === 'sign') {
             const arg = simpleArgs[0];
@@ -2649,10 +2663,26 @@ class Call extends Expr {
         if (this.funcName === 'sqrt') return new Div(u.diff(varName), new Mul(new Num(2), new Call('sqrt', [u])));
         if (this.funcName === 'abs') return new Mul(new Call('sign', [u]), u.diff(varName));
         if (this.funcName === 'min' || this.funcName === 'max') {
-             // Derivative of min(f, g) is f' * step(g-f) + g' * step(f-g) roughly (at intersections undefined)
-             // We can return derivative of the evaluated piecewise if possible, but structure is dynamic.
-             // Simplest: piecewise(diff(f), f<g, diff(g), g<=f)
-             // For now, symbolic.
+             // diff(max(f, g)) = f' * H(f-g) + g' * H(g-f)
+             // diff(min(f, g)) = f' * H(g-f) + g' * H(f-g)
+             if (this.args.length === 2) {
+                 const f = this.args[0];
+                 const g = this.args[1];
+                 const df = f.diff(varName);
+                 const dg = g.diff(varName);
+
+                 if (this.funcName === 'max') {
+                     return new Add(
+                         new Mul(df, new Call('heaviside', [new Sub(f, g)])),
+                         new Mul(dg, new Call('heaviside', [new Sub(g, f)]))
+                     );
+                 } else {
+                     return new Add(
+                         new Mul(df, new Call('heaviside', [new Sub(g, f)])),
+                         new Mul(dg, new Call('heaviside', [new Sub(f, g)]))
+                     );
+                 }
+             }
              return new Call('diff', [this, varName]);
         }
         if (this.funcName === 'piecewise') {
