@@ -1767,6 +1767,27 @@ class Pow extends BinaryOp {
         return new Pow(l, r);
     }
     toLatex() {
+        // Special case for Trig^n(x): \sin^2(x)
+        if (this.left instanceof Call) {
+            const trigFuncs = ['sin', 'cos', 'tan', 'csc', 'sec', 'cot', 'sinh', 'cosh', 'tanh', 'csch', 'sech', 'coth', 'asin', 'acos', 'atan'];
+            if (trigFuncs.includes(this.left.funcName)) {
+                const argsTex = this.left.args.map(a => a.toLatex());
+                const expTex = this.right.toLatex();
+
+                let cmd = `\\${this.left.funcName}`;
+                const mapFunctions = {
+                    'asin': '\\arcsin', 'acos': '\\arccos', 'atan': '\\arctan',
+                    'sec': '\\sec', 'csc': '\\csc', 'cot': '\\cot',
+                    'asec': '\\operatorname{arcsec}', 'acsc': '\\operatorname{arccsc}', 'acot': '\\operatorname{arccot}',
+                    'asinh': '\\operatorname{asinh}', 'acosh': '\\operatorname{acosh}', 'atanh': '\\operatorname{atanh}',
+                    'sech': '\\operatorname{sech}', 'csch': '\\operatorname{csch}', 'coth': '\\operatorname{coth}'
+                };
+                if (mapFunctions[this.left.funcName]) cmd = mapFunctions[this.left.funcName];
+
+                return `${cmd}^{${expTex}}\\left(${argsTex.join(", ")}\\right)`;
+            }
+        }
+
         let lTex = this.left.toLatex();
         if (this.left instanceof Add || this.left instanceof Sub || this.left instanceof Mul || this.left instanceof Div || this.left instanceof Pow) lTex = `\\left(${lTex}\\right)`;
         return `{${lTex}}^{${this.right.toLatex()}}`;
