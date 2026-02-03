@@ -1600,6 +1600,11 @@ class CAS {
                 return this._desolve(args[0], args[1]);
             }
 
+            if (node.funcName === 'rk4') {
+                if (node.args.length !== 7) throw new Error("rk4 requires 7 arguments: ode, depVar, indepVar, initVal, t0, t1, step");
+                return this._rk4(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
+            }
+
             if (node.funcName === 'rsolve') {
                 // rsolve(eq, a(n), [conds])
                 if (node.args.length < 2) throw new Error("rsolve requires at least 2 arguments: equation, recurrence_term");
@@ -5665,6 +5670,58 @@ class CAS {
         const cols = matrix.elements[0].elements.length;
         if (rows !== cols) throw new Error("inv requires a square matrix");
 
+        // 2x2 Optimization
+        if (rows === 2) {
+            const [[a, b], [c, d]] = matrix.elements.map(r => r.elements);
+            const det = new Sub(new Mul(a, d), new Mul(b, c)).simplify();
+            if (det instanceof Num && det.value === 0) throw new Error("Matrix is singular");
+
+            const invDet = new Div(new Num(1), det);
+            const res = [
+                [new Mul(invDet, d), new Mul(invDet, new Mul(new Num(-1), b))],
+                [new Mul(invDet, new Mul(new Num(-1), c)), new Mul(invDet, a)]
+            ];
+            return new Vec(res.map(r => new Vec(r.map(e => e.simplify()))));
+        }
+
+        // 3x3 Optimization (Cramer's Rule / Adjugate)
+        if (rows === 3) {
+            const [[a, b, c], [d, e, f], [g, h, i]] = matrix.elements.map(r => r.elements);
+            // Cofactors
+            const A = new Sub(new Mul(e, i), new Mul(f, h));
+            const B = new Sub(new Mul(f, g), new Mul(d, i));
+            const C = new Sub(new Mul(d, h), new Mul(e, g));
+
+            const det = new Add(new Add(new Mul(a, A), new Mul(b, B)), new Mul(c, C)).simplify();
+            if (det instanceof Num && det.value === 0) throw new Error("Matrix is singular");
+            const invDet = new Div(new Num(1), det);
+
+            // Adjugate Matrix (Transpose of Cofactor Matrix)
+            const adj = [
+                [
+                    A,
+                    new Sub(new Mul(c, h), new Mul(b, i)),
+                    new Sub(new Mul(b, f), new Mul(c, e))
+                ],
+                [
+                    B,
+                    new Sub(new Mul(a, i), new Mul(c, g)),
+                    new Sub(new Mul(c, d), new Mul(a, f))
+                ],
+                [
+                    C,
+                    new Sub(new Mul(b, g), new Mul(a, h)),
+                    new Sub(new Mul(a, e), new Mul(b, d))
+                ]
+            ];
+
+            const res = [];
+            for(let r=0; r<3; r++) {
+                res.push(new Vec(adj[r].map(x => new Mul(invDet, x).simplify())));
+            }
+            return new Vec(res);
+        }
+
         // Use Gaussian Elimination (RREF of [A|I]) -> O(n^3)
         // Construct Augmented Matrix [A | I]
         const augRows = [];
@@ -9267,6 +9324,107 @@ class CAS {
         }
 
         return expr;
+    }
+
+    _rk4(ode, depVar, indepVar, initVal, t0, t1, step) {
+        // depVar: y, indepVar: t
+        // ode: expression f(t, y) such that y' = f(t, y)
+        // initVal: y(t0)
+        // range: t0 to t1, step size h
+
+        // Check if System
+        const isSystem = (depVar instanceof Vec);
+        let h = step.evaluateNumeric();
+        let currentT = t0.evaluateNumeric();
+        let targetT = t1.evaluateNumeric();
+        let currentY = isSystem ? initVal.elements.map(e => e.evaluateNumeric()) : initVal.evaluateNumeric();
+
+        if (isNaN(h) || isNaN(currentT) || isNaN(targetT)) return new Call('rk4', [ode, depVar, indepVar, initVal, t0, t1, step]);
+
+        // Ensure step direction
+        if ((targetT > currentT && h < 0) || (targetT < currentT && h > 0)) h = -h;
+
+        const points = [];
+        // Push initial point
+        if (isSystem) {
+            points.push(new Vec([new Num(currentT), ...currentY.map(v => new Num(v))]));
+        } else {
+            points.push(new Vec([new Num(currentT), new Num(currentY)]));
+        }
+
+        const f = (t, y) => {
+            // Evaluate ode at (t, y)
+            // Substitute t -> t_val
+            // Substitute y -> y_val (or y1->v1, y2->v2...)
+            // To be efficient, we should avoid full symbolic substitution if possible.
+            // But since we don't have a compiled function, we must substitute.
+
+            if (isSystem) {
+                // ode is Vec of expressions
+                const res = [];
+                // Create substitution map for this step to avoid creating intermediate Exprs repeatedly?
+                // Actually, substitute takes one variable.
+
+                // Construct a temporary assignment? No.
+                // We must iterate.
+                for(let i=0; i<ode.elements.length; i++) {
+                    let e = ode.elements[i];
+                    // Substitute t
+                    e = e.substitute(indepVar, new Num(t));
+                    // Substitute all y vars
+                    for(let j=0; j<depVar.elements.length; j++) {
+                        e = e.substitute(depVar.elements[j], new Num(y[j]));
+                    }
+                    res.push(e.evaluateNumeric());
+                }
+                return res;
+            } else {
+                let e = ode;
+                e = e.substitute(indepVar, new Num(t));
+                e = e.substitute(depVar, new Num(y));
+                return e.evaluateNumeric();
+            }
+        };
+
+        const add = (y, k, scale) => {
+            if (isSystem) return y.map((v, i) => v + k[i] * scale);
+            return y + k * scale;
+        };
+
+        const steps = Math.ceil(Math.abs((targetT - currentT) / h));
+        // Safety limit
+        if (steps > 10000) throw new Error("rk4: Too many steps");
+
+        for(let i=0; i<steps; i++) {
+            // Check bounds
+            if ((h > 0 && currentT >= targetT) || (h < 0 && currentT <= targetT)) break;
+
+            // Adjust last step
+            if (i === steps - 1) h = targetT - currentT;
+
+            const k1 = f(currentT, currentY);
+            const k2 = f(currentT + h/2, add(currentY, k1, h/2));
+            const k3 = f(currentT + h/2, add(currentY, k2, h/2));
+            const k4 = f(currentT + h, add(currentY, k3, h));
+
+            if (isSystem) {
+                // Check if any result is NaN
+                if (k1.some(isNaN)) break;
+                currentY = currentY.map((v, j) => v + (h/6) * (k1[j] + 2*k2[j] + 2*k3[j] + k4[j]));
+            } else {
+                if (isNaN(k1)) break;
+                currentY = currentY + (h/6) * (k1 + 2*k2 + 2*k3 + k4);
+            }
+            currentT += h;
+
+            if (isSystem) {
+                points.push(new Vec([new Num(currentT), ...currentY.map(v => new Num(v))]));
+            } else {
+                points.push(new Vec([new Num(currentT), new Num(currentY)]));
+            }
+        }
+
+        return new Vec(points);
     }
 
     _fourier(expr, varNode, n, L) {
