@@ -2388,6 +2388,31 @@ class CAS {
                 return this._groebner(args[0], args[1]);
             }
 
+            if (node.funcName === 'ctrb') {
+                if (node.args.length !== 2) throw new Error("ctrb requires 2 arguments: A, B");
+                return this._ctrb(args[0], args[1]);
+            }
+            if (node.funcName === 'obsv') {
+                if (node.args.length !== 2) throw new Error("obsv requires 2 arguments: A, C");
+                return this._obsv(args[0], args[1]);
+            }
+            if (node.funcName === 'isControllable') {
+                if (node.args.length !== 2) throw new Error("isControllable requires 2 arguments: A, B");
+                return this._isControllable(args[0], args[1]);
+            }
+            if (node.funcName === 'isObservable') {
+                if (node.args.length !== 2) throw new Error("isObservable requires 2 arguments: A, C");
+                return this._isObservable(args[0], args[1]);
+            }
+            if (node.funcName === 'ackermann' || node.funcName === 'acker') {
+                if (node.args.length !== 3) throw new Error("ackermann requires 3 arguments: A, B, poles");
+                return this._ackermann(args[0], args[1], args[2]);
+            }
+            if (node.funcName === 'ss2tf') {
+                if (node.args.length !== 4) throw new Error("ss2tf requires 4 arguments: A, B, C, D");
+                return this._ss2tf(args[0], args[1], args[2], args[3]);
+            }
+
             if (node.funcName === 'unitVector') {
                 if (node.args.length !== 1) throw new Error("unitVector requires 1 argument");
                 return this._unitVector(args[0]);
@@ -14381,6 +14406,141 @@ class CAS {
         // 2. Reduce each element wrt others
         // Implementation of full reduced basis is complex. Return raw basis for now.
         return new Vec(G);
+    }
+
+    _horzCat(matrices) {
+        if (matrices.length === 0) return new Vec([]);
+        const rows = matrices[0].elements.length;
+        const resRows = [];
+
+        for(let r=0; r<rows; r++) {
+            let newRow = [];
+            for(const mat of matrices) {
+                if (mat.elements.length !== rows) throw new Error("Dimension mismatch in horizontal concatenation");
+                // mat.elements[r] is a Vec (row).
+                newRow = newRow.concat(mat.elements[r].elements);
+            }
+            resRows.push(new Vec(newRow));
+        }
+        return new Vec(resRows);
+    }
+
+    _ctrb(A, B) {
+        if (!(A instanceof Vec) || !(B instanceof Vec)) throw new Error("ctrb requires matrices A and B");
+        const n = A.elements.length;
+        // B, AB, A^2B, ...
+        const blocks = [B];
+        let term = B;
+        for(let i=1; i<n; i++) {
+            term = new Mul(A, term).simplify();
+            blocks.push(term);
+        }
+        return this._horzCat(blocks);
+    }
+
+    _obsv(A, C) {
+        if (!(A instanceof Vec) || !(C instanceof Vec)) throw new Error("obsv requires matrices A and C");
+        const n = A.elements.length;
+        // C; CA; ...
+        const blocks = [C];
+        let term = C;
+        for(let i=1; i<n; i++) {
+            term = new Mul(term, A).simplify();
+            blocks.push(term);
+        }
+
+        // Vertical concat
+        let allRows = [];
+        for(const mat of blocks) {
+            allRows = allRows.concat(mat.elements);
+        }
+        return new Vec(allRows);
+    }
+
+    _isControllable(A, B) {
+        const C = this._ctrb(A, B);
+        const r = this._rank(C);
+        const n = A.elements.length;
+        if (r instanceof Num && r.value === n) return new Num(1);
+        if (r instanceof Num) return new Num(0);
+        return new Eq(r, new Num(n));
+    }
+
+    _isObservable(A, C) {
+        const O = this._obsv(A, C);
+        const r = this._rank(O);
+        const n = A.elements.length;
+        if (r instanceof Num && r.value === n) return new Num(1);
+        if (r instanceof Num) return new Num(0);
+        return new Eq(r, new Num(n));
+    }
+
+    _ackermann(A, B, poles) {
+        if (!(poles instanceof Vec)) throw new Error("Poles must be a list");
+        const n = A.elements.length;
+        if (poles.elements.length !== n) throw new Error("Number of poles must match system order");
+
+        // Form characteristic polynomial phi(s) = (s-p1)(s-p2)...
+        let s = new Sym('__s_ackermann');
+        let phi = new Num(1);
+        for(const p of poles.elements) {
+            phi = new Mul(phi, new Sub(s, p)).simplify();
+        }
+
+        const polyRes = this._getPolyCoeffs(phi, s);
+        if (!polyRes) throw new Error("Failed to get poly coeffs for Ackermann");
+
+        const coeffs = polyRes.coeffs;
+        const maxDeg = polyRes.maxDeg;
+
+        let phiA = this._zeros(new Num(n), new Num(n)); // Zero matrix
+        for(let i=0; i<=maxDeg; i++) {
+            const c = coeffs[i];
+            // c is Expr (Num or otherwise)
+            if (!c) continue;
+            // Check numeric zero
+            if (c instanceof Num && c.value === 0) continue;
+
+            let term;
+            if (i === 0) {
+                term = new Mul(c, this._identity(new Num(n))).simplify();
+            } else {
+                let Ai = this._matrixPow(A, new Num(i));
+                term = new Mul(c, Ai).simplify();
+            }
+            phiA = new Add(phiA, term).simplify();
+        }
+
+        const C = this._ctrb(A, B);
+        const invC = this._inv(C);
+
+        // Vector [0 ... 0 1]
+        const e_n = [];
+        for(let i=0; i<n-1; i++) e_n.push(new Num(0));
+        e_n.push(new Num(1));
+        const vecEn = new Vec([new Vec(e_n)]); // 1xn matrix
+
+        const res = new Mul(new Mul(vecEn, invC), phiA).simplify();
+        return res;
+    }
+
+    _ss2tf(A, B, C, D) {
+        const s = new Sym('s');
+        const n = A.elements.length;
+        const I = this._identity(new Num(n));
+        const sI = new Mul(s, I).simplify();
+
+        const sI_minus_A = new Sub(sI, A).simplify();
+        const inv = this._inv(sI_minus_A);
+
+        const term1 = new Mul(new Mul(C, inv), B).simplify();
+        const res = new Add(term1, D).simplify();
+
+        // Extract element if 1x1 matrix (SISO)
+        if (res instanceof Vec && res.elements.length === 1 && res.elements[0].elements.length === 1) {
+            return res.elements[0].elements[0];
+        }
+        return res;
     }
 }
 
