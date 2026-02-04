@@ -557,6 +557,11 @@ class CAS {
                 return simplified;
             }
 
+            if (node.funcName === 'rewrite') {
+                if (node.args.length !== 2) throw new Error("rewrite requires 2 arguments: expr, target");
+                return this._rewrite(args[0], args[1]);
+            }
+
             if (node.funcName === 'solve' || node.funcName === 'fsolve') {
                  if (node.args.length < 2) throw new Error("solve requires at least 2 arguments: equation and variable");
                  const eq = args[0];
@@ -1017,7 +1022,7 @@ class CAS {
                 return this._ones(args[0], args[1]);
             }
 
-            if (node.funcName === 'binomial' || node.funcName === 'comb') {
+            if (node.funcName === 'binomial' || node.funcName === 'comb' || node.funcName === 'combinations') {
                 if (node.args.length !== 2) throw new Error("binomial requires 2 arguments");
                 return this._nCr(args[0], args[1]);
             }
@@ -1136,7 +1141,7 @@ class CAS {
                 return this._nCr(args[0], args[1]);
             }
 
-            if (node.funcName === 'nPr' || node.funcName === 'perm') {
+            if (node.funcName === 'nPr' || node.funcName === 'perm' || node.funcName === 'permutations') {
                 if (node.args.length !== 2) throw new Error("nPr requires 2 arguments");
                 return this._nPr(args[0], args[1]);
             }
@@ -14381,6 +14386,63 @@ class CAS {
         // 2. Reduce each element wrt others
         // Implementation of full reduced basis is complex. Return raw basis for now.
         return new Vec(G);
+    }
+
+    _rewrite(expr, target) {
+        let mode = 'exp';
+        if (target instanceof Sym) mode = target.name;
+        // else if string? Parser usually gives Sym.
+
+        const rec = (e) => {
+            if (e instanceof Add) return new Add(rec(e.left), rec(e.right));
+            if (e instanceof Sub) return new Sub(rec(e.left), rec(e.right));
+            if (e instanceof Mul) return new Mul(rec(e.left), rec(e.right));
+            if (e instanceof Div) return new Div(rec(e.left), rec(e.right));
+            if (e instanceof Pow) return new Pow(rec(e.left), rec(e.right));
+            if (e instanceof Call) {
+                const args = e.args.map(rec);
+                if (mode === 'exp') {
+                    if (e.funcName === 'sin') { // (exp(ix) - exp(-ix))/(2i)
+                        const x = args[0];
+                        const ix = new Mul(new Sym('i'), x);
+                        const num = new Sub(new Call('exp', [ix]), new Call('exp', [new Mul(new Num(-1), ix)]));
+                        const den = new Mul(new Num(2), new Sym('i'));
+                        return new Div(num, den);
+                    }
+                    if (e.funcName === 'cos') { // (exp(ix) + exp(-ix))/2
+                        const x = args[0];
+                        const ix = new Mul(new Sym('i'), x);
+                        const num = new Add(new Call('exp', [ix]), new Call('exp', [new Mul(new Num(-1), ix)]));
+                        return new Div(num, new Num(2));
+                    }
+                    if (e.funcName === 'tan') {
+                        const sin = rec(new Call('sin', args));
+                        const cos = rec(new Call('cos', args));
+                        return new Div(sin, cos);
+                    }
+                }
+                if (mode === 'trig' || mode === 'sin' || mode === 'cos') {
+                    if (e.funcName === 'exp') {
+                        // exp(ix) -> cos(x) + i*sin(x)
+                        const arg = args[0];
+                        // Check if arg contains i
+                        // Simple check: i*x or x*i
+                        let x = null;
+                        if (arg instanceof Mul) {
+                            if (arg.left instanceof Sym && arg.left.name === 'i') x = arg.right;
+                            else if (arg.right instanceof Sym && arg.right.name === 'i') x = arg.left;
+                        }
+                        if (x) {
+                            return new Add(new Call('cos', [x]), new Mul(new Sym('i'), new Call('sin', [x])));
+                        }
+                    }
+                }
+                return new Call(e.funcName, args);
+            }
+            return e;
+        };
+
+        return rec(expr).simplify();
     }
 }
 
