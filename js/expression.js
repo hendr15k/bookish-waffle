@@ -957,6 +957,11 @@ class Mul extends BinaryOp {
             return new Pow(r, new Num(l.right.value + 1)).simplify();
         }
 
+        // exp(a) * exp(b) -> exp(a+b)
+        if (l instanceof Call && l.funcName === 'exp' && r instanceof Call && r.funcName === 'exp') {
+            return new Call('exp', [new Add(l.args[0], r.args[0]).simplify()]).simplify();
+        }
+
         // Logarithm Condense: n * ln(x) -> ln(x^n)
         if (l instanceof Num && r instanceof Call && (r.funcName === 'ln' || r.funcName === 'log')) {
              return new Call(r.funcName, [new Pow(r.args[0], l).simplify()]);
