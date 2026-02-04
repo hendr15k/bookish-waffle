@@ -342,6 +342,84 @@ class CAS {
                         }
                     }
 
+                    // Check for Abs in Definite Integral (recursively)
+                    const findAbsCalls = (node) => {
+                        if (node instanceof Call && node.funcName === 'abs') return [node.args[0]];
+                        if (node instanceof BinaryOp) return [...findAbsCalls(node.left), ...findAbsCalls(node.right)];
+                        if (node instanceof Call) {
+                            let res = [];
+                            for(const arg of node.args) res = [...res, ...findAbsCalls(arg)];
+                            return res;
+                        }
+                        return [];
+                    };
+
+                    const absArgs = findAbsCalls(func);
+                    if (absArgs.length > 0) {
+                        const validRoots = [];
+                        const a = lower.evaluateNumeric();
+                        const b = upper.evaluateNumeric();
+
+                        if (!isNaN(a) && !isNaN(b)) {
+                            for (const inner of absArgs) {
+                                try {
+                                    const roots = this._roots(inner, varNode);
+                                    if (roots instanceof Vec) {
+                                        for(const r of roots.elements) {
+                                            const rVal = r.evaluateNumeric();
+                                            if (!isNaN(rVal) && rVal > Math.min(a,b) && rVal < Math.max(a,b)) {
+                                                if (!validRoots.some(v => Math.abs(v - rVal) < 1e-9)) {
+                                                    validRoots.push(rVal);
+                                                }
+                                            }
+                                        }
+                                    }
+                                } catch(e) {}
+                            }
+
+                            if (validRoots.length > 0) {
+                                validRoots.sort((u,v) => (a < b) ? (u - v) : (v - u));
+                                let sum = new Num(0);
+                                let prev = lower;
+
+                                const resolveAbs = (node, midVal) => {
+                                    if (node instanceof Call && node.funcName === 'abs') {
+                                        const inner = node.args[0];
+                                        const val = inner.substitute(varNode, new Num(midVal)).evaluateNumeric();
+                                        if (!isNaN(val)) {
+                                            const resolvedInner = resolveAbs(inner, midVal);
+                                            return (val >= 0) ? resolvedInner : new Mul(new Num(-1), resolvedInner);
+                                        }
+                                    }
+                                    if (node instanceof BinaryOp) {
+                                        return new node.constructor(resolveAbs(node.left, midVal), resolveAbs(node.right, midVal));
+                                    }
+                                    if (node instanceof Call) {
+                                        return new Call(node.funcName, node.args.map(arg => resolveAbs(arg, midVal)));
+                                    }
+                                    return node;
+                                };
+
+                                for(const r of validRoots) {
+                                    const rNum = new Num(r);
+                                    const mid = (prev.evaluateNumeric() + r) / 2;
+                                    const segmentIntegrand = resolveAbs(func, mid).simplify();
+                                    const part = this.evaluate(new Call('integrate', [segmentIntegrand, varNode, prev, rNum]));
+                                    sum = new Add(sum, part);
+                                    prev = rNum;
+                                }
+
+                                // Last segment
+                                const mid = (prev.evaluateNumeric() + b) / 2;
+                                const segmentIntegrandLast = resolveAbs(func, mid).simplify();
+                                const part = this.evaluate(new Call('integrate', [segmentIntegrandLast, varNode, prev, upper]));
+                                sum = new Add(sum, part);
+
+                                return sum.simplify();
+                            }
+                        }
+                    }
+
                     let indefinite = func.integrate(varNode);
                     // Evaluate indefinite integral to resolve any remaining sub-integrals (e.g. from splitting)
                     if (indefinite.toString() !== new Call('integrate', [func, varNode]).toString()) {
@@ -373,57 +451,6 @@ class CAS {
 
                     // If integration failed (returned a Call to integrate), return symbolic definite integral
                     if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
-                        // Check for Abs in Definite Integral
-                        // integrate(abs(expr), x, a, b)
-                        if (func instanceof Call && func.funcName === 'abs') {
-                            const inner = func.args[0];
-                            // Find roots of inner expression
-                            const roots = this._roots(inner, varNode);
-                            // Filter roots within [lower, upper]
-                            const validRoots = [];
-                            const a = lower.evaluateNumeric();
-                            const b = upper.evaluateNumeric();
-
-                            if (!isNaN(a) && !isNaN(b)) {
-                                if (roots instanceof Vec) {
-                                    for(const r of roots.elements) {
-                                        const rVal = r.evaluateNumeric();
-                                        if (!isNaN(rVal) && rVal > Math.min(a,b) && rVal < Math.max(a,b)) {
-                                            validRoots.push(rVal);
-                                        }
-                                    }
-                                }
-
-                                if (validRoots.length > 0) {
-                                    validRoots.sort((u,v) => u-v);
-                                    let sum = new Num(0);
-                                    let prev = lower;
-
-                                    for(const r of validRoots) {
-                                        const rNum = new Num(r);
-                                        // Integrate from prev to r
-                                        // Check sign in midpoint
-                                        const mid = (prev.evaluateNumeric() + r) / 2;
-                                        const valAtMid = inner.substitute(varNode, new Num(mid)).evaluateNumeric();
-                                        const integrand = valAtMid >= 0 ? inner : new Mul(new Num(-1), inner);
-
-                                        const part = this.evaluate(new Call('integrate', [integrand, varNode, prev, rNum]));
-                                        sum = new Add(sum, part);
-                                        prev = rNum;
-                                    }
-
-                                    // Last segment
-                                    const mid = (prev.evaluateNumeric() + b) / 2;
-                                    const valAtMid = inner.substitute(varNode, new Num(mid)).evaluateNumeric();
-                                    const integrand = valAtMid >= 0 ? inner : new Mul(new Num(-1), inner);
-                                    const part = this.evaluate(new Call('integrate', [integrand, varNode, prev, upper]));
-                                    sum = new Add(sum, part);
-
-                                    return sum.simplify();
-                                }
-                            }
-                        }
-
                         return new Call('integrate', args);
                     }
 
@@ -5424,8 +5451,16 @@ class CAS {
 
             // Handle Num or zero-value Num from simplification
             const isZero = (n) => (n instanceof Num && n.value === 0);
-            const isInf = (n) => (n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity'));
-            const isNegInf = (n) => (n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right));
+            const isInf = (n) => {
+                if (n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity')) return true;
+                if (n.evaluateNumeric() === Infinity) return true;
+                return false;
+            };
+            const isNegInf = (n) => {
+                if (n instanceof Mul && n.left instanceof Num && n.left.value === -1 && (n.right.name === 'Infinity' || n.right.name === 'infinity')) return true;
+                if (n.evaluateNumeric() === -Infinity) return true;
+                return false;
+            };
             const isInfinite = (n) => isInf(n) || isNegInf(n);
 
             if (isZero(num) && isZero(den)) {
@@ -5599,67 +5634,53 @@ class CAS {
             return new Sub(new Mul(a, d), new Mul(b, c)).simplify();
         }
 
-        // Use Gaussian Elimination for Determinant O(n^3)
-        // Check if matrix is numeric to safely use Gaussian without huge symbolic expression explosion
-        // Even for symbolic, Gaussian is usually better than cofactor O(n!) for n > 4
-
+        // Bareiss Algorithm (Fraction-free Gaussian Elimination)
         // Clone matrix
         const M = matrix.elements.map(row => [...row.elements]);
+        const n = rows;
         let sign = 1;
-        let det = new Num(1);
+        let prevPivot = new Num(1);
 
-        for (let i = 0; i < rows; i++) {
+        for (let k = 0; k < n - 1; k++) {
             // Find pivot
-            let pivotIdx = i;
+            let pivotIdx = k;
             let found = false;
 
-            // Search for non-zero pivot
-            for(let k=i; k<rows; k++) {
-                const val = M[k][i].simplify();
-                // Check if zero
-                let isZ = false;
-                if (val instanceof Num && val.value === 0) isZ = true;
-
-                if (!isZ) {
-                    pivotIdx = k;
+            for(let i=k; i<n; i++) {
+                const val = M[i][k].simplify();
+                // Check if strictly zero
+                if (!(val instanceof Num && val.value === 0)) {
+                    pivotIdx = i;
                     found = true;
                     break;
                 }
             }
 
-            if (!found) return new Num(0); // Zero column -> det 0
+            if (!found) return new Num(0);
 
-            if (pivotIdx !== i) {
+            if (pivotIdx !== k) {
                 // Swap rows
-                const temp = M[i];
-                M[i] = M[pivotIdx];
+                const temp = M[k];
+                M[k] = M[pivotIdx];
                 M[pivotIdx] = temp;
                 sign *= -1;
             }
 
-            const pivot = M[i][i];
+            const pivot = M[k][k];
 
-            // Eliminate rows below
-            for(let k=i+1; k<rows; k++) {
-                const val = M[k][i];
-                if (val instanceof Num && val.value === 0) continue;
-
-                // factor = M[k][i] / pivot
-                const factor = new Div(val, pivot).simplify();
-
-                for(let j=i; j<cols; j++) {
-                    // M[k][j] -= factor * M[i][j]
-                    M[k][j] = new Sub(M[k][j], new Mul(factor, M[i][j])).simplify();
+            for (let i = k + 1; i < n; i++) {
+                for (let j = k + 1; j < n; j++) {
+                    // M[i][j] = (M[i][j]*pivot - M[i][k]*M[k][j]) / prevPivot
+                    const term1 = new Mul(M[i][j], pivot);
+                    const term2 = new Mul(M[i][k], M[k][j]);
+                    const num = new Sub(term1, term2).expand().simplify();
+                    M[i][j] = new Div(num, prevPivot).simplify();
                 }
             }
+            prevPivot = pivot;
         }
 
-        // Product of diagonal
-        let prod = new Num(sign);
-        for(let i=0; i<rows; i++) {
-            prod = new Mul(prod, M[i][i]);
-        }
-        return prod.simplify();
+        return new Mul(new Num(sign), M[n-1][n-1]).simplify();
     }
 
     _inv(matrix) {

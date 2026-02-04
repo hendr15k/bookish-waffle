@@ -2034,6 +2034,8 @@ class Call extends Expr {
             // ln(e) -> 1
             if (arg instanceof Sym && arg.name === 'e') return new Num(1);
             if (arg instanceof Num && arg.value === 1) return new Num(0);
+            if (arg instanceof Sym && (arg.name === 'Infinity' || arg.name === 'infinity')) return new Sym('Infinity');
+            if (arg instanceof Num && arg.value === 0) return new Mul(new Num(-1), new Sym('Infinity'));
         }
         if (this.funcName === 'log') {
             const arg = simpleArgs[0];
@@ -2073,6 +2075,10 @@ class Call extends Expr {
             }
             if (arg instanceof Num && arg.value === 0) return new Num(1);
             if (arg instanceof Num && arg.value === 1) return new Sym('e');
+            if (arg instanceof Sym && (arg.name === 'Infinity' || arg.name === 'infinity')) return new Sym('Infinity');
+            // exp(-Infinity) -> 0
+            if (arg instanceof Mul && arg.left instanceof Num && arg.left.value === -1 && (arg.right.name === 'Infinity' || arg.right.name === 'infinity')) return new Num(0);
+            if (arg instanceof Num && arg.value === -Infinity) return new Num(0);
         }
         if (this.funcName === 'sign') {
             const arg = simpleArgs[0];
