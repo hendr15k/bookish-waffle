@@ -6485,7 +6485,7 @@ class CAS {
 
                     // 5. Factor Quadratics or remainders
                     if (p.maxDeg === 2) {
-                        const a = p.coeffs[2];
+                        let a = p.coeffs[2];
                         const rootsRes = this._solve(reducedPoly, x);
                         let roots = [];
                         if (rootsRes instanceof Call && rootsRes.funcName === 'set') {
@@ -6495,9 +6495,46 @@ class CAS {
                         }
 
                         if (roots.length > 0) {
-                            factors.push(a); // leading coeff
+                            // Try to produce integer factors for rational roots
+                            // Factor (x - p/q) -> (qx - p)/q. Absorb /q into 'a'.
                             for(const r of roots) {
-                                factors.push(new Sub(x, r).simplify());
+                                let pNum = null, qNum = null;
+                                let handled = false;
+
+                                // Analyze root structure
+                                let val = r;
+                                let sign = 1;
+                                if (val instanceof Mul && val.left instanceof Num && val.left.value === -1) {
+                                    sign = -1;
+                                    val = val.right;
+                                }
+
+                                if (val instanceof Num && Number.isInteger(val.value)) {
+                                    pNum = val.value * sign; qNum = 1;
+                                } else if (val instanceof Div && val.left instanceof Num && val.right instanceof Num) {
+                                    pNum = val.left.value * sign; qNum = val.right.value;
+                                }
+
+                                if (pNum !== null && qNum !== null && a instanceof Num) {
+                                    // Check if 'a' is divisible by qNum
+                                    if (a.value % qNum === 0) {
+                                        a = new Num(a.value / qNum);
+                                        // Factor: qx - p
+                                        const termX = (qNum === 1) ? x : new Mul(new Num(qNum), x);
+                                        const termC = new Num(-pNum);
+                                        factors.push(new Add(termX, termC).simplify());
+                                        handled = true;
+                                    }
+                                }
+
+                                if (!handled) {
+                                    factors.push(new Sub(x, r).simplify());
+                                }
+                            }
+
+                            // Push remaining constant if not 1
+                            if (!(a instanceof Num && a.value === 1)) {
+                                factors.push(a);
                             }
                         } else {
                             factors.push(reducedPoly);
