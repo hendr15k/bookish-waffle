@@ -2205,6 +2205,19 @@ class CAS {
                 return this._dnf(args[0]);
             }
 
+            if (node.funcName === 'nand') {
+                if (node.args.length !== 2) throw new Error("nand requires 2 arguments");
+                return new Nand(args[0], args[1]).simplify();
+            }
+            if (node.funcName === 'nor') {
+                if (node.args.length !== 2) throw new Error("nor requires 2 arguments");
+                return new Nor(args[0], args[1]).simplify();
+            }
+            if (node.funcName === 'xnor') {
+                if (node.args.length !== 2) throw new Error("xnor requires 2 arguments");
+                return new Xnor(args[0], args[1]).simplify();
+            }
+
             if (node.funcName === 'annuity') {
                 // annuity(rate, n, payment) -> FV
                 if (node.args.length !== 3) throw new Error("annuity requires 3 arguments: rate, n, payment");
@@ -8446,7 +8459,7 @@ class CAS {
                 if (node.args.length === 2) {
                     const inner = node.args[0];
                     const outerVar = node.args[1];
-                    if (inner instanceof Call && inner.funcName === 'diff' && inner.node.args.length === 2) {
+                    if (inner instanceof Call && inner.funcName === 'diff' && inner.args.length === 2) {
                         const target = inner.args[0];
                         const innerVar = inner.args[1];
                         let isMatch = false;
@@ -8561,9 +8574,24 @@ class CAS {
                          const term2 = new Mul(C2, new Mul(indepVar, new Call('exp', [new Mul(r1, indepVar)]))).simplify();
                          y_c = new Add(term1, term2);
                      } else {
-                         const term1 = new Mul(C1, new Call('exp', [new Mul(r1, indepVar)])).simplify();
-                         const term2 = new Mul(C2, new Call('exp', [new Mul(r2, indepVar)])).simplify();
-                         y_c = new Add(term1, term2);
+                         // Check for Complex Roots: alpha +/- beta i
+                         const parts = this._getComplexParts(r1);
+                         const imVal = parts.im.evaluateNumeric();
+                         if (!isNaN(imVal) && Math.abs(imVal) > 1e-9) {
+                             const alpha = parts.re;
+                             const beta = new Call('abs', [parts.im]).simplify();
+                             // e^(alpha x) (C1 cos(beta x) + C2 sin(beta x))
+                             const expTerm = new Call('exp', [new Mul(alpha, indepVar)]).simplify();
+                             const trigTerm = new Add(
+                                 new Mul(C1, new Call('cos', [new Mul(beta, indepVar)])),
+                                 new Mul(C2, new Call('sin', [new Mul(beta, indepVar)]))
+                             ).simplify();
+                             y_c = new Mul(expTerm, trigTerm).simplify();
+                         } else {
+                             const term1 = new Mul(C1, new Call('exp', [new Mul(r1, indepVar)])).simplify();
+                             const term2 = new Mul(C2, new Call('exp', [new Mul(r2, indepVar)])).simplify();
+                             y_c = new Add(term1, term2);
+                         }
                      }
 
                      // Check Non-Homogeneous

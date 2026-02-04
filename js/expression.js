@@ -4369,11 +4369,38 @@ function math_intSqrtSimplify(n) {
     return { coeff, radical };
 }
 
+class Nand extends BinaryOp {
+    toString() { return `(${this.left} nand ${this.right})`; }
+    simplify() {
+        return new Not(new And(this.left, this.right)).simplify();
+    }
+    evaluateNumeric() { return (!(this.left.evaluateNumeric() && this.right.evaluateNumeric())) ? 1 : 0; }
+    toLatex() { return `${this.left.toLatex()} \\bar{\\land} ${this.right.toLatex()}`; }
+}
+
+class Nor extends BinaryOp {
+    toString() { return `(${this.left} nor ${this.right})`; }
+    simplify() {
+        return new Not(new Or(this.left, this.right)).simplify();
+    }
+    evaluateNumeric() { return (!(this.left.evaluateNumeric() || this.right.evaluateNumeric())) ? 1 : 0; }
+    toLatex() { return `${this.left.toLatex()} \\bar{\\lor} ${this.right.toLatex()}`; }
+}
+
+class Xnor extends BinaryOp {
+    toString() { return `(${this.left} xnor ${this.right})`; }
+    simplify() {
+        return new Iff(this.left, this.right).simplify();
+    }
+    evaluateNumeric() { return (!!this.left.evaluateNumeric() === !!this.right.evaluateNumeric()) ? 1 : 0; }
+    toLatex() { return `${this.left.toLatex()} \\odot ${this.right.toLatex()}`; }
+}
+
 // Export classes for Global/CommonJS environments
 (function() {
     const exports = {
         Expr, Num, Sym, BinaryOp, Add, Sub, Mul, Div, Pow, Call, Assignment, Eq, Vec, FunctionDef, Block, toExpr,
-        And, Or, Xor, Implies, Iff, Not, Mod, Neq, Lt, Gt, Le, Ge, At, BooleanEq,
+        And, Or, Xor, Implies, Iff, Nand, Nor, Xnor, Not, Mod, Neq, Lt, Gt, Le, Ge, At, BooleanEq,
         If, While, For, Return, Break, Continue
     };
     if (typeof globalThis !== 'undefined') {
