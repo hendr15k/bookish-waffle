@@ -2384,6 +2384,19 @@ class Call extends Expr {
             }
         }
 
+        if (this.funcName === 'sigmoid') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) return new Num(1 / (1 + Math.exp(-arg.value)));
+        }
+        if (this.funcName === 'relu') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) return new Num(Math.max(0, arg.value));
+        }
+        if (this.funcName === 'softplus') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num) return new Num(Math.log(1 + Math.exp(arg.value)));
+        }
+
         if (this.funcName === 'gamma') {
             const arg = simpleArgs[0];
             if (arg instanceof Div && arg.left instanceof Num && arg.right instanceof Num) {
@@ -2566,6 +2579,10 @@ class Call extends Expr {
         if (this.funcName === 'besselK') return math_besselK(argsVal[0], argsVal[1]);
         if (this.funcName === 'hyp2f1') return math_hyp2f1(argsVal[0], argsVal[1], argsVal[2], argsVal[3]);
 
+        if (this.funcName === 'sigmoid') return 1 / (1 + Math.exp(-argsVal[0]));
+        if (this.funcName === 'relu') return Math.max(0, argsVal[0]);
+        if (this.funcName === 'softplus') return Math.log(1 + Math.exp(argsVal[0]));
+
         return NaN; // Unknown
     }
     diff(varName) {
@@ -2654,6 +2671,16 @@ class Call extends Expr {
             const den = new Add(new Num(1), W);
             return new Mul(new Div(num, den), u.diff(varName));
         }
+        if (this.funcName === 'sigmoid') {
+            const s = new Call('sigmoid', [u]);
+            return new Mul(new Mul(s, new Sub(new Num(1), s)), u.diff(varName));
+        }
+        if (this.funcName === 'relu') {
+            return new Mul(new Call('heaviside', [u]), u.diff(varName));
+        }
+        if (this.funcName === 'softplus') {
+            return new Mul(new Call('sigmoid', [u]), u.diff(varName));
+        }
         if (this.funcName === 'sin') return new Mul(new Call('cos', [u]), u.diff(varName));
         if (this.funcName === 'cos') return new Mul(new Mul(new Num(-1), new Call('sin', [u])), u.diff(varName));
         if (this.funcName === 'tan') return new Mul(new Div(new Num(1), new Pow(new Call('cos', [u]), new Num(2))), u.diff(varName));
@@ -2685,10 +2712,26 @@ class Call extends Expr {
         if (this.funcName === 'sinh') return new Mul(new Call('cosh', [u]), u.diff(varName));
         if (this.funcName === 'cosh') return new Mul(new Call('sinh', [u]), u.diff(varName));
         if (this.funcName === 'tanh') return new Mul(new Div(new Num(1), new Pow(new Call('cosh', [u]), new Num(2))), u.diff(varName));
+        if (this.funcName === 'sech') return new Mul(new Mul(new Num(-1), new Mul(new Call('sech', [u]), new Call('tanh', [u]))), u.diff(varName));
+        if (this.funcName === 'csch') return new Mul(new Mul(new Num(-1), new Mul(new Call('csch', [u]), new Call('coth', [u]))), u.diff(varName));
+        if (this.funcName === 'coth') return new Mul(new Mul(new Num(-1), new Pow(new Call('csch', [u]), new Num(2))), u.diff(varName));
 
         if (this.funcName === 'sec') return new Mul(new Mul(new Call('sec', [u]), new Call('tan', [u])), u.diff(varName));
         if (this.funcName === 'csc') return new Mul(new Mul(new Num(-1), new Mul(new Call('csc', [u]), new Call('cot', [u]))), u.diff(varName));
         if (this.funcName === 'cot') return new Mul(new Mul(new Num(-1), new Pow(new Call('csc', [u]), new Num(2))), u.diff(varName));
+
+        if (this.funcName === 'asech') {
+             // -1 / (x * sqrt(1-x^2))
+             return new Mul(new Div(new Num(-1), new Mul(u, new Call('sqrt', [new Sub(new Num(1), new Pow(u, new Num(2))) ]))), u.diff(varName));
+        }
+        if (this.funcName === 'acsch') {
+             // -1 / (|x| * sqrt(1+x^2))
+             return new Mul(new Div(new Num(-1), new Mul(new Call('abs', [u]), new Call('sqrt', [new Add(new Num(1), new Pow(u, new Num(2))) ]))), u.diff(varName));
+        }
+        if (this.funcName === 'acoth') {
+             // 1 / (1-x^2)
+             return new Mul(new Div(new Num(1), new Sub(new Num(1), new Pow(u, new Num(2)))), u.diff(varName));
+        }
 
         if (this.funcName === 'exp') return new Mul(this, u.diff(varName));
         if (this.funcName === 'ln') return new Div(u.diff(varName), u);
@@ -2897,6 +2940,12 @@ class Call extends Expr {
             if (this.funcName === 'sech') return new Call('atan', [new Call('sinh', [varName])]);
             if (this.funcName === 'csch') return new Call('ln', [new Call('tanh', [new Div(varName, new Num(2))])]);
             if (this.funcName === 'coth') return new Call('ln', [new Call('sinh', [varName])]);
+            if (this.funcName === 'acoth') {
+                // x*acoth(x) + 0.5*ln(x^2-1)
+                const term1 = new Mul(varName, new Call('acoth', [varName]));
+                const term2 = new Mul(new Num(0.5), new Call('ln', [new Sub(new Pow(varName, new Num(2)), new Num(1))]));
+                return new Add(term1, term2);
+            }
             if (this.funcName === 'exp') return this;
             if (this.funcName === 'ln') return new Sub(new Mul(varName, new Call('ln', [varName])), varName);
             if (this.funcName === 'log') return new Div(new Sub(new Mul(varName, new Call('ln', [varName])), varName), new Call('ln', [new Num(10)]));
@@ -2996,6 +3045,16 @@ class Call extends Expr {
                 const expTerm = new Call('exp', [new Mul(new Num(-1), new Pow(arg, new Num(2)))]);
                 const res = new Div(expTerm, new Call('sqrt', [new Sym('pi')]));
                 return new Mul(new Num(-1), res);
+            }
+            if (this.funcName === 'sigmoid') {
+                return new Call('softplus', [varName]);
+            }
+            if (this.funcName === 'relu') {
+                return new Mul(new Num(0.5), new Mul(varName, new Call('relu', [varName])));
+            }
+            if (this.funcName === 'softplus') {
+                // -Li2(-e^x)
+                return new Mul(new Num(-1), new Call('polylog', [new Num(2), new Mul(new Num(-1), new Call('exp', [varName]))]));
             }
         }
         return new Call("integrate", [this, varName]);
