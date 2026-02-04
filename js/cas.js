@@ -2475,6 +2475,26 @@ class CAS {
                 return this._map(args[0], args[1]);
             }
 
+            if (node.funcName === 'shortestPath' || node.funcName === 'shortest_path') {
+                if (node.args.length !== 3) throw new Error("shortestPath requires 3 arguments: adjMatrix, start, end");
+                return this._shortestPath(args[0], args[1], args[2]);
+            }
+
+            if (node.funcName === 'mst') {
+                if (node.args.length !== 1) throw new Error("mst requires 1 argument: adjMatrix");
+                return this._mst(args[0]);
+            }
+
+            if (node.funcName === 'anova') {
+                if (node.args.length !== 1) throw new Error("anova requires 1 argument: groups");
+                return this._anova(args[0]);
+            }
+
+            if (node.funcName === 'knapsack') {
+                if (node.args.length !== 3) throw new Error("knapsack requires 3 arguments: weights, values, capacity");
+                return this._knapsack(args[0], args[1], args[2]);
+            }
+
             return new Call(node.funcName, args);
         }
 
@@ -14820,6 +14840,229 @@ class CAS {
         };
 
         return rec(expr).simplify();
+    }
+
+    _shortestPath(adjMatrix, start, end) {
+        if (!(adjMatrix instanceof Vec)) throw new Error("shortestPath requires an adjacency matrix");
+        start = start.simplify();
+        end = end.simplify();
+        if (!(start instanceof Num) || !(end instanceof Num)) return new Call('shortestPath', [adjMatrix, start, end]);
+
+        const n = adjMatrix.elements.length;
+        const s = start.value;
+        const e = end.value;
+
+        if (s < 0 || s >= n || e < 0 || e >= n) throw new Error("Indices out of bounds");
+
+        // Dijkstra
+        const dist = new Array(n).fill(Infinity);
+        const prev = new Array(n).fill(-1);
+        const visited = new Array(n).fill(false);
+
+        dist[s] = 0;
+
+        for (let i = 0; i < n; i++) {
+            let u = -1;
+            let minC = Infinity;
+            for (let j = 0; j < n; j++) {
+                if (!visited[j] && dist[j] < minC) {
+                    minC = dist[j];
+                    u = j;
+                }
+            }
+
+            if (u === -1 || dist[u] === Infinity) break;
+            visited[u] = true;
+            if (u === e) break;
+
+            for (let v = 0; v < n; v++) {
+                if (!visited[v]) {
+                    const weight = adjMatrix.elements[u].elements[v].evaluateNumeric();
+                    // Assume 0 or Infinity for no edge if weights > 0.
+                    // If weight > 0, there is an edge.
+                    if (!isNaN(weight) && weight > 0) {
+                        const alt = dist[u] + weight;
+                        if (alt < dist[v]) {
+                            dist[v] = alt;
+                            prev[v] = u;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (dist[e] === Infinity) return new Call('list', []); // No path
+
+        // Reconstruct path
+        const path = [];
+        let curr = e;
+        while (curr !== -1) {
+            path.unshift(new Num(curr));
+            curr = prev[curr];
+        }
+        return new Vec(path);
+    }
+
+    _mst(adjMatrix) {
+        if (!(adjMatrix instanceof Vec)) throw new Error("mst requires an adjacency matrix");
+        const n = adjMatrix.elements.length;
+        // Prim's algorithm
+        const parent = new Array(n).fill(-1);
+        const key = new Array(n).fill(Infinity);
+        const mstSet = new Array(n).fill(false);
+
+        key[0] = 0;
+
+        for (let count = 0; count < n - 1; count++) {
+            let u = -1;
+            let min = Infinity;
+            for (let v = 0; v < n; v++) {
+                if (!mstSet[v] && key[v] < min) {
+                    min = key[v];
+                    u = v;
+                }
+            }
+
+            if (u === -1) break;
+            mstSet[u] = true;
+
+            for (let v = 0; v < n; v++) {
+                const weight = adjMatrix.elements[u].elements[v].evaluateNumeric();
+                if (!isNaN(weight) && weight > 0 && !mstSet[v] && weight < key[v]) {
+                    parent[v] = u;
+                    key[v] = weight;
+                }
+            }
+        }
+
+        // Construct MST adjacency matrix
+        const mstRows = [];
+        for(let i=0; i<n; i++) {
+            const row = new Array(n).fill(new Num(0));
+            mstRows.push(row);
+        }
+
+        for (let i = 1; i < n; i++) {
+            if (parent[i] !== -1) {
+                const u = parent[i];
+                const v = i;
+                const w = adjMatrix.elements[u].elements[v]; // Symbolic weight
+                mstRows[u][v] = w;
+                mstRows[v][u] = w;
+            }
+        }
+
+        return new Vec(mstRows.map(r => new Vec(r)));
+    }
+
+    _anova(groups) {
+        if (!(groups instanceof Vec)) throw new Error("anova requires a list of groups");
+        const k = groups.elements.length;
+        if (k < 2) throw new Error("anova requires at least 2 groups");
+
+        let totalSum = 0;
+        let N = 0;
+        const groupStats = [];
+
+        // Check numeric
+        for (const g of groups.elements) {
+            if (!(g instanceof Vec)) throw new Error("Each group must be a list");
+            let gSum = 0;
+            let gN = 0;
+            for (const x of g.elements) {
+                const val = x.evaluateNumeric();
+                if (isNaN(val)) return new Call('anova', [groups]);
+                gSum += val;
+                gN++;
+            }
+            if (gN === 0) throw new Error("Empty group in anova");
+            groupStats.push({ sum: gSum, n: gN, mean: gSum / gN, data: g.elements.map(e => e.evaluateNumeric()) });
+            totalSum += gSum;
+            N += gN;
+        }
+
+        const overallMean = totalSum / N;
+
+        let ssb = 0;
+        let ssw = 0;
+
+        for (const stat of groupStats) {
+            ssb += stat.n * Math.pow(stat.mean - overallMean, 2);
+            for (const x of stat.data) {
+                ssw += Math.pow(x - stat.mean, 2);
+            }
+        }
+
+        const dfBetween = k - 1;
+        const dfWithin = N - k;
+
+        if (dfWithin <= 0) throw new Error("Not enough degrees of freedom for anova");
+
+        const msb = ssb / dfBetween;
+        const msw = ssw / dfWithin;
+
+        const f = msb / msw;
+
+        // P-value = 1 - F_CDF(f, dfBetween, dfWithin)
+        // I have _fCDF(x, d1, d2)
+        const pVal = 1 - this._fCDF(new Num(f), new Num(dfBetween), new Num(dfWithin)).evaluateNumeric();
+
+        // Return [F, p]
+        return new Vec([new Num(f), new Num(pVal)]);
+    }
+
+    _knapsack(weightsVec, valuesVec, capacityNode) {
+        if (!(weightsVec instanceof Vec) || !(valuesVec instanceof Vec)) throw new Error("knapsack requires weights and values as lists");
+        capacityNode = capacityNode.simplify();
+        if (!(capacityNode instanceof Num)) return new Call('knapsack', [weightsVec, valuesVec, capacityNode]);
+
+        const W = capacityNode.value;
+        if (!Number.isInteger(W) || W < 0) throw new Error("Knapsack capacity must be a non-negative integer");
+        if (W > 10000) throw new Error("Knapsack capacity too large (limit 10000)");
+
+        const n = weightsVec.elements.length;
+        if (valuesVec.elements.length !== n) throw new Error("Weights and values must have same length");
+
+        const weights = weightsVec.elements.map(e => e.evaluateNumeric());
+        const values = valuesVec.elements.map(e => e.evaluateNumeric());
+
+        if (weights.some(w => isNaN(w) || !Number.isInteger(w) || w < 0)) throw new Error("Knapsack weights must be non-negative integers");
+        if (values.some(isNaN)) return new Call('knapsack', [weightsVec, valuesVec, capacityNode]);
+
+        // DP Table
+        // K[i][w] = max value using first i items with capacity w
+        const K = new Array(n + 1).fill(0).map(() => new Array(Math.floor(W) + 1).fill(0));
+
+        for (let i = 0; i <= n; i++) {
+            for (let w = 0; w <= W; w++) {
+                if (i === 0 || w === 0) {
+                    K[i][w] = 0;
+                } else if (weights[i - 1] <= w) {
+                    K[i][w] = Math.max(values[i - 1] + K[i - 1][w - weights[i - 1]], K[i - 1][w]);
+                } else {
+                    K[i][w] = K[i - 1][w];
+                }
+            }
+        }
+
+        const maxVal = K[n][Math.floor(W)];
+
+        // Backtrack to find items
+        let res = maxVal;
+        let w = Math.floor(W);
+        const items = [];
+
+        for (let i = n; i > 0 && res > 0; i--) {
+            if (res === K[i - 1][w]) continue;
+            else {
+                // This item was included
+                items.unshift(new Num(i - 1)); // 0-based index
+                res = res - values[i - 1];
+                w = w - weights[i - 1];
+            }
+        }
+
+        return new Vec([new Num(maxVal), new Vec(items)]);
     }
 }
 
