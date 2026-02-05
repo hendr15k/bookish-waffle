@@ -420,6 +420,100 @@ class CAS {
                         }
                     }
 
+                    // Check for Piecewise in Definite Integral
+                    const findPiecewiseBoundaries = (node) => {
+                        let bounds = [];
+                        if (node instanceof Call && node.funcName === 'piecewise') {
+                            for(let i=0; i<node.args.length; i+=2) {
+                                if (i+1 >= node.args.length) break; // Default case has no condition
+                                const cond = node.args[i];
+                                if (cond instanceof BinaryOp) { // Lt, Gt, Le, Ge, Eq
+                                    const eq = new Sub(cond.left, cond.right);
+                                    try {
+                                        const r = this._roots(eq, varNode);
+                                        if (r instanceof Vec) {
+                                            for(const el of r.elements) {
+                                                const val = el.evaluateNumeric();
+                                                if (!isNaN(val)) bounds.push(val);
+                                            }
+                                        }
+                                    } catch(e) {}
+                                }
+                            }
+                            for(let i=1; i<node.args.length; i+=2) {
+                                bounds = [...bounds, ...findPiecewiseBoundaries(node.args[i])];
+                            }
+                            if (node.args.length % 2 === 1) {
+                                bounds = [...bounds, ...findPiecewiseBoundaries(node.args[node.args.length-1])];
+                            }
+                        } else if (node instanceof BinaryOp) {
+                            bounds = [...findPiecewiseBoundaries(node.left), ...findPiecewiseBoundaries(node.right)];
+                        } else if (node instanceof Call) {
+                            for(const arg of node.args) bounds = [...bounds, ...findPiecewiseBoundaries(arg)];
+                        }
+                        return bounds;
+                    };
+
+                    const pwBounds = findPiecewiseBoundaries(func);
+                    if (pwBounds.length > 0) {
+                        const uniqueBounds = [];
+                        const a = lower.evaluateNumeric();
+                        const b = upper.evaluateNumeric();
+                        if (!isNaN(a) && !isNaN(b)) {
+                            for(const rVal of pwBounds) {
+                                if (!isNaN(rVal) && rVal > Math.min(a,b) && rVal < Math.max(a,b)) {
+                                    if (!uniqueBounds.some(v => Math.abs(v - rVal) < 1e-9)) {
+                                        uniqueBounds.push(rVal);
+                                    }
+                                }
+                            }
+
+                            if (uniqueBounds.length > 0) {
+                                uniqueBounds.sort((u,v) => (a < b) ? (u - v) : (v - u));
+                                let sum = new Num(0);
+                                let prev = lower;
+
+                                const resolvePiecewise = (node, val) => {
+                                    if (node instanceof Call && node.funcName === 'piecewise') {
+                                        for(let i=0; i<node.args.length; i+=2) {
+                                            if (i+1 >= node.args.length) return resolvePiecewise(node.args[i], val); // Default
+                                            const cond = node.args[i];
+                                            const res = node.args[i+1];
+                                            // Eval condition
+                                            const condVal = cond.substitute(varNode, new Num(val)).evaluateNumeric();
+                                            if (condVal !== 0) return resolvePiecewise(res, val);
+                                        }
+                                        return new Num(0); // Should not happen if cover all
+                                    }
+                                    if (node instanceof BinaryOp) {
+                                        return new node.constructor(resolvePiecewise(node.left, val), resolvePiecewise(node.right, val));
+                                    }
+                                    if (node instanceof Call) {
+                                        return new Call(node.funcName, node.args.map(arg => resolvePiecewise(arg, val)));
+                                    }
+                                    if (node instanceof Sym && node.name === varNode.name) return node; // Keep variable
+                                    return node;
+                                };
+
+                                for(const r of uniqueBounds) {
+                                    const rNum = new Num(r);
+                                    const mid = (prev.evaluateNumeric() + r) / 2;
+                                    const segmentIntegrand = resolvePiecewise(func, mid).simplify();
+                                    const part = this.evaluate(new Call('integrate', [segmentIntegrand, varNode, prev, rNum]));
+                                    sum = new Add(sum, part);
+                                    prev = rNum;
+                                }
+
+                                const mid = (prev.evaluateNumeric() + b) / 2;
+                                const segmentIntegrandLast = resolvePiecewise(func, mid).simplify();
+                                const part = this.evaluate(new Call('integrate', [segmentIntegrandLast, varNode, prev, upper]));
+                                sum = new Add(sum, part);
+
+                                return sum.simplify();
+                            }
+                        }
+                    }
+
                     let indefinite = func.integrate(varNode);
                     // Evaluate indefinite integral to resolve any remaining sub-integrals (e.g. from splitting)
                     if (indefinite.toString() !== new Call('integrate', [func, varNode]).toString()) {
