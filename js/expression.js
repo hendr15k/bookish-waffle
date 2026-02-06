@@ -2006,6 +2006,41 @@ class Call extends Expr {
             if (arg instanceof Num && Math.abs(arg.value - -Math.sqrt(3)) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(3)).simplify();
             if (arg instanceof Num && Math.abs(arg.value - -1/Math.sqrt(3)) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(6)).simplify();
         }
+        if (this.funcName === 'atan2') {
+            // atan2(y, x)
+            if (simpleArgs.length === 2) {
+                const y = simpleArgs[0];
+                const x = simpleArgs[1];
+                if (y instanceof Num && x instanceof Num) {
+                    if (y.value === 0) {
+                        if (x.value > 0) return new Num(0);
+                        if (x.value < 0) return new Sym('pi');
+                        // x=0, y=0 -> undefined usually, or 0
+                        return new Num(0);
+                    }
+                    if (x.value === 0) {
+                        if (y.value > 0) return new Div(new Sym('pi'), new Num(2)).simplify();
+                        if (y.value < 0) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(2)).simplify();
+                    }
+                    // Check standard angles
+                    const val = Math.atan2(y.value, x.value);
+                    const piPart = val / Math.PI;
+                    // Check common fractions of pi: 1/4, 1/3, 1/6, 3/4, etc.
+                    const dens = [1, 2, 3, 4, 6];
+                    for(const d of dens) {
+                        const num = Math.round(piPart * d);
+                        if (Math.abs(piPart * d - num) < 1e-9) {
+                            if (num === 0) return new Num(0);
+                            let res = new Sym('pi');
+                            if (Math.abs(num) !== 1) res = new Mul(new Num(Math.abs(num)), res);
+                            if (d !== 1) res = new Div(res, new Num(d));
+                            if (num < 0) res = new Mul(new Num(-1), res);
+                            return res.simplify();
+                        }
+                    }
+                }
+            }
+        }
         if (this.funcName === 'sinh') {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 0) return new Num(0);
@@ -2490,6 +2525,7 @@ class Call extends Expr {
         if (this.funcName === 'asin') return Math.asin(argsVal[0]);
         if (this.funcName === 'acos') return Math.acos(argsVal[0]);
         if (this.funcName === 'atan') return Math.atan(argsVal[0]);
+        if (this.funcName === 'atan2') return Math.atan2(argsVal[0], argsVal[1]);
         if (this.funcName === 'asinh') return Math.asinh(argsVal[0]);
         if (this.funcName === 'acosh') return Math.acosh(argsVal[0]);
         if (this.funcName === 'atanh') return Math.atanh(argsVal[0]);
@@ -2604,6 +2640,10 @@ class Call extends Expr {
         if (this.funcName === 'besselI') return math_besselI(argsVal[0], argsVal[1]);
         if (this.funcName === 'besselK') return math_besselK(argsVal[0], argsVal[1]);
         if (this.funcName === 'hyp2f1') return math_hyp2f1(argsVal[0], argsVal[1], argsVal[2], argsVal[3]);
+        if (this.funcName === 'airyAi') return math_airyAi(argsVal[0]);
+        if (this.funcName === 'airyBi') return math_airyBi(argsVal[0]);
+        if (this.funcName === 'airyAiPrime') return math_airyAiPrime(argsVal[0]);
+        if (this.funcName === 'airyBiPrime') return math_airyBiPrime(argsVal[0]);
 
         if (this.funcName === 'sigmoid') return 1 / (1 + Math.exp(-argsVal[0]));
         if (this.funcName === 'relu') return Math.max(0, argsVal[0]);
@@ -2722,6 +2762,16 @@ class Call extends Expr {
         if (this.funcName === 'atan') {
             // 1/(1+u^2) * u'
             return new Mul(new Div(new Num(1), new Add(new Num(1), new Pow(u, new Num(2)))), u.diff(varName));
+        }
+        if (this.funcName === 'atan2') {
+            // d/dt atan2(y, x) = (x y' - y x') / (x^2 + y^2)
+            if (this.args.length === 2) {
+                const y = this.args[0];
+                const x = this.args[1];
+                const num = new Sub(new Mul(x, y.diff(varName)), new Mul(y, x.diff(varName)));
+                const den = new Add(new Pow(x, new Num(2)), new Pow(y, new Num(2)));
+                return new Div(num, den);
+            }
         }
         if (this.funcName === 'asinh') {
              // 1/sqrt(u^2 + 1) * u'
@@ -2916,10 +2966,16 @@ class Call extends Expr {
             }
         }
         // Airy Functions
-        // Ai'(x) -> derivative of Ai is usually denoted Ai'(x).
-        // Ai''(x) = x Ai(x).
-        // We can't express Ai'(x) in terms of Ai(x) simply without defining AiPrime.
-        // Let's leave it symbolic Call('diff', ...) for now unless we introduce airyAiPrime.
+        if (this.funcName === 'airyAi') return new Mul(new Call('airyAiPrime', [u]), u.diff(varName));
+        if (this.funcName === 'airyBi') return new Mul(new Call('airyBiPrime', [u]), u.diff(varName));
+        if (this.funcName === 'airyAiPrime') {
+            // Ai''(x) = x * Ai(x)
+            return new Mul(new Mul(u, new Call('airyAi', [u])), u.diff(varName));
+        }
+        if (this.funcName === 'airyBiPrime') {
+            // Bi''(x) = x * Bi(x)
+            return new Mul(new Mul(u, new Call('airyBi', [u])), u.diff(varName));
+        }
 
         if (this.funcName === 'sum') {
             // diff(sum(f, i, a, b), x) = sum(diff(f, x), i, a, b)
@@ -3131,6 +3187,7 @@ class Call extends Expr {
             'asin': '\\arcsin',
             'acos': '\\arccos',
             'atan': '\\arctan',
+            'atan2': '\\operatorname{atan2}',
             'sec': '\\sec',
             'csc': '\\csc',
             'cot': '\\cot',
@@ -3172,6 +3229,8 @@ class Call extends Expr {
         if (this.funcName === 'besselK' && argsTex.length === 2) return `K_{${argsTex[0]}}\\left(${argsTex[1]}\\right)`;
         if (this.funcName === 'airyAi') return `\\operatorname{Ai}\\left(${argsTex[0]}\\right)`;
         if (this.funcName === 'airyBi') return `\\operatorname{Bi}\\left(${argsTex[0]}\\right)`;
+        if (this.funcName === 'airyAiPrime') return `\\operatorname{Ai}'\\left(${argsTex[0]}\\right)`;
+        if (this.funcName === 'airyBiPrime') return `\\operatorname{Bi}'\\left(${argsTex[0]}\\right)`;
 
         if (this.funcName === 'hyp2f1' && argsTex.length === 4) {
              return `{}_2F_1\\left(${argsTex[0]}, ${argsTex[1]}; ${argsTex[2]}; ${argsTex[3]}\\right)`;
@@ -4313,6 +4372,54 @@ function math_besselK(v, x) {
         return Math.PI / 2 * (math_besselI(-(v+eps), x) - math_besselI(v+eps, x)) / Math.sin((v+eps) * Math.PI);
     }
     return Math.PI / 2 * (math_besselI(-v, x) - math_besselI(v, x)) / Math.sin(v * Math.PI);
+}
+
+function math_airyAi(x) {
+    if (x === 0) return 0.3550280538878172; // 1 / (3^(2/3) * gamma(2/3))
+    if (x > 0) {
+        const zeta = 2/3 * Math.pow(x, 1.5);
+        return 1/Math.PI * Math.sqrt(x/3) * math_besselK(1/3, zeta);
+    } else {
+        const absX = -x;
+        const zeta = 2/3 * Math.pow(absX, 1.5);
+        return Math.sqrt(absX)/3 * (math_besselJ(1/3, zeta) + math_besselJ(-1/3, zeta));
+    }
+}
+
+function math_airyBi(x) {
+    if (x === 0) return 0.6149266274460007; // 1 / (3^(1/6) * gamma(2/3))
+    if (x > 0) {
+        const zeta = 2/3 * Math.pow(x, 1.5);
+        return Math.sqrt(x/3) * (math_besselI(-1/3, zeta) + math_besselI(1/3, zeta));
+    } else {
+        const absX = -x;
+        const zeta = 2/3 * Math.pow(absX, 1.5);
+        return Math.sqrt(absX/3) * (math_besselJ(-1/3, zeta) - math_besselJ(1/3, zeta));
+    }
+}
+
+function math_airyAiPrime(x) {
+    if (x === 0) return -0.2588194037928068; // -1 / (3^(1/3) * gamma(1/3))
+    if (x > 0) {
+        const zeta = 2/3 * Math.pow(x, 1.5);
+        return -x / (Math.PI * Math.sqrt(3)) * math_besselK(2/3, zeta);
+    } else {
+        const absX = -x;
+        const zeta = 2/3 * Math.pow(absX, 1.5);
+        return absX / 3 * (math_besselJ(2/3, zeta) - math_besselJ(-2/3, zeta));
+    }
+}
+
+function math_airyBiPrime(x) {
+    if (x === 0) return 0.4482883573538264; // 3^(1/6) / gamma(1/3)
+    if (x > 0) {
+        const zeta = 2/3 * Math.pow(x, 1.5);
+        return x / Math.sqrt(3) * (math_besselI(-2/3, zeta) + math_besselI(2/3, zeta));
+    } else {
+        const absX = -x;
+        const zeta = 2/3 * Math.pow(absX, 1.5);
+        return absX / Math.sqrt(3) * (math_besselJ(-2/3, zeta) + math_besselJ(2/3, zeta));
+    }
 }
 
 function math_hyp2f1(a, b, c, z) {
