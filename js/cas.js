@@ -4176,6 +4176,39 @@ class CAS {
                         const pThird = new Div(p, new Num(3));
                         const D = new Add(new Pow(qHalf, new Num(2)), new Pow(pThird, new Num(3))).simplify();
 
+                        const shift = new Div(b, new Mul(new Num(3), a));
+
+                        // Check for Casus Irreducibilis (3 real roots case, D < 0)
+                        const DVal = D.evaluateNumeric();
+                        if (!isNaN(DVal) && DVal < -1e-9) {
+                             // Trigonometric Solution
+                             const negPThird = new Mul(new Num(-1), pThird).simplify();
+                             const sqrtNegPThird = new Call('sqrt', [negPThird]).simplify();
+                             const rFactor = new Mul(new Num(2), sqrtNegPThird).simplify();
+
+                             const negQHalf = new Mul(new Num(-1), qHalf).simplify();
+                             const denomArg = new Pow(negPThird, new Div(new Num(3), new Num(2))).simplify();
+                             const arg = new Div(negQHalf, denomArg).simplify();
+
+                             const theta = new Call('acos', [arg]);
+
+                             // Roots
+                             // k=0
+                             const termY1 = new Mul(rFactor, new Call('cos', [new Div(theta, new Num(3))]));
+                             // k=1
+                             const angle2 = new Div(new Add(theta, new Mul(new Num(2), new Sym('pi'))), new Num(3));
+                             const termY2 = new Mul(rFactor, new Call('cos', [angle2]));
+                             // k=2
+                             const angle3 = new Div(new Add(theta, new Mul(new Num(4), new Sym('pi'))), new Num(3));
+                             const termY3 = new Mul(rFactor, new Call('cos', [angle3]));
+
+                             const x1 = new Sub(termY1, shift).simplify();
+                             const x2 = new Sub(termY2, shift).simplify();
+                             const x3 = new Sub(termY3, shift).simplify();
+
+                             return new Call('set', [x1, x2, x3]);
+                        }
+
                         const sqrtD = new Call('sqrt', [D]);
                         const term1 = new Add(new Mul(new Num(-1), qHalf), sqrtD);
                         const term2 = new Sub(new Mul(new Num(-1), qHalf), sqrtD);
@@ -4183,7 +4216,6 @@ class CAS {
                         const u = new Call('cbrt', [term1]);
                         const v = new Call('cbrt', [term2]);
 
-                        const shift = new Div(b, new Mul(new Num(3), a));
                         const x1 = new Sub(new Add(u, v), shift).simplify();
 
                         const iSqrt3 = new Mul(new Sym('i'), new Call('sqrt', [new Num(3)]));
