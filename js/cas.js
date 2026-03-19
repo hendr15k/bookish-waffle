@@ -1292,9 +1292,17 @@ class CAS {
                 return this._mean(args[0]);
             }
 
-            if (node.funcName === 'variance' || node.funcName === 'var') {
-                if (node.args.length !== 1) throw new Error("variance requires 1 argument (list)");
-                return this._variance(args[0]);
+
+            if (node.funcName === 'expectedValue') {
+                if (node.args.length === 2) return this._expectedValue(args[0], args[1]);
+                if (node.args.length === 4) return this._expectedValue(args[0], args[1], args[2], args[3]);
+                throw new Error("expectedValue requires 2 arguments (values, probs) or 4 arguments (expr, var, a, b)");
+            }
+if (node.funcName === 'variance' || node.funcName === 'var') {
+                if (node.args.length === 1) return this._variance(args[0]);
+                if (node.args.length === 2) return this._variance(args[0], args[1]);
+                if (node.args.length === 4) return this._variance(args[0], args[1], args[2], args[3]);
+                throw new Error("variance requires 1 argument (list), 2 arguments (values, probs), or 4 arguments (expr, var, a, b)");
             }
 
             if (node.funcName === 'std' || node.funcName === 'stddev' || node.funcName === 'stdev') {
@@ -6799,6 +6807,29 @@ class CAS {
         return new Vec(list);
     }
 
+
+    _expectedValue(arg1, arg2, arg3, arg4) {
+        if (arg3 === undefined) {
+            // expectedValue(values, probs)
+            if (!(arg1 instanceof Vec) || !(arg2 instanceof Vec)) throw new Error("Arguments must be lists");
+            if (arg1.elements.length !== arg2.elements.length) throw new Error("Lists must be equal length");
+
+            let sum = new Num(0);
+            for(let i=0; i<arg1.elements.length; i++) {
+                sum = new Add(sum, new Mul(arg1.elements[i], arg2.elements[i]));
+            }
+            return sum.simplify();
+        } else {
+            // expectedValue(expr, var, a, b)
+            const expr = arg1;
+            const variable = arg2;
+            const a = arg3;
+            const b = arg4;
+            const integrand = new Mul(variable, expr).simplify();
+            return this.evaluate(new Call('integrate', [integrand, variable, a, b])).simplify();
+        }
+    }
+
     _mean(list) {
         if (list instanceof Vec) {
             if (list.elements.length === 0) return new Num(0);
@@ -6832,7 +6863,29 @@ class CAS {
         return new Call('median', [list]);
     }
 
-    _variance(list) {
+    _variance(arg1, arg2, arg3, arg4) {
+         if (arg3 !== undefined) {
+             // variance(expr, var, a, b)
+             const expr = arg1;
+             const variable = arg2;
+             const a = arg3;
+             const b = arg4;
+             const ex = this._expectedValue(expr, variable, a, b);
+             const integrand = new Mul(new Pow(new Sub(variable, ex), new Num(2)), expr).simplify();
+             return this.evaluate(new Call('integrate', [integrand, variable, a, b])).simplify();
+         }
+         if (arg2 !== undefined) {
+             // variance(values, probs)
+             if (!(arg1 instanceof Vec) || !(arg2 instanceof Vec)) throw new Error("Arguments must be lists");
+             const ex = this._expectedValue(arg1, arg2);
+             let sum = new Num(0);
+             for(let i=0; i<arg1.elements.length; i++) {
+                 const diffSq = new Pow(new Sub(arg1.elements[i], ex), new Num(2));
+                 sum = new Add(sum, new Mul(diffSq, arg2.elements[i]));
+             }
+             return sum.simplify();
+         }
+         const list = arg1;
          if (list instanceof Vec) {
              const n = list.elements.length;
              if (n < 2) return new Num(0);

@@ -52,7 +52,7 @@ const u2 = cas.evaluate(new Call('chebyshevU', [new Num(2), new Sym('x')]));
 // We expand to ensure canonical form 4x^2 - 1
 const u2_expanded = u2.expand().simplify();
 const u2_str = u2_expanded.toString().replace(/\s/g, '');
-assert(u2_str === "((4*(x^2))-1)" || u2_str === "4*x^2-1" || u2_str === "(((2*x))^2-1)",
+assert(u2_str === "((4*(x^2))-1)" || u2_str === "4*x^2-1" || u2_str === "(((2*x))^2-1)" || u2_str === "((4*x^2)-1)",
        `chebyshevU(2, x) expanded structure. Got ${u2_str}`);
 
 // 6. Bernoulli Polynomial
