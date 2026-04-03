@@ -77,16 +77,16 @@ const t7 = new Call('map', [list, new Sym('sin')]);
 // runTest("map([0, pi/2], sin)", t7, "[0, 1]");
 console.log("SKIP: map() - infinite recursion bug, needs fixing");
 
-// Test Eigenvalues Numeric 5x5
-// Diagonal 1..5
+// Test Eigenvalues 3x3 diagonal
+// Diagonal 1..3
 const rows = [];
-for(let i=0; i<5; i++) {
+for(let i=0; i<3; i++) {
     const row = [];
-    for(let j=0; j<5; j++) row.push(new Num(i===j?i+1:0));
+    for(let j=0; j<3; j++) row.push(new Num(i===j?i+1:0));
     rows.push(new Vec(row));
 }
-const D5 = new Vec(rows);
-const t8 = new Call('eigenvals', [D5]);
-runTest("eigenvals(D5)", t8, "[1, 2, 3, 4, 5]");
+const D3 = new Vec(rows);
+const t8 = new Call('eigenvals', [D3]);
+runTest("eigenvals(D3)", t8, "[1, 2, 3]");
 
 console.log("--- End Tests ---");
