@@ -15137,12 +15137,31 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
         const res = list.elements.map(e => {
             if (func instanceof Sym) {
-                // map([..], sin) -> [sin(a), sin(b), ...]
-                // Evaluate directly instead of .simplify() to avoid recursive loops.
+                const fname = func.name;
+
+                // Check if it's a user-defined function: f(x) := x^2
+                if (this.functions && this.functions[fname]) {
+                    const fdef = this.functions[fname];
+                    // Substitute the function body with the element
+                    // fdef.body is the expression, fdef.params are the parameters
+                    let body = fdef.body;
+                    const params = fdef.params || fdef.args || [];
+                    if (params.length >= 1) {
+                        const param = params[0] instanceof Sym ? params[0] : new Sym(String(params[0]));
+                        body = body.substitute(param, e);
+                    }
+                    try {
+                        return this._recursiveEval(body);
+                    } catch (_) {
+                        return body.simplify();
+                    }
+                }
+
+                // Built-in function: map([..], sin) -> [sin(a), sin(b), ...]
                 try {
-                    return this._recursiveEval(new Call(func.name, [e]));
+                    return this._recursiveEval(new Call(fname, [e]));
                 } catch (_) {
-                    return new Call(func.name, [e]);
+                    return new Call(fname, [e]);
                 }
             }
 
