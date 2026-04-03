@@ -14794,15 +14794,35 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
     _map(list, func) {
         if (!(list instanceof Vec)) throw new Error("map first argument must be a list");
+
+        const xPlaceholder = new Sym('x');
+        const underscorePlaceholder = new Sym('_');
+
         const res = list.elements.map(e => {
             if (func instanceof Sym) {
-                // Evaluate the function call directly instead of .simplify() to avoid infinite recursion
+                // map([..], sin) -> [sin(a), sin(b), ...]
+                // Evaluate directly instead of .simplify() to avoid recursive loops.
                 try {
                     return this._recursiveEval(new Call(func.name, [e]));
-                } catch(_) {
+                } catch (_) {
                     return new Call(func.name, [e]);
                 }
             }
+
+            if (func instanceof Expr) {
+                // map([..], x+1) or map([..], sin(x)) or map([..], f(_))
+                // Treat x / _ as element placeholders.
+                let mapped = func;
+                if (func.dependsOn(xPlaceholder)) mapped = mapped.substitute(xPlaceholder, e);
+                if (mapped.dependsOn(underscorePlaceholder)) mapped = mapped.substitute(underscorePlaceholder, e);
+
+                try {
+                    return this._recursiveEval(mapped);
+                } catch (_) {
+                    return mapped.simplify();
+                }
+            }
+
             return new Call('map', [new Vec([e]), func]);
         });
         return new Vec(res);
