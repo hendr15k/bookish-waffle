@@ -221,3 +221,33 @@ npm run test:chemistry   # Run chemistry tests
 ## License
 
 MIT — see LICENSE file.
+
+## Android App + APK Releases
+
+This repository now also contains an Android wrapper built with Capacitor.
+
+### Local commands
+
+```bash
+npm run build:android:web   # prepare dist-android/
+npm run cap:sync            # sync web assets into android/
+```
+
+### GitHub Actions APK builds
+
+- Pushes to `main` create/update the **Android Nightly** prerelease
+- Tags like `v1.0.0` create a normal GitHub Release
+- Local Gradle builds need a configured Android SDK (`ANDROID_HOME` or `android/local.properties`)
+- GitHub Actions sets up the Android SDK automatically
+- Release assets include:
+  - installable debug APK
+  - unsigned release APK
+  - signed release APK if Android signing secrets are configured
+
+### Optional signing secrets
+
+- `ANDROID_KEYSTORE_BASE64`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+

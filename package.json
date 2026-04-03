@@ -9,9 +9,17 @@
     "test:latex": "node tests/test_latex.js",
     "test:chemistry": "node tests/test_chemistry.js",
     "test:ui": "node tests/test_ui_logic.js",
-    "test:extended": "node tests/test_extended.js"
+    "test:extended": "node tests/test_extended.js",
+    "build": "npm run build:android:web",
+    "build:android:web": "node scripts/prepare-android-web.mjs",
+    "cap:sync": "npm run build:android:web && npx cap sync android"
   },
   "devDependencies": {
     "jsdom": "^27.3.0"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.3.0",
+    "@capacitor/cli": "^8.3.0",
+    "@capacitor/core": "^8.3.0"
   }
 }
