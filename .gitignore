@@ -1,2 +1,5 @@
 verification/
 node_modules/
+dist-android/
+android/local.properties
+android/.gradle/
