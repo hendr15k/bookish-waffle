@@ -9870,6 +9870,10 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
         if (isNaN(h) || isNaN(currentT) || isNaN(targetT)) return new Call('rk4', [ode, depVar, indepVar, initVal, t0, t1, step]);
 
+        // Extract RHS from equation (y' = f(t,y))
+        let rhs = ode;
+        if (ode instanceof Eq) rhs = ode.right;
+
         // Ensure step direction
         if ((targetT > currentT && h < 0) || (targetT < currentT && h > 0)) h = -h;
 
@@ -9908,7 +9912,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 }
                 return res;
             } else {
-                let e = ode;
+                let e = rhs;
                 e = e.substitute(indepVar, new Num(t));
                 e = e.substitute(depVar, new Num(y));
                 return e.evaluateNumeric();
@@ -15475,13 +15479,49 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
         return new Vec([new Num(maxVal), new Vec(items)]);
     }
+
+    _integrateSpecialFunctions(expr, varNode) {
+        // sin(ax+b)/(ax+b) -> Si(ax+b)/a
+        // cos(ax+b)/(ax+b) -> Ci(ax+b)/a
+        // exp(ax+b)/(ax+b) -> Ei(ax+b)/a
+        // 1/ln(ax+b) -> Li(ax+b)
+        if (expr instanceof Div) {
+            const num = expr.left;
+            const den = expr.right;
+            const poly = this._getPolyCoeffs(den, varNode);
+            if (poly && poly.maxDeg === 1) {
+                const a = poly.coeffs[1];
+                const b = poly.coeffs[0] || new Num(0);
+                // sin(den) / den
+                if (num instanceof Call && num.funcName === 'sin' && num.args[0].toString() === den.toString()) {
+                    return new Div(new Call('Si', [den]), a).simplify();
+                }
+                // cos(den) / den
+                if (num instanceof Call && num.funcName === 'cos' && num.args[0].toString() === den.toString()) {
+                    return new Div(new Call('Ci', [den]), a).simplify();
+                }
+                // exp(den) / den
+                if (num instanceof Call && num.funcName === 'exp' && num.args[0].toString() === den.toString()) {
+                    return new Div(new Call('Ei', [den]), a).simplify();
+                }
+                // 1 / ln(den)
+                if (num instanceof Num && num.value === 1 && den instanceof Call && (den.funcName === 'ln' || den.funcName === 'log')) {
+                    const arg = den.args[0];
+                    const polyArg = this._getPolyCoeffs(arg, varNode);
+                    if (polyArg && polyArg.maxDeg === 1) {
+                        const a2 = polyArg.coeffs[1];
+                        return new Div(new Call('Li', [arg]), a2).simplify();
+                    }
+                }
+            }
+        }
+        return null;
+    }
 }
 
 // Export classes for Global/CommonJS environments
 (function() {
-    const exports = {
-        CAS
-    };
+    const exports = { CAS };
     if (typeof globalThis !== 'undefined') {
         Object.assign(globalThis, exports);
     }
