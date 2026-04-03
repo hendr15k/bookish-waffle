@@ -75,6 +75,19 @@ const list = new Vec([new Num(0), new Div(new Sym('pi'), new Num(2))]);
 const t7 = new Call('map', [list, new Sym('sin')]);
 runTest("map([0, pi/2], sin)", t7, "[0, 1]");
 
+// map with expression placeholder x
+const list2 = new Vec([new Num(1), new Num(2), new Num(3)]);
+const t7b = new Call('map', [list2, new Add(new Sym('x'), new Num(1))]);
+runTest("map([1, 2, 3], x+1)", t7b, "[2, 3, 4]");
+
+// map with expression placeholder inside a call
+const t7c = new Call('map', [list, new Call('sin', [new Sym('x')])]);
+runTest("map([0, pi/2], sin(x))", t7c, "[0, 1]");
+
+// map with underscore placeholder
+const t7d = new Call('map', [list2, new Mul(new Sym('_'), new Num(2))]);
+runTest("map([1, 2, 3], _*2)", t7d, "[2, 4, 6]");
+
 // Test Eigenvalues 3x3 diagonal
 // Diagonal 1..3
 const rows = [];
