@@ -2,7 +2,7 @@
 
 A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, built with vanilla JavaScript. No backend, no API keys — runs entirely in your browser.
 
-[**🧮 Live Demo**](https://hendr15k.github.io/bookish-waffle/) · [📖 Deutsche Anleitung](ANLEITUNG.md)
+[**🧮 Live Demo**](https://hendr15k.github.io/bookish-waffle/) · [**📱 Android APK (Nightly Release)**](https://github.com/hendr15k/bookish-waffle/releases/tag/android-nightly) · [📖 Deutsche Anleitung](ANLEITUNG.md)
 
 ---
 
@@ -225,6 +225,10 @@ MIT — see LICENSE file.
 ## Android App + APK Releases
 
 This repository now also contains an Android wrapper built with Capacitor.
+
+**Direct download:**
+- Nightly release page: <https://github.com/hendr15k/bookish-waffle/releases/tag/android-nightly>
+- Installable asset: `app-debug.apk`
 
 ### Local commands
 
