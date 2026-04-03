@@ -12514,23 +12514,21 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         else return ineq;
 
         const expr = new Sub(lhs, rhs).simplify();
-
-        // Linear: ax + b < 0
         const poly = this._getPolyCoeffs(expr, varNode);
-        if (poly && poly.maxDeg === 1) {
-            const a = poly.coeffs[1]; // coeff of x
-            const b = poly.coeffs[0] || new Num(0); // constant
 
+        // Linear: ax + b ? 0
+        if (poly && poly.maxDeg === 1) {
+            const a = poly.coeffs[1];
+            const b = poly.coeffs[0] || new Num(0);
             const aVal = a.evaluateNumeric();
-            if (!isNaN(aVal)) {
+            if (!isNaN(aVal) && Math.abs(aVal) > 1e-12) {
                 const rhsVal = new Div(new Mul(new Num(-1), b), a).simplify();
                 if (aVal > 0) {
                     if (op === '<') return new Lt(varNode, rhsVal);
                     if (op === '>') return new Gt(varNode, rhsVal);
                     if (op === '<=') return new Le(varNode, rhsVal);
                     if (op === '>=') return new Ge(varNode, rhsVal);
-                } else if (aVal < 0) {
-                    // Flip sign
+                } else {
                     if (op === '<') return new Gt(varNode, rhsVal);
                     if (op === '>') return new Lt(varNode, rhsVal);
                     if (op === '<=') return new Ge(varNode, rhsVal);
@@ -12539,54 +12537,71 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             }
         }
 
-        // General Method: Find roots, test intervals
+        const satisfies = (v, inclusive=false) => {
+            if (isNaN(v)) return false;
+            if (op === '<') return v < 0;
+            if (op === '>') return v > 0;
+            if (op === '<=') return inclusive ? v <= 1e-10 : v < 0;
+            if (op === '>=') return inclusive ? v >= -1e-10 : v > 0;
+            return false;
+        };
+
         let rootList = [];
         try {
-             // Try to find roots
-             const r = this._roots(expr, varNode);
-             if (r instanceof Vec) rootList = r.elements;
-        } catch(e) { }
+            const r = this._roots(expr, varNode);
+            if (r instanceof Vec) rootList = r.elements;
+            else if (r) rootList = [r];
+        } catch (e) {}
 
-        // Filter real roots
         const realRoots = [];
-        for(const r of rootList) {
+        for (const r of rootList) {
             const val = r.evaluateNumeric();
-            if (!isNaN(val)) realRoots.push({val: val, expr: r});
+            if (!isNaN(val) && Number.isFinite(val)) realRoots.push({ val, expr: r.simplify ? r.simplify() : r });
         }
-
         realRoots.sort((a, b) => a.val - b.val);
 
-        // Quadratic: (x-r1)(x-r2)
-        if (realRoots.length === 2 && poly && poly.maxDeg === 2) {
-             const r1 = realRoots[0].expr;
-             const r2 = realRoots[1].expr;
-             // Test midpoint
-             const mid = (realRoots[0].val + realRoots[1].val)/2;
-             const valAtMid = expr.substitute(varNode, new Num(mid)).evaluateNumeric();
-
-             // Check operator satisfaction
-             let satisfied = false;
-             if (op === '<') satisfied = valAtMid < 0;
-             if (op === '>') satisfied = valAtMid > 0;
-             if (op === '<=') satisfied = valAtMid <= 0;
-             if (op === '>=') satisfied = valAtMid >= 0;
-
-             if (satisfied) {
-                 // Inside interval (r1, r2)
-                 // r1 < x < r2  => (x > r1) and (x < r2)
-                 const p1 = (op.includes('=')) ? new Ge(varNode, r1) : new Gt(varNode, r1);
-                 const p2 = (op.includes('=')) ? new Le(varNode, r2) : new Lt(varNode, r2);
-                 return new And(p1, p2);
-             } else {
-                 // Outside interval
-                 // x < r1 or x > r2
-                 const p1 = (op.includes('=')) ? new Le(varNode, r1) : new Lt(varNode, r1);
-                 const p2 = (op.includes('=')) ? new Ge(varNode, r2) : new Gt(varNode, r2);
-                 return new Or(p1, p2);
-             }
+        const uniqueRoots = [];
+        for (const r of realRoots) {
+            if (uniqueRoots.length === 0 || Math.abs(r.val - uniqueRoots[uniqueRoots.length - 1].val) > 1e-9) {
+                uniqueRoots.push(r);
+            }
         }
 
-        return new Call('solve', [ineq, varNode]);
+        if (uniqueRoots.length === 0) {
+            const testVal = expr.substitute(varNode, new Num(0)).evaluateNumeric();
+            if (!isNaN(testVal)) return satisfies(testVal, true) ? new Sym('true') : new Sym('false');
+            return new Call('solve', [ineq, varNode]);
+        }
+
+        const intervalCond = (i) => {
+            if (i === 0) return new Lt(varNode, uniqueRoots[0].expr);
+            if (i === uniqueRoots.length) return new Gt(varNode, uniqueRoots[uniqueRoots.length - 1].expr);
+            return new And(new Gt(varNode, uniqueRoots[i - 1].expr), new Lt(varNode, uniqueRoots[i].expr));
+        };
+
+        const testPoint = (i) => {
+            if (i === 0) return uniqueRoots[0].val - 1;
+            if (i === uniqueRoots.length) return uniqueRoots[uniqueRoots.length - 1].val + 1;
+            return (uniqueRoots[i - 1].val + uniqueRoots[i].val) / 2;
+        };
+
+        let result = null;
+        const addOr = (cond) => {
+            result = result ? new Or(result, cond) : cond;
+        };
+
+        for (let i = 0; i <= uniqueRoots.length; i++) {
+            const tv = testPoint(i);
+            const val = expr.substitute(varNode, new Num(tv)).evaluateNumeric();
+            if (satisfies(val, false)) addOr(intervalCond(i));
+        }
+
+        if (op === '<=' || op === '>=') {
+            for (const r of uniqueRoots) addOr(new Eq(varNode, r.expr));
+        }
+
+        if (result) return result;
+        return new Sym('false');
     }
 
     _integrateSpecial(expr, varNode) {
@@ -13283,14 +13298,25 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             return c;
         };
 
+        const stripOuterParens = (s) => {
+            if (!(s.startsWith('(') && s.endsWith(')'))) return s;
+            let depth = 0;
+            for (let i = 0; i < s.length; i++) {
+                if (s[i] === '(') depth++;
+                else if (s[i] === ')') depth--;
+                if (depth === 0 && i < s.length - 1) return s;
+            }
+            return s.slice(1, -1);
+        };
+
         const rec = (node) => {
             if (node instanceof Num) return node.toString();
             if (node instanceof Sym) return mapConst(node.name);
 
-            if (node instanceof Add) return `(${rec(node.left)} + ${rec(node.right)})`;
-            if (node instanceof Sub) return `(${rec(node.left)} - ${rec(node.right)})`;
-            if (node instanceof Mul) return `(${rec(node.left)} * ${rec(node.right)})`;
-            if (node instanceof Div) return `(${rec(node.left)} / ${rec(node.right)})`;
+            if (node instanceof Add) return `(${stripOuterParens(rec(node.left))} + ${stripOuterParens(rec(node.right))})`;
+            if (node instanceof Sub) return `(${stripOuterParens(rec(node.left))} - ${stripOuterParens(rec(node.right))})`;
+            if (node instanceof Mul) return `(${stripOuterParens(rec(node.left))} * ${stripOuterParens(rec(node.right))})`;
+            if (node instanceof Div) return `(${stripOuterParens(rec(node.left))} / ${stripOuterParens(rec(node.right))})`;
 
             if (node instanceof Pow) {
                 if ((lang === 'c' || lang === 'cpp')) {

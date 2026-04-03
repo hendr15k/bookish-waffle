@@ -2711,13 +2711,6 @@ class Call extends Expr {
     }
     diff(varName) {
         const u = this.args[0];
-        if (this.funcName === 'airyAi') {
-            // Ai'(u) * u'. Since Ai''(x) = x Ai(x), we don't have a simple closed form for Ai'
-            // unless we define AiPrime.
-            // Let's assume the system can handle Call('diff', [Call('airyAi', [u]), u])
-            // Or return generic diff
-            return new Call('diff', [this, varName]);
-        }
         if (this.funcName === 'gamma') {
             // diff(gamma(u)) = gamma(u) * psi(u) * u'
             return new Mul(new Mul(this, new Call('psi', [u])), u.diff(varName));
