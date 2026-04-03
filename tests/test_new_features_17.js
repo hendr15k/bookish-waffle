@@ -73,9 +73,7 @@ runTest("clamp(15, 0, 10)", t6, "10");
 // map([0, pi/2], sin) -> [sin(0), sin(pi/2)] -> [0, 1]
 const list = new Vec([new Num(0), new Div(new Sym('pi'), new Num(2))]);
 const t7 = new Call('map', [list, new Sym('sin')]);
-// SKIP: map() hangs due to infinite recursion in current implementation
-// runTest("map([0, pi/2], sin)", t7, "[0, 1]");
-console.log("SKIP: map() - infinite recursion bug, needs fixing");
+runTest("map([0, pi/2], sin)", t7, "[0, 1]");
 
 // Test Eigenvalues 3x3 diagonal
 // Diagonal 1..3

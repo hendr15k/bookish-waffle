@@ -14567,7 +14567,12 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         if (!(list instanceof Vec)) throw new Error("map first argument must be a list");
         const res = list.elements.map(e => {
             if (func instanceof Sym) {
-                return new Call(func.name, [e]).simplify();
+                // Evaluate the function call directly instead of .simplify() to avoid infinite recursion
+                try {
+                    return this._recursiveEval(new Call(func.name, [e]));
+                } catch(_) {
+                    return new Call(func.name, [e]);
+                }
             }
             return new Call('map', [new Vec([e]), func]);
         });
