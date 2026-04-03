@@ -1210,6 +1210,56 @@ class Div extends BinaryOp {
              }
         }
 
+        // Factorial and Gamma Simplification
+        if (l instanceof Call && r instanceof Call && l.funcName === r.funcName) {
+             const name = l.funcName;
+             if (name === 'factorial' || name === 'gamma') {
+                 const n = l.args[0];
+                 const k = r.args[0];
+                 const diff = new Sub(n, k).simplify();
+                 if (diff instanceof Num && Number.isInteger(diff.value)) {
+                     const d = diff.value;
+                     if (name === 'factorial') {
+                         if (d > 0 && d <= 10) {
+                             // n! / (n-d)! = n*(n-1)*...*(n-d+1)
+                             let res = n;
+                             for(let i=1; i<d; i++) {
+                                 res = new Mul(res, new Sub(n, new Num(i))).simplify();
+                             }
+                             return res;
+                         } else if (d < 0 && d >= -10) {
+                             // n! / k! where k > n
+                             const absD = -d;
+                             let den = k;
+                             for(let i=1; i<absD; i++) {
+                                 den = new Mul(den, new Sub(k, new Num(i))).simplify();
+                             }
+                             return new Div(new Num(1), den).simplify();
+                         }
+                     }
+                     if (name === 'gamma') {
+                         // gamma(n) / gamma(k). n = k+d.
+                         // gamma(x+1) = x gamma(x).
+                         // gamma(k+d)/gamma(k) = (k+d-1)...(k)
+                         if (d > 0 && d <= 10) {
+                             let res = new Sub(n, new Num(1)).simplify();
+                             for(let i=1; i<d; i++) {
+                                 res = new Mul(res, new Sub(n, new Num(i+1))).simplify();
+                             }
+                             return res;
+                         } else if (d < 0 && d >= -10) {
+                             const absD = -d;
+                             let den = new Sub(k, new Num(1)).simplify();
+                             for(let i=1; i<absD; i++) {
+                                 den = new Mul(den, new Sub(k, new Num(i+1))).simplify();
+                             }
+                             return new Div(new Num(1), den).simplify();
+                         }
+                     }
+                 }
+             }
+        }
+
         // Simplify Powers in Division: x^a / x^b -> x^(a-b)
         let baseL = l;
         let expL = new Num(1);
