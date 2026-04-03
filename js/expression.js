@@ -883,10 +883,10 @@ class Mul extends BinaryOp {
         }
 
         // Scalar * Vector
-        if (l instanceof Num && r instanceof Vec) {
+        if (!(l instanceof Vec) && r instanceof Vec) {
             return new Vec(r.elements.map(e => new Mul(l, e).simplify()));
         }
-        if (l instanceof Vec && r instanceof Num) {
+        if (l instanceof Vec && !(r instanceof Vec)) {
             return new Vec(l.elements.map(e => new Mul(e, r).simplify()));
         }
 

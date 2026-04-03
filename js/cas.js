@@ -2565,6 +2565,31 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 return this._groebner(args[0], args[1]);
             }
 
+            if (node.funcName === 'ctrb') {
+                if (node.args.length !== 2) throw new Error("ctrb requires 2 arguments: A, B");
+                return this._ctrb(args[0], args[1]);
+            }
+            if (node.funcName === 'obsv') {
+                if (node.args.length !== 2) throw new Error("obsv requires 2 arguments: A, C");
+                return this._obsv(args[0], args[1]);
+            }
+            if (node.funcName === 'isControllable') {
+                if (node.args.length !== 2) throw new Error("isControllable requires 2 arguments: A, B");
+                return this._isControllable(args[0], args[1]);
+            }
+            if (node.funcName === 'isObservable') {
+                if (node.args.length !== 2) throw new Error("isObservable requires 2 arguments: A, C");
+                return this._isObservable(args[0], args[1]);
+            }
+            if (node.funcName === 'ackermann' || node.funcName === 'acker') {
+                if (node.args.length !== 3) throw new Error("ackermann requires 3 arguments: A, B, poles");
+                return this._ackermann(args[0], args[1], args[2]);
+            }
+            if (node.funcName === 'ss2tf') {
+                if (node.args.length !== 4) throw new Error("ss2tf requires 4 arguments: A, B, C, D");
+                return this._ss2tf(args[0], args[1], args[2], args[3]);
+            }
+
             if (node.funcName === 'unitVector') {
                 if (node.args.length !== 1) throw new Error("unitVector requires 1 argument");
                 return this._unitVector(args[0]);
