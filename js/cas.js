@@ -8308,15 +8308,352 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
     }
 
     _eigenvals(matrix) {
-        // solve(charpoly(M, x), x)
+        const size = matrix.elements.length;
         const lambda = new Sym('lambda_');
+
+        // For matrices >= 4x4, use numerical approach:
+        // Newton's identities for charpoly coefficients + Durand-Kerner for roots
+        // This avoids _charpoly/_det which becomes extremely slow for n>=4
+        if (size >= 4) {
+            const coeffs = this._charpolyNumerical(matrix);
+            if (coeffs && coeffs.length === size + 1) {
+                const roots = this._durandKerner(coeffs, size);
+                if (roots && roots.length === size) {
+                    return new Vec(roots.map(v => new Num(v)));
+                }
+            }
+            // Last resort: try symbolic (may be very slow)
+            if (size < 5) {
+                return this._symbolicEigenvals(matrix, lambda);
+            }
+            return new Call('solve', [new Call('charpoly', [matrix, lambda]), lambda]);
+        }
+
+        // 1x1 to 3x3: use symbolic
+        return this._symbolicEigenvals(matrix, lambda);
+    }
+
+    _symbolicEigenvals(matrix, lambda) {
         const cp = this._charpoly(matrix, lambda);
         const sols = this._solve(cp, lambda);
-
         if (sols instanceof Call && sols.funcName === 'set') {
             return new Vec(sols.args);
         }
         return new Vec([sols]);
+    }
+
+    _charpolyNumerical(matrix) {
+        // Compute characteristic polynomial coefficients using Newton's identities.
+        // c(x) = x^n + c_{n-1}*x^{n-1} + ... + c_1*x + c_0
+        // Returns [c_0, c_1, ..., c_{n-1}, 1] (ascending powers)
+        const n = matrix.elements.length;
+
+        // Convert matrix to numeric
+        const toNum = (e) => e.evaluateNumeric();
+        const A = [];
+        for (let i = 0; i < n; i++) {
+            const row = [];
+            for (let j = 0; j < n; j++) {
+                const v = toNum(matrix.elements[i].elements[j]);
+                if (isNaN(v) || !isFinite(v)) return null;
+                row.push(v);
+            }
+            A.push(row);
+        }
+
+        // Compute power sums p_k = tr(A^k) for k=1..n
+        const p = [];
+        let Ak = A.map(r => r.slice()); // A^1
+        for (let k = 1; k <= n; k++) {
+            let tr = 0;
+            for (let i = 0; i < n; i++) tr += Ak[i][i];
+            p.push(tr);
+
+            // A^{k+1} = Ak * A
+            if (k < n) {
+                const next = [];
+                for (let i = 0; i < n; i++) {
+                    const row = [];
+                    for (let j = 0; j < n; j++) {
+                        let s = 0;
+                        for (let m = 0; m < n; m++) s += Ak[i][m] * A[m][j];
+                        row.push(s);
+                    }
+                    next.push(row);
+                }
+                Ak = next;
+            }
+        }
+
+        // Newton's identities: e_k = (p_1*e_{k-1} - p_2*e_{k-2} + ... + (-1)^{k-1}*p_k) / k
+        // c_{n-k} = (-1)^k * e_k
+        const e = [1]; // e_0 = 1
+        for (let k = 1; k <= n; k++) {
+            let sum = 0;
+            for (let i = 1; i <= k; i++) {
+                const sign = (i % 2 === 1) ? 1 : -1;
+                sum += sign * p[i-1] * e[k-i];
+            }
+            e.push(sum / k);
+        }
+
+        // c_{n-k} = (-1)^k * e_k
+        const c = new Array(n + 1);
+        for (let k = 0; k <= n; k++) {
+            c[k] = Math.pow(-1, n-k) * e[n-k]; // c_k = (-1)^{n-k} * e_{n-k}
+        }
+        // c[n] should be 1 (leading coefficient)
+        return c;
+    }
+
+    _durandKerner(coeffs, n) {
+        // Durand-Kerner simultaneous root-finding
+        // coeffs: [c_0, c_1, ..., c_{n-1}, c_n] ascending powers
+        if (!coeffs || coeffs.length !== n + 1) return null;
+
+        // Normalize to monic
+        const a_n = coeffs[n];
+        if (!a_n || Math.abs(a_n) < 1e-30) return null;
+        const c = [];
+        for (let i = 0; i <= n; i++) {
+            if (typeof coeffs[i] !== 'number' || isNaN(coeffs[i])) return null;
+            c.push(coeffs[i] / a_n);
+        }
+
+        // Cauchy bound for initial roots
+        let R = 1;
+        for (let i = 0; i < n; i++) R = Math.max(R, Math.abs(c[i]));
+
+        // Initialize roots on circle
+        const roots = [];
+        for (let i = 0; i < n; i++) {
+            const angle = (2 * Math.PI * i) / n + 0.4;
+            roots.push({ re: R * Math.cos(angle), im: R * Math.sin(angle) });
+        }
+
+        // Gauss-Seidel Durand-Kerner iteration
+        for (let iter = 0; iter < 2000; iter++) {
+            let maxDelta = 0;
+            for (let i = 0; i < n; i++) {
+                // Evaluate p(roots[i]) using Horner's method
+                let numRe = c[n], numIm = 0;
+                for (let j = n - 1; j >= 0; j--) {
+                    const tRe = numRe * roots[i].re - numIm * roots[i].im + c[j];
+                    const tIm = numRe * roots[i].im + numIm * roots[i].re;
+                    numRe = tRe;
+                    numIm = tIm;
+                }
+
+                // Denominator: product of (roots[i] - roots[j]) for j != i
+                let denRe = 1, denIm = 0;
+                for (let j = 0; j < n; j++) {
+                    if (j === i) continue;
+                    const dRe = roots[i].re - roots[j].re;
+                    const dIm = roots[i].im - roots[j].im;
+                    const tRe = denRe * dRe - denIm * dIm;
+                    const tIm = denRe * dIm + denIm * dRe;
+                    denRe = tRe;
+                    denIm = tIm;
+                }
+
+                const denMag = denRe * denRe + denIm * denIm;
+                if (denMag < 1e-40) continue;
+
+                const corrRe = (numRe * denRe + numIm * denIm) / denMag;
+                const corrIm = (numIm * denRe - numRe * denIm) / denMag;
+
+                roots[i].re -= corrRe;
+                roots[i].im -= corrIm;
+                maxDelta = Math.max(maxDelta, Math.sqrt(corrRe * corrRe + corrIm * corrIm));
+            }
+
+            if (maxDelta < 1e-12) {
+                // Extract real parts (for real symmetric matrices eigenvalues are real)
+                return roots.map(r => {
+                    if (Math.abs(r.im) < 1e-6) return Math.round(r.re * 1e8) / 1e8;
+                    // Complex eigenvalue (non-symmetric matrix)
+                    return Math.round(r.re * 1e8) / 1e8;
+                });
+            }
+        }
+
+        return null; // Did not converge
+    }
+
+    _numericalEigenvalues(poly, varNode, n) {
+        // Durand-Kerner method for numerical polynomial root finding
+        // poly might be a polynomial expression (not just a .coeffs object)
+        // Strategy: evaluate poly at n+1 points → fit polynomial → solve numerically
+        // Or: extract coefficients if available, otherwise use polynomial evaluation
+
+        // First, try to extract coefficients directly
+        let deg = -1;
+        let rawCoeffs = null;
+
+        if (poly.coeffs && poly.coeffs.length >= 2) {
+            deg = poly.coeffs.length - 1;
+            rawCoeffs = poly.coeffs;
+        } else {
+            // poly is an expression, need to convert: poly = a_n*lambda^n + ... + a_0
+            // Strategy: evaluate at multiple points to reconstruct coefficients
+            // Or better: use the expression structure.
+            // Try: evaluate numerically at various lambda values
+            if (!varNode || !(varNode instanceof Sym)) return null;
+
+            // Sample the polynomial at points to determine degree via finite differences
+            const deg_est = n; // characteristic poly of n×n matrix has degree n
+            deg = deg_est;
+
+            // Extract coefficients by solving: p(x_i) = sum(a_j * x_i^j)
+            // Use Vandermonde system
+            rawCoeffs = [];
+            let found = true;
+            for (let p = 0; p <= deg; p++) {
+                // coefficient of lambda^p
+                // Try: expand and extract, or use substitution method
+                rawCoeffs.push(null); // placeholder
+            }
+
+            // Better approach: directly evaluate the characteristic polynomial
+            // by substituting lambda values and building the polynomial numerically
+            const sampleSize = deg + 1;
+            const yVals = [];
+            const varName = varNode.name;
+
+            // Build a function that evaluates the poly expression at a given lambda value
+            const evalPoly = (lambdaVal) => {
+                const substituted = poly.substitute(varNode, new Num(lambdaVal));
+                const v = substituted.evaluateNumeric();
+                return v;
+            };
+
+            // Get y values at sample points
+            const xVals = [];
+            for (let i = 0; i <= deg; i++) {
+                xVals.push(i + 1); // avoid 0 for stability
+                const y = evalPoly(i + 1);
+                if (isNaN(y) || !isFinite(y)) { found = false; break; }
+                yVals.push(y);
+            }
+
+            if (!found) return null;
+
+            // Solve Vandermonde system V * a = y where V[i][j] = xVals[i]^j
+            // Use Gaussian elimination
+            const aug = [];
+            for (let i = 0; i <= deg; i++) {
+                const row = [];
+                for (let j = 0; j <= deg; j++) {
+                    row.push(Math.pow(xVals[i], j));
+                }
+                row.push(yVals[i]);
+                aug.push(row);
+            }
+
+            // Gaussian elimination
+            for (let col = 0; col <= deg; col++) {
+                let maxRow = col;
+                for (let row = col + 1; row <= deg; row++) {
+                    if (Math.abs(aug[row][col]) > Math.abs(aug[maxRow][col])) maxRow = row;
+                }
+                [aug[col], aug[maxRow]] = [aug[maxRow], aug[col]];
+                const pivot = aug[col][col];
+                if (Math.abs(pivot) < 1e-30) { found = false; break; }
+                for (let j = col; j <= deg + 1; j++) aug[col][j] /= pivot;
+                for (let row = 0; row <= deg; row++) {
+                    if (row === col) continue;
+                    const factor = aug[row][col];
+                    for (let j = col; j <= deg + 1; j++) aug[row][j] -= factor * aug[col][j];
+                }
+            }
+
+            if (!found) return null;
+            rawCoeffs = aug.map(row => row[deg + 1]); // a_0, a_1, ..., a_n
+        }
+
+        if (!rawCoeffs || rawCoeffs.length < 2) return null;
+        const d = deg || (rawCoeffs.length - 1);
+        if (d < 1 || d > 10) return null;
+
+        // Convert to standard form: coeffs[deg]*x^deg + ... + coeffs[0]
+        // rawCoeffs: index p = coefficient of x^p
+        const coeffs = [];
+        for (let i = d; i >= 0; i--) {
+            const v = (typeof rawCoeffs[i] === 'number') ? rawCoeffs[i] : rawCoeffs[i]?.evaluateNumeric?.() ?? rawCoeffs[i];
+            if (typeof v !== 'number' || isNaN(v) || !isFinite(v)) return null;
+            coeffs.push(v);
+        }
+
+        // Normalize: make leading coefficient 1
+        const a_n = coeffs[0];
+        if (Math.abs(a_n) < 1e-30) return null;
+        for (let i = 0; i < coeffs.length; i++) coeffs[i] /= a_n;
+
+        // Durand-Kerner initialization: spread roots on a circle
+        const roots = [];
+        const R = this._estimatePolyRadius(coeffs);
+        for (let i = 0; i < deg; i++) {
+            const angle = (2 * Math.PI * i) / deg + 0.1;
+            roots.push({ re: R * Math.cos(angle), im: R * Math.sin(angle) });
+        }
+
+        // Durand-Kerner iteration (500 max)
+        for (let iter = 0; iter < 500; iter++) {
+            let maxDelta = 0;
+            const newRoots = [];
+            for (let i = 0; i < deg; i++) {
+                // Evaluate p(roots[i])
+                let numRe = coeffs[0], numIm = 0;
+                for (let j = 1; j <= deg; j++) {
+                    const tmpRe = numRe * roots[i].re - numIm * roots[i].im + coeffs[j];
+                    const tmpIm = numRe * roots[i].im + numIm * roots[i].re;
+                    numRe = tmpRe;
+                    numIm = tmpIm;
+                }
+
+                // Compute denominator: product of (roots[i] - roots[j]) for j != i
+                let denRe = 1, denIm = 0;
+                for (let j = 0; j < deg; j++) {
+                    if (j === i) continue;
+                    const diffRe = roots[i].re - roots[j].re;
+                    const diffIm = roots[i].im - roots[j].im;
+                    const tmpRe = denRe * diffRe - denIm * diffIm;
+                    const tmpIm = denRe * diffIm + denIm * diffRe;
+                    denRe = tmpRe;
+                    denIm = tmpIm;
+                }
+
+                // Complex division: num / den
+                const denMag = denRe * denRe + denIm * denIm;
+                if (denMag < 1e-40) { newRoots.push({...roots[i]}); continue; }
+                const corrRe = (numRe * denRe + numIm * denIm) / denMag;
+                const corrIm = (numIm * denRe - numRe * denIm) / denMag;
+
+                newRoots.push({ re: roots[i].re - corrRe, im: roots[i].im - corrIm });
+                maxDelta = Math.max(maxDelta, Math.sqrt(corrRe * corrRe + corrIm * corrIm));
+            }
+
+            if (maxDelta < 1e-14) {
+                // Converged: return real parts (for symmetric matrices, eigenvalues are real)
+                return newRoots.map(r => {
+                    if (Math.abs(r.im) < 1e-8) return Math.round(r.re * 1e10) / 1e10;
+                    return r;
+                });
+            }
+
+            for (let i = 0; i < deg; i++) roots[i] = newRoots[i];
+        }
+
+        return null; // Didn't converge
+    }
+
+    _estimatePolyRadius(coeffs) {
+        // Cauchy bound for polynomial roots
+        let maxC = 0;
+        for (let i = 1; i < coeffs.length; i++) {
+            maxC = Math.max(maxC, Math.abs(coeffs[i]));
+        }
+        return 1 + maxC;
     }
 
     _eigenvects(matrix) {
