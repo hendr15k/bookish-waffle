@@ -586,6 +586,10 @@ class CAS {
                 const specialRes = this._integrateSpecial(func, varNode);
                 if (specialRes) return specialRes;
 
+                // 4b. More Special Functions (Si, Ci, Ei, Li)
+                const specialRes2 = this._integrateSpecialFunctions(func, varNode);
+                if (specialRes2) return specialRes2;
+
                 // 5. Exponential * Trig (Cyclic)
                 const expTrigRes = this._integrateExpTrig(func, varNode);
                 if (expTrigRes) return expTrigRes;
@@ -5743,20 +5747,18 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             };
             const isInfinite = (n) => isInf(n) || isNegInf(n);
 
-            if (isZero(num) && isZero(den)) {
+            // Special check for symbolic NaN which means 0/0 or inf/inf usually
+            const isNaNVal = (n) => (n instanceof Sym && n.name === 'NaN');
+
+            if ((isZero(num) && isZero(den)) || (isNaNVal(num) && isNaNVal(den)) || (isZero(num) && isNaNVal(den))) {
+                 // 0/0 case - L'Hopital
                  const diffNum = expr.left.diff(varNode).simplify();
                  const diffDen = expr.right.diff(varNode).simplify();
-                 // Use a temporary Division that doesn't eager simplify to float if possible,
-                 // but Div constructor does not simplify unless operands are numbers.
-                 // The issue is likely 'new Div(diffNum, diffDen)' if diffNum/diffDen are simple integers.
-                 // Div.simplify() handles integer division. We want to avoid it if it returns float?
-                 // But Div(1, 2).simplify() -> Div(1, 2) unless one is float.
-                 // Check if simplify() was called on new Div inside the recursion?
-                 // Yes, recursive _limit might simplify result.
                  return this._limit(new Div(diffNum, diffDen).simplify(), varNode, point, depth + 1, dir);
             }
 
             if (isInfinite(num) && isInfinite(den)) {
+                 // Inf/Inf case - L'Hopital
                  const diffNum = expr.left.diff(varNode).simplify();
                  const diffDen = expr.right.diff(varNode).simplify();
                  return this._limit(new Div(diffNum, diffDen).simplify(), varNode, point, depth + 1, dir);
