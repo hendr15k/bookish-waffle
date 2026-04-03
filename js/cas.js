@@ -3174,6 +3174,54 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         return new Call('cov', [list1, list2]);
     }
 
+    _entropy(list) {
+        if (!(list instanceof Vec)) return new Call('entropy', [list]);
+        const n = list.elements.length;
+        if (n === 0) return new Num(0);
+
+        // Check if elements sum to 1 (probability distribution)
+        let sum = new Num(0);
+        for(const e of list.elements) sum = new Add(sum, e).simplify();
+
+        let probs = list.elements;
+        // Normalize if sum is numeric and != 1
+        const sumVal = sum.evaluateNumeric();
+        if (!isNaN(sumVal) && Math.abs(sumVal - 1) > 1e-9 && Math.abs(sumVal) > 1e-9) {
+             probs = probs.map(e => new Div(e, sum).simplify());
+        }
+
+        let ent = new Num(0);
+        for(const p of probs) {
+            // -p * log2(p)
+            // If p=0, term is 0.
+            if (p instanceof Num && p.value === 0) continue;
+
+            const log2p = new Call('log2', [p]);
+            const term = new Mul(p, log2p);
+            ent = new Sub(ent, term);
+        }
+        return ent.simplify();
+    }
+
+    _klDivergence(p, q) {
+        if (!(p instanceof Vec) || !(q instanceof Vec)) return new Call('klDivergence', [p, q]);
+        if (p.elements.length !== q.elements.length) throw new Error("KL Divergence requires lists of equal length");
+
+        let div = new Num(0);
+        for(let i=0; i<p.elements.length; i++) {
+            const pi = p.elements[i];
+            const qi = q.elements[i];
+
+            // p * ln(p/q)
+            // If p=0, 0. If q=0 and p!=0, infinity.
+            if (pi instanceof Num && pi.value === 0) continue;
+
+            const term = new Mul(pi, new Call('ln', [new Div(pi, qi)]));
+            div = new Add(div, term);
+        }
+        return div.simplify();
+    }
+
     _corr(list1, list2) {
          if (list1 instanceof Vec && list2 instanceof Vec) {
              const cov = this._cov(list1, list2);
@@ -12704,6 +12752,33 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         return new Num(count % 2 === 0 ? 1 : -1);
     }
 
+    _cyclotomic(n, x) {
+        n = n.simplify();
+        if (!(n instanceof Num && Number.isInteger(n.value) && n.value >= 1)) {
+            return new Call('cyclotomic', [n, x]);
+        }
+        // Phi_n(x) = prod_{d|n} (x^d - 1)^mu(n/d)
+        const divisors = this._divisors(n).elements;
+        let res = new Num(1);
+
+        for(const d of divisors) {
+            // mu(n/d)
+            const ratio = new Div(n, d).simplify();
+            const mu = this._moebius(ratio);
+
+            const term = new Sub(new Pow(x, d), new Num(1)).simplify();
+
+            if (mu instanceof Num) {
+                if (mu.value === 1) {
+                    res = new Mul(res, term).simplify();
+                } else if (mu.value === -1) {
+                    res = new Div(res, term).simplify();
+                }
+            }
+        }
+        return res.expand().simplify();
+    }
+
     _sigma(n, k) {
         // sum of k-th powers of divisors
         // sigma_k(n) = prod ( (p^(k(e+1)) - 1) / (p^k - 1) )
@@ -14237,6 +14312,22 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             return new Num(Math.sin(x.value) / x.value);
         }
         return new Call('sinc', [x]);
+    }
+
+    _sigmoid(x) {
+        // 1 / (1 + exp(-x))
+        const den = new Add(new Num(1), new Call('exp', [new Mul(new Num(-1), x)]));
+        return new Div(new Num(1), den).simplify();
+    }
+
+    _relu(x) {
+        // x * H(x)
+        return new Mul(x, new Call('heaviside', [x])).simplify();
+    }
+
+    _softplus(x) {
+        // ln(1 + exp(x))
+        return new Call('ln', [new Add(new Num(1), new Call('exp', [x]))]).simplify();
     }
 
     _gammaPDF(x, k, theta) {
