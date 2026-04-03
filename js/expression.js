@@ -883,10 +883,10 @@ class Mul extends BinaryOp {
         }
 
         // Scalar * Vector
-        if (l instanceof Num && r instanceof Vec) {
+        if (!(l instanceof Vec) && r instanceof Vec) {
             return new Vec(r.elements.map(e => new Mul(l, e).simplify()));
         }
-        if (l instanceof Vec && r instanceof Num) {
+        if (l instanceof Vec && !(r instanceof Vec)) {
             return new Vec(l.elements.map(e => new Mul(e, r).simplify()));
         }
 
@@ -916,6 +916,14 @@ class Mul extends BinaryOp {
         if (r instanceof Num && r.value === 0) return new Num(0);
         if (l instanceof Num && l.value === 1) return r;
         if (r instanceof Num && r.value === 1) return l;
+
+        // x * dirac(x) -> 0
+        if (r instanceof Call && (r.funcName === 'dirac' || r.funcName === 'delta') && r.args.length === 1) {
+            if (l.toString() === r.args[0].toString()) return new Num(0);
+        }
+        if (l instanceof Call && (l.funcName === 'dirac' || l.funcName === 'delta') && l.args.length === 1) {
+            if (r.toString() === l.args[0].toString()) return new Num(0);
+        }
 
         // Scalar Associativity: c1 * (c2 * x) -> (c1*c2) * x
         if (l instanceof Num && r instanceof Mul && r.left instanceof Num) {
@@ -1207,6 +1215,56 @@ class Div extends BinaryOp {
              const divRight = new Div(l, r.right).simplify();
              if (!isSameDiv(divRight, l, r.right)) {
                  return new Div(divRight, r.left).simplify();
+             }
+        }
+
+        // Factorial and Gamma Simplification
+        if (l instanceof Call && r instanceof Call && l.funcName === r.funcName) {
+             const name = l.funcName;
+             if (name === 'factorial' || name === 'gamma') {
+                 const n = l.args[0];
+                 const k = r.args[0];
+                 const diff = new Sub(n, k).simplify();
+                 if (diff instanceof Num && Number.isInteger(diff.value)) {
+                     const d = diff.value;
+                     if (name === 'factorial') {
+                         if (d > 0 && d <= 10) {
+                             // n! / (n-d)! = n*(n-1)*...*(n-d+1)
+                             let res = n;
+                             for(let i=1; i<d; i++) {
+                                 res = new Mul(res, new Sub(n, new Num(i))).simplify();
+                             }
+                             return res;
+                         } else if (d < 0 && d >= -10) {
+                             // n! / k! where k > n
+                             const absD = -d;
+                             let den = k;
+                             for(let i=1; i<absD; i++) {
+                                 den = new Mul(den, new Sub(k, new Num(i))).simplify();
+                             }
+                             return new Div(new Num(1), den).simplify();
+                         }
+                     }
+                     if (name === 'gamma') {
+                         // gamma(n) / gamma(k). n = k+d.
+                         // gamma(x+1) = x gamma(x).
+                         // gamma(k+d)/gamma(k) = (k+d-1)...(k)
+                         if (d > 0 && d <= 10) {
+                             let res = new Sub(n, new Num(1)).simplify();
+                             for(let i=1; i<d; i++) {
+                                 res = new Mul(res, new Sub(n, new Num(i+1))).simplify();
+                             }
+                             return res;
+                         } else if (d < 0 && d >= -10) {
+                             const absD = -d;
+                             let den = new Sub(k, new Num(1)).simplify();
+                             for(let i=1; i<absD; i++) {
+                                 den = new Mul(den, new Sub(k, new Num(i+1))).simplify();
+                             }
+                             return new Div(new Num(1), den).simplify();
+                         }
+                     }
+                 }
              }
         }
 
@@ -2821,10 +2879,26 @@ class Call extends Expr {
         if (this.funcName === 'sqrt') return new Div(u.diff(varName), new Mul(new Num(2), new Call('sqrt', [u])));
         if (this.funcName === 'abs') return new Mul(new Call('sign', [u]), u.diff(varName));
         if (this.funcName === 'min' || this.funcName === 'max') {
-             // Derivative of min(f, g) is f' * step(g-f) + g' * step(f-g) roughly (at intersections undefined)
-             // We can return derivative of the evaluated piecewise if possible, but structure is dynamic.
-             // Simplest: piecewise(diff(f), f<g, diff(g), g<=f)
-             // For now, symbolic.
+             // diff(max(f, g)) = f' * H(f-g) + g' * H(g-f)
+             // diff(min(f, g)) = f' * H(g-f) + g' * H(f-g)
+             if (this.args.length === 2) {
+                 const f = this.args[0];
+                 const g = this.args[1];
+                 const df = f.diff(varName);
+                 const dg = g.diff(varName);
+
+                 if (this.funcName === 'max') {
+                     return new Add(
+                         new Mul(df, new Call('heaviside', [new Sub(f, g)])),
+                         new Mul(dg, new Call('heaviside', [new Sub(g, f)]))
+                     );
+                 } else {
+                     return new Add(
+                         new Mul(df, new Call('heaviside', [new Sub(g, f)])),
+                         new Mul(dg, new Call('heaviside', [new Sub(f, g)]))
+                     );
+                 }
+             }
              return new Call('diff', [this, varName]);
         }
         if (this.funcName === 'piecewise') {
@@ -4517,3 +4591,88 @@ class Xnor extends BinaryOp {
         module.exports = exports;
     }
 })();
+
+function math_airyAi(x) {
+    // Series expansion for small x
+    if (Math.abs(x) < 5) {
+        const c1 = 0.355028053887817;
+        const c2 = 0.258819403792807;
+        let f = 1;
+        let g = x;
+        let termF = 1;
+        let termG = x;
+
+        for (let k = 1; k < 100; k++) {
+            // f series: x^3k. coeff_{k} = coeff_{k-1} * (3k-2) / (3k(3k-1)) ?
+            // f = 1 + 1/6 x^3 + 1*4/720 x^6 ...
+            // term_{k} = term_{k-1} * x^3 * (3k-2) / ((3k)(3k-1)) ? NO.
+            // Standard series: y'' - xy = 0.
+            // a_{n+2} = a_{n-1} / ((n+2)(n+1)) ? No, a_{n+3}?
+            // a_{k+3} = a_k / ((k+2)(k+3)).
+            // f: a0=1, a1=0, a2=0. a3 = a0/(2*3) = 1/6.
+            // a6 = a3/(5*6) = 1/(6*30) = 1/180.
+
+            // Recompute from scratch is safer or iterative
+            // termF_new = termF_old * x^3 / ((3k)(3k-1))
+            // k=1: term * x^3 / (3*2) = x^3/6. Matches.
+            termF *= x*x*x / ((3*k)*(3*k-1));
+            f += termF;
+
+            // g: b0=0, b1=1, b2=0. b4 = b1/(3*4) = 1/12.
+            // termG_new = termG_old * x^3 / ((3k+1)(3k))
+            // k=1: term * x^3 / (4*3) = x^4/12. Matches.
+            termG *= x*x*x / ((3*k+1)*(3*k));
+            g += termG;
+
+            if (Math.abs(termF) < 1e-15 && Math.abs(termG) < 1e-15) break;
+        }
+        return c1*f - c2*g;
+    }
+    // Asymptotic for large x > 0
+    if (x >= 5) {
+        // Ai(x) ~ exp(-2/3 x^1.5) / (2 sqrt(pi) x^0.25)
+        const z = 2/3 * Math.pow(x, 1.5);
+        return Math.exp(-z) / (2 * Math.sqrt(Math.PI) * Math.pow(x, 0.25));
+    }
+    // Asymptotic for large x < 0
+    // Ai(-x) ~ sin(2/3 x^1.5 + pi/4) / (sqrt(pi) x^0.25)
+    if (x <= -5) {
+        const absX = -x;
+        const z = 2/3 * Math.pow(absX, 1.5);
+        return Math.sin(z + Math.PI/4) / (Math.sqrt(Math.PI) * Math.pow(absX, 0.25));
+    }
+    return NaN;
+}
+
+function math_airyBi(x) {
+    if (Math.abs(x) < 5) {
+        const c1 = 0.355028053887817; // Same constants relative?
+        // Bi(x) = sqrt(3) * (c1*f + c2*g)
+        const c2 = 0.258819403792807;
+        const sqrt3 = Math.sqrt(3);
+
+        let f = 1;
+        let g = x;
+        let termF = 1;
+        let termG = x;
+
+        for (let k = 1; k < 100; k++) {
+            termF *= x*x*x / ((3*k)*(3*k-1));
+            f += termF;
+            termG *= x*x*x / ((3*k+1)*(3*k));
+            g += termG;
+            if (Math.abs(termF) < 1e-15 && Math.abs(termG) < 1e-15) break;
+        }
+        return sqrt3 * (c1*f + c2*g);
+    }
+    if (x >= 5) {
+        const z = 2/3 * Math.pow(x, 1.5);
+        return Math.exp(z) / (Math.sqrt(Math.PI) * Math.pow(x, 0.25));
+    }
+    if (x <= -5) {
+        const absX = -x;
+        const z = 2/3 * Math.pow(absX, 1.5);
+        return Math.cos(z + Math.PI/4) / (Math.sqrt(Math.PI) * Math.pow(absX, 0.25));
+    }
+    return NaN;
+}
