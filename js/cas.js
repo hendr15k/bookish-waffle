@@ -8,6 +8,7 @@ class CAS {
             'j': new Sym('i') // Electrical Engineering imaginary unit
         };
 
+        this.partitionsCache = {0: new Num(1)};
         this.functions = {};
 
         // Unit Conversion Rates (Base: SI units)
