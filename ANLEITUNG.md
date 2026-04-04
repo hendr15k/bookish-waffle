@@ -167,7 +167,7 @@ Matrizen werden als Listen von Listen geschrieben: `[[1,2],[3,4]]`.
 *   `trans(M)`: Transponierte.
 *   `cross(u, v)`: Kreuzprodukt.
 *   `dot(u, v)`: Skalarprodukt.
-*   `eigenvals(M)`: Eigenwerte.
+*   `eigenvals(M)`: Eigenwerte. Bei größeren Matrizen kann die Berechnung länger dauern.
 *   `eigenvects(M)`: Eigenvektoren.
 *   `rref(M)`: Zeilenstufenform (Gauß).
 

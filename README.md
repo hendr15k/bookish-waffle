@@ -50,7 +50,7 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 ### 📊 Linear Algebra
 * Vectors & matrices: `[a, b]` or `[[a,b],[c,d]]`
 * Operations: multiply, dot product, cross product
-* `det(M)`, `inv(M)`, `trans(M)`, `eigenvalues(M)`, `eigenvectors(M)`
+* `det(M)`, `inv(M)`, `trans(M)`, `eigenvalues(M)`, `eigenvectors(M)` — exact on small matrices; larger ones can take noticeably longer
 * Matrix decompositions: LU, QR, Cholesky
 * `rref(M)` (Row Reduced Echelon Form), `rank(M)`
 * `adj(M)` (Adjugate), matrix powers: `pow(M, n)`
