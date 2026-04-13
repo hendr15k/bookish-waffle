@@ -713,6 +713,10 @@
             <span class="app-icon" style="color: #6f42c1;">{ }</span>
             <span class="app-name">System Solver</span>
         </div>
+        <div class="app-card" onclick="openTool('gemini')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('gemini')">
+            <span class="app-icon" style="color: #4285F4;">✨</span>
+            <span class="app-name">Gemini AI</span>
+        </div>
     </div>
 
     <!-- Tool Views -->
@@ -2114,6 +2118,14 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             </div>
         </div>
         <div class="tool-section">
+            <h3>Gemini AI</h3>
+            <div class="form-group">
+                <label class="form-label" for="gemini-api-key">API Key</label>
+                <input type="password" class="form-input" id="gemini-api-key" placeholder="Enter Gemini API Key" onchange="saveGeminiApiKey()">
+                <small style="color: #666; margin-top: 5px;">Your key is stored locally in your browser and never sent to our servers.</small>
+            </div>
+        </div>
+        <div class="tool-section">
             <h3>About</h3>
             <p style="font-size: 0.9em; color: #666;">Web CAS v1.0<br>Client-side JavaScript Algebra System.</p>
         </div>
@@ -2166,6 +2178,26 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             </div>
         </div>
         <div class="tool-result"></div>
+    </div>
+
+    <!-- GEMINI TOOL -->
+    <div id="tool-gemini" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Gemini AI Assistant</span>
+        </div>
+        <div class="tool-form">
+            <div id="gemini-chat-history" style="height: 300px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; margin-bottom: 15px; background: var(--bg-color);">
+                <div style="color: #666; font-style: italic; text-align: center; margin-top: 20px;">Ask Gemini a math or science question!</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="gemini-input">Your Question</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" class="form-input" id="gemini-input" placeholder="e.g. Explain how to solve x^2 - 4 = 0" style="flex-grow: 1;" onkeypress="if(event.key === 'Enter') askGemini()">
+                    <button class="action-btn" onclick="askGemini()" style="white-space: nowrap;">Ask</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- SYSTEM SOLVER TOOL -->
@@ -2663,6 +2695,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                     });
                     linearContainer.appendChild(grid);
              }
+             loadGeminiApiKey();
         });
 
         window.runTool = function(action, inputTokens) {
@@ -7459,6 +7492,138 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                     }
                 }
             }, 50);
+        };
+
+        // Gemini Logic
+        window.saveGeminiApiKey = function() {
+            const key = document.getElementById('gemini-api-key').value.trim();
+            if (key) {
+                try {
+                    localStorage.setItem('gemini_api_key', key);
+                } catch(e) {
+                    console.warn("LocalStorage access denied");
+                }
+            } else {
+                try {
+                    localStorage.removeItem('gemini_api_key');
+                } catch(e) {}
+            }
+        };
+
+        window.loadGeminiApiKey = function() {
+            try {
+                const key = localStorage.getItem('gemini_api_key');
+                if (key) {
+                    const input = document.getElementById('gemini-api-key');
+                    if (input) input.value = key;
+                }
+            } catch(e) {}
+        };
+
+        let geminiChatHistory = [];
+
+        window.askGemini = async function() {
+            const inputEl = document.getElementById('gemini-input');
+            const historyContainer = document.getElementById('gemini-chat-history');
+            const prompt = inputEl.value.trim();
+
+            if (!prompt) return;
+
+            let apiKey = "";
+            try {
+                apiKey = localStorage.getItem('gemini_api_key');
+            } catch(e) {}
+
+            if (!apiKey) {
+                alert("Please enter your Gemini API Key in the Settings tool first.");
+                openTool('settings');
+                return;
+            }
+
+            // Add user message to UI
+            inputEl.value = '';
+            const userDiv = document.createElement('div');
+            userDiv.style.marginBottom = '10px';
+            userDiv.innerHTML = `<strong style="color: var(--primary-color);">You:</strong> <span style="white-space: pre-wrap;"></span>`;
+            userDiv.querySelector('span').textContent = prompt;
+            historyContainer.appendChild(userDiv);
+            historyContainer.scrollTop = historyContainer.scrollHeight;
+
+            // Prepare API call
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+            const requestBody = {
+                contents: [
+                    ...geminiChatHistory,
+                    {
+                        role: "user",
+                        parts: [{ text: prompt }]
+                    }
+                ]
+            };
+
+            // Loading indicator
+            const loadingDiv = document.createElement('div');
+            loadingDiv.style.marginBottom = '10px';
+            loadingDiv.style.color = '#888';
+            loadingDiv.style.fontStyle = 'italic';
+            loadingDiv.textContent = 'Gemini is thinking...';
+            historyContainer.appendChild(loadingDiv);
+            historyContainer.scrollTop = historyContainer.scrollHeight;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+
+                const data = await response.json();
+                historyContainer.removeChild(loadingDiv);
+
+                if (!response.ok) {
+                    throw new Error(data.error?.message || 'API Error');
+                }
+
+                const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response.";
+
+                // Add to internal history
+                geminiChatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                geminiChatHistory.push({ role: "model", parts: [{ text: aiText }] });
+
+                // Render AI response
+                const aiDiv = document.createElement('div');
+                aiDiv.style.marginBottom = '15px';
+                aiDiv.style.padding = '10px';
+                aiDiv.style.background = 'rgba(0, 123, 255, 0.05)';
+                aiDiv.style.borderRadius = '8px';
+                aiDiv.style.borderLeft = '4px solid #4285F4';
+
+                // Basic Markdown handling for bold and code blocks, MathJax for LaTeX
+                let formattedText = aiText;
+                formattedText = formattedText.replace(/```([\s\S]*?)```/g, '<pre style="background: var(--card-bg); padding: 10px; border-radius: 4px; overflow-x: auto;"><code>$1</code></pre>');
+                formattedText = formattedText.replace(/`([^`]+)`/g, '<code style="background: var(--card-bg); padding: 2px 4px; border-radius: 4px;">$1</code>');
+                formattedText = formattedText.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+                aiDiv.innerHTML = `<strong style="color: #4285F4;">Gemini:</strong> <div style="margin-top: 5px; white-space: pre-wrap;">${formattedText}</div>`;
+                historyContainer.appendChild(aiDiv);
+
+                if (window.MathJax) {
+                    MathJax.typesetPromise([aiDiv]).catch(()=>{});
+                }
+
+                historyContainer.scrollTop = historyContainer.scrollHeight;
+
+            } catch(e) {
+                if (historyContainer.contains(loadingDiv)) {
+                    historyContainer.removeChild(loadingDiv);
+                }
+                const errDiv = document.createElement('div');
+                errDiv.style.color = 'red';
+                errDiv.style.marginBottom = '15px';
+                errDiv.textContent = `Error: ${e.message}`;
+                historyContainer.appendChild(errDiv);
+                historyContainer.scrollTop = historyContainer.scrollHeight;
+            }
         };
 
         restoreCommandHistory();
