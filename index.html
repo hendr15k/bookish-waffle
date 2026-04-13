@@ -7549,16 +7549,33 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             historyContainer.appendChild(userDiv);
             historyContainer.scrollTop = historyContainer.scrollHeight;
 
+            // Add user prompt to internal history BEFORE creating request body so it's included correctly in the API request and memory
+            geminiChatHistory.push({ role: "user", parts: [{ text: prompt }] });
+
             // Prepare API call
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-            const requestBody = {
+            let requestBody = {
                 contents: [
-                    ...geminiChatHistory,
-                    {
-                        role: "user",
-                        parts: [{ text: prompt }]
-                    }
-                ]
+                    ...geminiChatHistory
+                ],
+                tools: [{
+                    functionDeclarations: [
+                        {
+                            name: "evaluate_cas",
+                            description: "Evaluate a mathematical expression or CAS command. This has access to all functions of the Computer Algebra System (like integrate, diff, solve, simplify, etc).",
+                            parameters: {
+                                type: "OBJECT",
+                                properties: {
+                                    expression: {
+                                        type: "STRING",
+                                        description: "The expression to evaluate."
+                                    }
+                                },
+                                required: ["expression"]
+                            }
+                        }
+                    ]
+                }]
             };
 
             // Loading indicator
@@ -7571,23 +7588,93 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             historyContainer.scrollTop = historyContainer.scrollHeight;
 
             try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody)
-                });
+                let aiText = "";
+                let keepCalling = true;
+                let iterations = 0;
 
-                const data = await response.json();
-                historyContainer.removeChild(loadingDiv);
+                while (keepCalling && iterations < 5) {
+                    iterations++;
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestBody)
+                    });
 
-                if (!response.ok) {
-                    throw new Error(data.error?.message || 'API Error');
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data.error?.message || 'API Error');
+                    }
+
+                    const candidate = data.candidates?.[0];
+                    if (!candidate || !candidate.content || !candidate.content.parts) {
+                        aiText = "No response.";
+                        keepCalling = false;
+                        break;
+                    }
+
+                    const part = candidate.content.parts[0];
+
+                    if (part.functionCall) {
+                        const fnCall = part.functionCall;
+
+                        // Add function call to internal history
+                        geminiChatHistory.push({ role: "model", parts: [part] });
+
+                        if (fnCall.name === "evaluate_cas") {
+                            loadingDiv.textContent = 'Gemini is evaluating CAS expression: ' + fnCall.args.expression;
+
+                            let casResult = "";
+                            try {
+                                const lexer = new Lexer(fnCall.args.expression);
+                                const parser = new Parser(lexer);
+                                const tree = parser.parse();
+                                const result = cas.evaluate(tree);
+                                casResult = result ? result.toString() : "undefined";
+                            } catch (err) {
+                                casResult = "Error: " + err.message;
+                            }
+
+                            requestBody.contents.push({
+                                role: "model",
+                                parts: [part]
+                            });
+
+                            const functionResponsePart = {
+                                functionResponse: {
+                                    name: fnCall.name,
+                                    response: {
+                                        result: casResult
+                                    }
+                                }
+                            };
+
+                            requestBody.contents.push({
+                                role: "user",
+                                parts: [functionResponsePart]
+                            });
+
+                            // Add function response to internal history
+                            geminiChatHistory.push({ role: "user", parts: [functionResponsePart] });
+                        } else {
+                            keepCalling = false;
+                            aiText = "Unknown function call.";
+                        }
+                    } else {
+                        aiText = part.text || "No response.";
+                        keepCalling = false;
+                    }
                 }
 
-                const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response.";
+                if (keepCalling && iterations >= 5) {
+                     aiText = "Error: Too many iterations.";
+                }
 
-                // Add to internal history
-                geminiChatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                if (historyContainer.contains(loadingDiv)) {
+                    historyContainer.removeChild(loadingDiv);
+                }
+
+                // Add text response to internal history
                 geminiChatHistory.push({ role: "model", parts: [{ text: aiText }] });
 
                 // Render AI response
