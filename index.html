@@ -7550,7 +7550,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             historyContainer.scrollTop = historyContainer.scrollHeight;
 
             // Prepare API call
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-light:generateContent?key=${apiKey}`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${apiKey}`;
             const requestBody = {
                 contents: [
                     ...geminiChatHistory,
