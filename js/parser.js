@@ -58,6 +58,17 @@ class Token {
 
 class Lexer {
     constructor(text) {
+        if (text) {
+            const superscripts = {
+                '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4',
+                '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9',
+                '⁺': '+', '⁻': '-'
+            };
+            text = text.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻]+/g, match => {
+                const normal = match.split('').map(c => superscripts[c]).join('');
+                return '^(' + normal + ')';
+            });
+        }
         this.text = text || "";
         this.pos = 0;
         this.currentChar = this.text.length > 0 ? this.text[0] : null;
