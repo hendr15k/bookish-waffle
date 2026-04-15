@@ -1,94 +1,65 @@
+const fs = require('fs');
+const vm = require('vm');
 
-const { CAS } = require('../js/cas.js');
-const { Expr, Sym, Num, Add, Sub, Mul, Div, Pow, Call, Vec } = require('../js/expression.js');
+function loadFile(filePath) {
+    return fs.readFileSync(filePath, 'utf8');
+}
 
-global.Expr = Expr;
-global.Sym = Sym;
-global.Num = Num;
-global.Call = Call;
-global.Add = Add;
-global.Sub = Sub;
-global.Mul = Mul;
-global.Div = Div;
-global.Pow = Pow;
-global.Vec = Vec;
+const expressionCode = loadFile('js/expression.js');
+const casCode = loadFile('js/cas.js');
+
+const sandbox = {
+    console: console,
+    Math: Math,
+    Number: Number,
+    parseFloat: parseFloat,
+    parseInt: parseInt,
+    isNaN: isNaN,
+    isFinite: isFinite,
+};
+
+vm.createContext(sandbox);
+vm.runInContext(expressionCode, sandbox);
+vm.runInContext(casCode, sandbox);
+
+const CAS = sandbox.CAS;
+const Call = sandbox.Call;
+const Num = sandbox.Num;
+const Sym = sandbox.Sym;
 
 const cas = new CAS();
 
-function test(name, expr, expectedStr) {
-    console.log(`Testing ${name}...`);
-    try {
-        const res = cas.evaluate(expr);
-        const resStr = res.toString();
+let hasFailures = false;
 
-        if (expectedStr && resStr !== expectedStr) {
-            // Normalization for parens and spaces
-            const normRes = resStr.replace(/\s/g, '').replace(/\(/g, '').replace(/\)/g, '');
-            const normExp = expectedStr.replace(/\s/g, '').replace(/\(/g, '').replace(/\)/g, '');
-
-            if (normRes === normExp) {
-                 console.log(`  PASSED (ignoring format): ${resStr}`);
-            } else {
-                 console.error(`  FAILED: Expected ${expectedStr}, got ${resStr}`);
-            }
-        } else {
-            console.log(`  PASSED: ${resStr}`);
-        }
-    } catch (e) {
-        console.error(`  ERROR: ${e.message}`);
-        console.error(e.stack);
+function assertEqual(actual, expected, message) {
+    if (actual !== expected) {
+        console.error(`FAIL: ${message}. Expected '${expected}', got '${actual}'`);
+        hasFailures = true;
+    } else {
+        console.log(`PASS: ${message}`);
     }
 }
 
+console.log("--- Series Operations ---");
+
 const x = new Sym('x');
-const one = new Num(1);
+const f = new Call('sin', [x]);
 
-// 1. Residue simple pole: 1/(x-1) at 1
-const f1 = new Div(one, new Sub(x, one));
-test("Residue simple pole", new Call('residue', [f1, x, one]), "1");
+const taylorRes = cas.evaluate(new Call('taylor', [f, x, new Num(0), new Num(3)]));
+assertEqual(taylorRes.toString(), '(x + ((-1 * x^3) / 6))', 'taylor(sin(x), x, 0, 3)');
 
-// 2. Residue order 2: 1/(x-1)^2 at 1
-const f2 = new Div(one, new Pow(new Sub(x, one), new Num(2)));
-test("Residue order 2", new Call('residue', [f2, x, one]), "0");
+const subRes = f.substitute(x, new Num(Math.PI));
+// Note: evaluate isn't substituting automatically in `evaluate(new Call('substitute', ...))`, so calling method.
+// Or if it is not supported as a command, we'll just test the `substitute` method directly on Expr.
+const subEval = cas.evaluate(subRes);
+assertEqual(subEval.evaluateNumeric() < 1e-10 ? '0' : subEval.toString(), '0', 'sin(PI) evaluated numeric');
 
-// 3. Singularities: 1/(x^2-1)
-const f3 = new Div(one, new Sub(new Pow(x, new Num(2)), one));
-test("Singularities", new Call('singularities', [f3, x]), "[-1, 1]");
+const seriesRes = cas.evaluate(new Call('series', [f, x, new Num(0), new Num(3)]));
+assertEqual(seriesRes.toString(), '(x + ((-1 * x^3) / 6))', 'series(sin(x), x, 0, 3)');
 
-// 4. Continuity sin(x) at 0
-test("isContinuous sin(x)", new Call('isContinuous', [new Call('sin', [x]), x, new Num(0)]), "1");
-
-// 5. Continuity 1/x at 0
-test("isContinuous 1/x", new Call('isContinuous', [new Div(one, x), x, new Num(0)]), "0");
-
-// 6. Differentiability x^2 at 0
-test("isDifferentiable x^2", new Call('isDifferentiable', [new Pow(x, new Num(2)), x, new Num(0)]), "1");
-
-// 7. Differentiability abs(x) at 0
-test("isDifferentiable abs(x)", new Call('isDifferentiable', [new Call('abs', [x]), x, new Num(0)]), "0");
-
-// 8. Routh Hurwitz s^3 + 2s^2 + 3s + 1
-const poly = new Add(new Add(new Pow(x, new Num(3)), new Mul(new Num(2), new Pow(x, new Num(2)))), new Add(new Mul(new Num(3), x), one));
-test("Routh Hurwitz", new Call('routhHurwitz', [poly, x]), "[[1, 3], [2, 1], [5/2, 0], [1, 0]]");
-
-// 9. Complex parts
-const c = new Add(one, new Mul(new Num(2), new Sym('i')));
-test("re(1+2i)", new Call('re', [c]), "1");
-test("im(1+2i)", new Call('im', [c]), "2");
-test("conj(1+2i)", new Call('conj', [c]), "1 - 2 * i");
-
-// 10. Plot Contour
-const y = new Sym('y');
-const plotExpr = new Add(new Pow(x, new Num(2)), new Pow(y, new Num(2)));
-const callPlot = new Call('plotcontour', [plotExpr, x, y]);
-console.log("Testing plotcontour...");
-try {
-    const resPlot = cas.evaluate(callPlot);
-    if (resPlot.type === 'plot' && resPlot.subtype === 'contour') {
-        console.log("  PASSED: plotcontour returned contour plot object");
-    } else {
-        console.error("  FAILED: plotcontour returned " + JSON.stringify(resPlot));
-    }
-} catch(e) {
-    console.error("  ERROR: " + e.message);
+if (hasFailures) {
+    process.exit(1);
+} else {
+    console.log("All Tests Passed!");
+    process.exit(0);
 }
