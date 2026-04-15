@@ -751,3 +751,35 @@ window.HELP_DATA = {
     "rsolve": { "description": "Solve recurrence relation.", "syntax": "rsolve(eq, f(n))", "examples": ["rsolve(f(n)=f(n-1)+f(n-2), f(n))"] },
     "Sigma": { "description": "Summation.", "syntax": "Sigma(expr, var, a, b)", "examples": ["Sigma(k^2, k, 1, 5)"] },
 };
+    "toUnit": {
+        "description": "Converts a value from one unit to another.",
+        "syntax": "toUnit(value, fromUnit, toUnit)",
+        "examples": ["toUnit(1, km, m)", "toUnit(0, C, F)", "toUnit(1000, g, kg)"]
+    },
+    "toBase": {
+        "description": "Converts an integer to a string in the given base (2-36).",
+        "syntax": "toBase(number, base)",
+        "examples": ["toBase(255, 16)", "toBase(10, 2)"]
+    },
+    "fromBase": {
+        "description": "Converts a string in the given base (2-36) to a decimal integer.",
+        "syntax": "fromBase(str, base)",
+        "examples": ["fromBase(FF, 16)", "fromBase(1010, 2)"]
+    },
+    "latex": {
+        "description": "Converts an expression to LaTeX format.",
+        "syntax": "latex(expr)",
+        "examples": ["latex(x^2 + y)", "latex(integrate(x^2, x))"]
+    },
+    "toRoman": {
+        "description": "Converts a positive integer to a Roman numeral string.",
+        "syntax": "toRoman(n)",
+        "examples": ["toRoman(2026)", "toRoman(100)"]
+    },
+    "fromRoman": {
+        "description": "Converts a Roman numeral string to a decimal integer.",
+        "syntax": "fromRoman(str)",
+        "examples": ["fromRoman(MMXXVI)", "fromRoman(C)"]
+    }
+ENDHELP
+echo "Help entries added: $(grep -c 'toUnit\|toBase\|fromBase\|latex\|toRoman\|fromRoman' js/help.js)"

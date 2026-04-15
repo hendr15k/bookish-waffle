@@ -1168,6 +1168,101 @@ class CAS {
                 return new Pow(args[0], new Div(new Num(1), new Num(3))).simplify();
             }
 
+            // toBase(n, base) — convert integer to base string
+            if (node.funcName === 'toBase') {
+                if (node.args.length !== 2) throw new Error("toBase requires 2 arguments: toBase(number, base)");
+                const n = this._recursiveEval(args[0]);
+                const base = this._recursiveEval(args[1]);
+                if (!(n instanceof Num) || !(base instanceof Num)) throw new Error("toBase requires integer arguments");
+                const num = parseInt(n.value);
+                const b = parseInt(base.value);
+                if (isNaN(num) || isNaN(b) || b < 2 || b > 36) throw new Error("toBase: base must be 2-36 and arguments must be integers");
+                return new Sym(num.toString(b).toUpperCase());
+            }
+
+            // fromBase(str, base) — convert base string to integer
+            if (node.funcName === 'fromBase') {
+                if (node.args.length !== 2) throw new Error("fromBase requires 2 arguments: fromBase(string, base)");
+                const s = this._recursiveEval(args[0]);
+                const base = this._recursiveEval(args[1]);
+                if (!(s instanceof Sym)) throw new Error("fromBase requires a string argument");
+                if (!(base instanceof Num)) throw new Error("fromBase requires an integer base");
+                const str = s.name;
+                const b = parseInt(base.value);
+                if (isNaN(b) || b < 2 || b > 36) throw new Error("fromBase: base must be 2-36");
+                const val = parseInt(str.toUpperCase(), b);
+                if (isNaN(val)) throw new Error("fromBase: invalid digit for base " + b);
+                return new Num(val);
+            }
+
+            // toRoman(n) — integer to Roman numeral string
+            if (node.funcName === 'toRoman') {
+                if (node.args.length !== 1) throw new Error("toRoman requires 1 argument");
+                const n = this._recursiveEval(args[0]);
+                if (!(n instanceof Num)) throw new Error("toRoman requires an integer");
+                const num = parseInt(n.value);
+                if (isNaN(num) || num <= 0 || num > 3999) throw new Error("toRoman: number must be 1-3999");
+                const vals = [1000,900,500,400,100,90,50,40,10,9,5,4,1];
+                const syms = ['M','CM','D','CD','C','XC','L','XL','X','IX','V','IV','I'];
+                let result = '';
+                for (let i = 0; i < vals.length; i++) {
+                    while (num >= vals[i]) { result += syms[i]; }
+                }
+                return new Sym(result);
+            }
+
+            // fromRoman(str) — Roman numeral string to integer
+            if (node.funcName === 'fromRoman') {
+                if (node.args.length !== 1) throw new Error("fromRoman requires 1 argument");
+                const s = this._recursiveEval(args[0]);
+                const str = (s instanceof Sym ? s.name : String(s)).toUpperCase();
+                const vals = {M:1000,CM:900,D:500,CD:400,C:100,XC:90,L:50,XL:40,X:10,IX:9,V:5,IV:4,I:1};
+                let result = 0;
+                for (let i = 0; i < str.length;) {
+                    if (i + 1 < str.length && vals[str.slice(i,i+2)]) { result += vals[str.slice(i,i+2)]; i += 2; }
+                    else { result += vals[str[i]] || 0; i++; }
+                }
+                return new Num(result);
+            }
+
+            // toUnit(value, fromUnit, toUnit) — unit conversion
+            if (node.funcName === 'toUnit') {
+                if (node.args.length !== 3) throw new Error("toUnit requires 3 arguments: toUnit(value, fromUnit, toUnit)");
+                const val = this._recursiveEval(args[0]);
+                const from = this._recursiveEval(args[1]);
+                const to = this._recursiveEval(args[2]);
+                if (!(val instanceof Num)) throw new Error("toUnit: value must be a number");
+                const v = parseFloat(val.value);
+                const fu = (from instanceof Sym ? from.name : String(from)).toLowerCase();
+                const tu = (to instanceof Sym ? to.name : String(to)).toLowerCase();
+                // Length: km m cm mm mi ft in
+                const lengths = {km:1000, m:1, cm:0.01, mm:0.001, mi:1609.344, ft:0.3048, in:0.0254, yd:0.9144, ly:9.461e15};
+                // Mass: kg g mg lb oz t
+                const masses = {kg:1000, g:1, mg:0.001, lb:453.592, oz:28.3495, t:1000000};
+                // Temperature: C F K
+                let result;
+                if (lengths[fu] !== undefined && lengths[tu] !== undefined) {
+                    result = v * lengths[fu] / lengths[tu];
+                } else if (masses[fu] !== undefined && masses[tu] !== undefined) {
+                    result = v * masses[fu] / masses[tu];
+                } else if (fu === tu) {
+                    result = v;
+                } else if ((fu === 'c' && tu === 'f') || (fu === 'celsius' && tu === 'f') || (fu === 'c' && tu === 'fahrenheit') || (fu === 'celsius' && tu === 'fahrenheit')) {
+                    result = v * 9/5 + 32;
+                } else if ((fu === 'f' && tu === 'c') || (fu === 'fahrenheit' && tu === 'c') || (fu === 'f' && tu === 'celsius') || (fu === 'fahrenheit' && tu === 'celsius')) {
+                    result = (v - 32) * 5/9;
+                } else if ((fu === 'c' && tu === 'k') || (fu === 'celsius' && tu === 'k') || (fu === 'k' && tu === 'c') || (fu === 'k' && tu === 'celsius')) {
+                    result = v + 273.15;
+                } else if ((fu === 'f' && tu === 'k') || (fu === 'fahrenheit' && tu === 'k')) {
+                    result = (v - 32) * 5/9 + 273.15;
+                } else if ((fu === 'k' && tu === 'f') || (fu === 'k' && tu === 'fahrenheit')) {
+                    result = (v - 273.15) * 9/5 + 32;
+                } else {
+                    throw new Error("toUnit: unsupported unit conversion from '" + fu + "' to '" + tu + "'. Supported: length (km,m,cm,mm,mi,ft,in,yd), mass (kg,g,mg,lb,oz,t), temperature (C,F,K)");
+                }
+                return new Num(Math.round(result * 1e12) / 1e12);
+            }
+
             if (node.funcName === 'trans' || node.funcName === 'transpose' || node.funcName === 'tran') {
                 if (node.args.length !== 1) throw new Error("trans requires 1 argument");
                 return this._trans(args[0]);
