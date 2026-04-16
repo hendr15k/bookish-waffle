@@ -750,36 +750,34 @@ window.HELP_DATA = {
     "lineEquation": { "description": "Equation of a line through two points.", "syntax": "lineEquation(p1, p2, vars)", "examples": ["lineEquation([0,0], [1,1], [x,y])"] },
     "rsolve": { "description": "Solve recurrence relation.", "syntax": "rsolve(eq, f(n))", "examples": ["rsolve(f(n)=f(n-1)+f(n-2), f(n))"] },
     "Sigma": { "description": "Summation.", "syntax": "Sigma(expr, var, a, b)", "examples": ["Sigma(k^2, k, 1, 5)"] },
+    "anti_commutator": { "description": "Anti-commutator of two matrices.", "syntax": "anti_commutator(A, B)", "examples": ["anti_commutator(A, B)"] },
+    "anticommutator": { "description": "Alias for anti_commutator.", "syntax": "anticommutator(A, B)", "examples": ["anticommutator(A, B)"] },
+    "binomial": { "description": "Alias for nCr (Binomial coefficient).", "syntax": "binomial(n, k)", "examples": ["binomial(5, 2)"] },
+    "cartesian_product": { "description": "Cartesian product of lists/sets.", "syntax": "cartesian_product(list1, list2)", "examples": ["cartesian_product([1, 2], [3, 4])"] },
+    "cf": { "description": "Alias for continued_fraction.", "syntax": "cf(expr, n)", "examples": ["cf(pi, 5)"] },
+    "chebyshevU": { "description": "Chebyshev polynomial of the second kind.", "syntax": "chebyshevU(n, x)", "examples": ["chebyshevU(3, x)"] },
+    "commutator": { "description": "Commutator of two matrices.", "syntax": "commutator(A, B)", "examples": ["commutator(A, B)"] },
+    "continued_fraction": { "description": "Continued fraction expansion.", "syntax": "continued_fraction(expr, n)", "examples": ["continued_fraction(e, 5)"] },
+    "expRegression": { "description": "Exponential regression.", "syntax": "expRegression(points)", "examples": ["expRegression([[1, 2], [2, 4], [3, 8]])"] },
+    "fmax": { "description": "Finds the maximum of a function.", "syntax": "fmax(expr, var, a, b)", "examples": ["fmax(-x^2, x, -2, 2)"] },
+    "fmin": { "description": "Finds the minimum of a function.", "syntax": "fmin(expr, var, a, b)", "examples": ["fmin(x^2, x, -2, 2)"] },
+    "int": { "description": "Alias for integrate.", "syntax": "int(expr, var)", "examples": ["int(x^2, x)"] },
+    "isControllable": { "description": "Checks if a system is controllable.", "syntax": "isControllable(A, B)", "examples": ["isControllable(A, B)"] },
+    "isObservable": { "description": "Checks if a system is observable.", "syntax": "isObservable(A, C)", "examples": ["isObservable(A, C)"] },
+    "is_perfect": { "description": "Checks if a number is a perfect number.", "syntax": "is_perfect(n)", "examples": ["is_perfect(28)"] },
+    "is_prime": { "description": "Checks if a number is prime.", "syntax": "is_prime(n)", "examples": ["is_prime(7)"] },
+    "is_subset": { "description": "Checks if list1 is a subset of list2.", "syntax": "is_subset(list1, list2)", "examples": ["is_subset([1], [1, 2])"] },
+    "ker": { "description": "Alias for nullspace.", "syntax": "ker(matrix)", "examples": ["ker(A)"] },
+    "lim": { "description": "Alias for limit.", "syntax": "lim(expr, var, val)", "examples": ["lim(sin(x)/x, x, 0)"] },
+    "logRegression": { "description": "Logarithmic regression.", "syntax": "logRegression(points)", "examples": ["logRegression([[1, 0], [10, 1], [100, 2]])"] },
+    "matrix": { "description": "Creates a matrix.", "syntax": "matrix(list_of_lists)", "examples": ["matrix([[1, 2], [3, 4]])"] },
+    "mod_inverse": { "description": "Alias for modInverse.", "syntax": "mod_inverse(a, m)", "examples": ["mod_inverse(3, 11)"] },
+    "mod_pow": { "description": "Alias for modPow.", "syntax": "mod_pow(base, exp, m)", "examples": ["mod_pow(2, 10, 1000)"] },
+    "nullspace": { "description": "Nullspace (kernel) of a matrix.", "syntax": "nullspace(matrix)", "examples": ["nullspace([[1, 2], [2, 4]])"] },
+    "powerRegression": { "description": "Power regression.", "syntax": "powerRegression(points)", "examples": ["powerRegression([[1, 1], [2, 4], [3, 9]])"] },
+    "stddev": { "description": "Standard deviation.", "syntax": "stddev(list)", "examples": ["stddev([1, 2, 3, 4, 5])"] },
+    "stdev": { "description": "Alias for stddev.", "syntax": "stdev(list)", "examples": ["stdev([1, 2, 3, 4, 5])"] },
+    "tTest2": { "description": "Two-sample t-test.", "syntax": "tTest2(list1, list2)", "examples": ["tTest2([1, 2, 3], [4, 5, 6])"] },
+    "trigSimplify": { "description": "Simplifies trigonometric expressions.", "syntax": "trigSimplify(expr)", "examples": ["trigSimplify(sin(x)^2 + cos(x)^2)"] },
+    "xgcd": { "description": "Extended Euclidean algorithm.", "syntax": "xgcd(a, b)", "examples": ["xgcd(240, 46)"] }
 };
-    "toUnit": {
-        "description": "Converts a value from one unit to another.",
-        "syntax": "toUnit(value, fromUnit, toUnit)",
-        "examples": ["toUnit(1, km, m)", "toUnit(0, C, F)", "toUnit(1000, g, kg)"]
-    },
-    "toBase": {
-        "description": "Converts an integer to a string in the given base (2-36).",
-        "syntax": "toBase(number, base)",
-        "examples": ["toBase(255, 16)", "toBase(10, 2)"]
-    },
-    "fromBase": {
-        "description": "Converts a string in the given base (2-36) to a decimal integer.",
-        "syntax": "fromBase(str, base)",
-        "examples": ["fromBase(FF, 16)", "fromBase(1010, 2)"]
-    },
-    "latex": {
-        "description": "Converts an expression to LaTeX format.",
-        "syntax": "latex(expr)",
-        "examples": ["latex(x^2 + y)", "latex(integrate(x^2, x))"]
-    },
-    "toRoman": {
-        "description": "Converts a positive integer to a Roman numeral string.",
-        "syntax": "toRoman(n)",
-        "examples": ["toRoman(2026)", "toRoman(100)"]
-    },
-    "fromRoman": {
-        "description": "Converts a Roman numeral string to a decimal integer.",
-        "syntax": "fromRoman(str)",
-        "examples": ["fromRoman(MMXXVI)", "fromRoman(C)"]
-    }
-ENDHELP
-echo "Help entries added: $(grep -c 'toUnit\|toBase\|fromBase\|latex\|toRoman\|fromRoman' js/help.js)"
