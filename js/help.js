@@ -40,6 +40,11 @@ window.HELP_DATA = {
         "syntax": "modInverse(a, m)",
         "examples": ["modInverse(3, 11)"]
     },
+    "modInverse": {
+        "description": "Modular multiplicative inverse.",
+        "syntax": "modInverse(a, m)",
+        "examples": ["modInverse(3, 11)"]
+    },
     "modPow": {
         "description": "Modular exponentiation (base^exp mod m).",
         "syntax": "modPow(base, exp, m)",
