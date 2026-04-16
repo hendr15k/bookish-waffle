@@ -40,10 +40,20 @@ window.HELP_DATA = {
         "syntax": "modInverse(a, m)",
         "examples": ["modInverse(3, 11)"]
     },
-    "modInverse": {
-        "description": "Modular multiplicative inverse.",
-        "syntax": "modInverse(a, m)",
-        "examples": ["modInverse(3, 11)"]
+    "invmod": {
+        "description": "Alias for modInverse.",
+        "syntax": "invmod(a, m)",
+        "examples": ["invmod(3, 11)"]
+    },
+    "inverse": {
+        "description": "Alias for modInverse.",
+        "syntax": "inverse(a, m)",
+        "examples": ["inverse(3, 11)"]
+    },
+    "powmod": {
+        "description": "Alias for modPow.",
+        "syntax": "powmod(base, exp, m)",
+        "examples": ["powmod(2, 10, 1000)"]
     },
     "modPow": {
         "description": "Modular exponentiation (base^exp mod m).",
