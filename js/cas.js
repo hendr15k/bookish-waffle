@@ -1326,7 +1326,7 @@ class CAS {
                 return res;
             }
 
-            if (node.funcName === 'xgcd') {
+            if (node.funcName === 'xgcd' || node.funcName === 'extendedGcd' || node.funcName === 'extended_gcd') {
                 if (node.args.length !== 2) throw new Error("xgcd requires 2 arguments: a, b");
                 return this._xgcd(args[0], args[1]);
             }
@@ -1683,12 +1683,12 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 return this._mod(args[0], args[1]);
             }
 
-            if (node.funcName === 'modInverse' || node.funcName === 'mod_inverse') {
+            if (node.funcName === 'modInverse' || node.funcName === 'mod_inverse' || node.funcName === 'modinverse') {
                 if (node.args.length !== 2) throw new Error("modInverse requires 2 arguments: a, m");
                 return this._modInverse(args[0], args[1]);
             }
 
-            if (node.funcName === 'modPow' || node.funcName === 'mod_pow') {
+            if (node.funcName === 'modPow' || node.funcName === 'mod_pow' || node.funcName === 'modpow') {
                 if (node.args.length !== 3) throw new Error("modPow requires 3 arguments: base, exp, mod");
                 return this._modPow(args[0], args[1], args[2]);
             }
