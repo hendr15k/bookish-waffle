@@ -761,20 +761,38 @@ class CAS {
             }
 
             if (node.funcName === 'nIntegrate' || node.funcName === 'numeric_integrate') {
-                if (node.args.length !== 4) throw new Error("nIntegrate requires 4 arguments: expr, var, start, end");
-                return this._nIntegrate(args[0], args[1], args[2], args[3]);
+                if (node.args.length !== 4 && node.args.length !== 5) throw new Error("nIntegrate requires 4 arguments: expr, var, start, end, [n] (subintervals, default 100)");
+                return this._nIntegrate(args[0], args[1], args[2], args[3], args[4] || null);
             }
 
             if (node.funcName === 'minimize' || node.funcName === 'fmin') {
-                 if (node.args.length !== 2) throw new Error("minimize requires 2 arguments: expr, variable");
-                 if (!(args[1] instanceof Sym)) throw new Error("Second argument to minimize must be a variable");
-                 return this._minimize(args[0], args[1]);
+                 if (node.args.length === 2) {
+                     if (!(args[1] instanceof Sym)) throw new Error("Second argument to minimize must be a variable");
+                     return this._minimize(args[0], args[1]);
+                 }
+                 if (node.args.length === 4) {
+                     if (!(args[1] instanceof Sym)) throw new Error("Second argument to minimize must be a variable");
+                     const a = args[2].evaluateNumeric();
+                     const b = args[3].evaluateNumeric();
+                     if (isNaN(a) || isNaN(b)) throw new Error("Bounds must be numeric");
+                     return this._fmin_bounded(args[0], args[1], a, b);
+                 }
+                 throw new Error("minimize(expr, x) or minimize(expr, x, a, b) for bounded search");
             }
 
             if (node.funcName === 'maximize' || node.funcName === 'fmax') {
-                 if (node.args.length !== 2) throw new Error("maximize requires 2 arguments: expr, variable");
-                 if (!(args[1] instanceof Sym)) throw new Error("Second argument to maximize must be a variable");
-                 return this._maximize(args[0], args[1]);
+                 if (node.args.length === 2) {
+                     if (!(args[1] instanceof Sym)) throw new Error("Second argument to maximize must be a variable");
+                     return this._maximize(args[0], args[1]);
+                 }
+                 if (node.args.length === 4) {
+                     if (!(args[1] instanceof Sym)) throw new Error("Second argument to maximize must be a variable");
+                     const a = args[2].evaluateNumeric();
+                     const b = args[3].evaluateNumeric();
+                     if (isNaN(a) || isNaN(b)) throw new Error("Bounds must be numeric");
+                     return this._fmax_bounded(args[0], args[1], a, b);
+                 }
+                 throw new Error("maximize(expr, x) or maximize(expr, x, a, b) for bounded search");
             }
 
             if (node.funcName === 'analyze') {
@@ -3822,6 +3840,56 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         return this._optimize(expr, varNode, 'max');
     }
 
+    // Bounded 1-D optimization using Golden Section Search
+    // Works for any continuous function, no derivative needed
+    _fmin_bounded(expr, varNode, a, b) {
+        const f = (x) => {
+            const res = expr.substitute(varNode, new Num(x)).evaluateNumeric();
+            if (isNaN(res)) return Infinity;
+            return res;
+        };
+
+        const phi = (1 + Math.sqrt(5)) / 2; // Golden ratio ≈ 1.618
+        const tol = 1e-9;
+        const maxIter = 200;
+
+        let xl = Math.min(a, b);
+        let xr = Math.max(a, b);
+
+        let x1 = xr - (xr - xl) / phi;
+        let x2 = xl + (xr - xl) / phi;
+        let f1 = f(x1);
+        let f2 = f(x2);
+
+        for (let i = 0; i < maxIter; i++) {
+            if (Math.abs(xr - xl) < tol * (Math.abs(x1) + Math.abs(x2))) break;
+
+            if (f1 < f2) {
+                xr = x2;
+                x2 = x1;
+                f2 = f1;
+                x1 = xr - (xr - xl) / phi;
+                f1 = f(x1);
+            } else {
+                xl = x1;
+                x1 = x2;
+                f1 = f2;
+                x2 = xl + (xr - xl) / phi;
+                f2 = f(x2);
+            }
+        }
+
+        const xMin = (x1 + x2) / 2;
+        const fMin = f(xMin);
+        return new Vec([new Num(xMin), new Num(fMin)]);
+    }
+
+    _fmax_bounded(expr, varNode, a, b) {
+        // Negate the function and use the bounded minimizer
+        const negExpr = new Mul(new Num(-1), expr);
+        return this._fmin_bounded(negExpr, varNode, a, b);
+    }
+
     _analyze(expr, varNode) {
         const results = [];
 
@@ -4169,18 +4237,19 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         throw new Error("System solver did not converge");
     }
 
-    _nIntegrate(expr, varNode, start, end) {
-        // Simpson's Rule
-        // int(f) approx (b-a)/6 * (f(a) + 4f((a+b)/2) + f(b))
-        // Composite Simpson's Rule
+    _nIntegrate(expr, varNode, start, end, nArg) {
+        // Composite Simpson's Rule with optional adaptive refinement and configurable subintervals
+        //
+        // Usage: nIntegrate(expr, x, a, b)       - Simpson's rule, auto n (100)
+        //        nIntegrate(expr, x, a, b, n)    - Simpson's rule, n subintervals
+        //
+        // The result is compared between n and 2n subintervals; if relative error
+        // exceeds 1e-8, extrapolation (Simpson's extended rule) is applied.
 
         const a = start.evaluateNumeric();
         const b = end.evaluateNumeric();
 
         if (isNaN(a) || isNaN(b)) throw new Error("Integration bounds must be numeric");
-
-        const n = 100; // Even number of intervals
-        const h = (b - a) / n;
 
         const f = (val) => {
             const res = expr.substitute(varNode, new Num(val)).evaluateNumeric();
@@ -4188,15 +4257,31 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             return res;
         };
 
-        let sum = f(a) + f(b);
+        const compositeSimpson = (n) => {
+            if (n < 2 || n % 2 !== 0) n = 2 * Math.ceil(n / 2);
+            const h = (b - a) / n;
+            let sum = f(a) + f(b);
+            for (let i = 1; i < n; i++) {
+                sum += (i % 2 === 0 ? 2 : 4) * f(a + i * h);
+            }
+            return (h / 3) * sum;
+        };
 
-        for (let i = 1; i < n; i++) {
-            const x = a + i * h;
-            if (i % 2 === 0) sum += 2 * f(x);
-            else sum += 4 * f(x);
+        let n = nArg ? Math.max(2, Math.round(nArg)) : 100;
+        if (n % 2 !== 0) n++;
+
+        const result1 = compositeSimpson(n);
+        const result2 = compositeSimpson(2 * n);
+
+        // Richardson extrapolation: combine n-interval and 2n-interval results
+        // S_extended = (16 * S_2n - S_n) / 15
+        const error = Math.abs(result2 - result1);
+        const scale = Math.max(Math.abs(result2), Math.abs(result1), 1e-12);
+
+        if (error / scale > 1e-8) {
+            return new Num((16 * result2 - result1) / 15);
         }
-
-        return new Num((h / 3) * sum);
+        return new Num(result2);
     }
 
     _roots(poly, varNode) {

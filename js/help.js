@@ -604,9 +604,9 @@ window.HELP_DATA = {
     "permutations": { "description": "Generates all permutations.", "syntax": "permutations(list)", "examples": ["permutations([1,2,3])"] },
 
 // --- Calculus Extras ---
-    "minimize": { "description": "Finds local minimum.", "syntax": "minimize(f, x)", "examples": ["minimize(x^2-4x, x)"] },
-    "maximize": { "description": "Finds local maximum.", "syntax": "maximize(f, x)", "examples": ["maximize(-x^2, x)"] },
-    "nIntegrate": { "description": "Numeric Integration (Simpson's Rule).", "syntax": "nIntegrate(f, x, a, b)", "examples": ["nIntegrate(exp(-x^2), x, 0, 1)"] },
+    "minimize": { "description": "Finds local minimum (symbolic). Also: minimize(f, x, a, b) for bounded Golden Section Search.", "syntax": "minimize(f, x) or minimize(f, x, a, b)", "examples": ["minimize(x^2-4x, x)", "minimize(sin(x), x, 0, 2*pi)"] },
+    "maximize": { "description": "Finds local maximum (symbolic). Also: maximize(f, x, a, b) for bounded Golden Section Search.", "syntax": "maximize(f, x) or maximize(f, x, a, b)", "examples": ["maximize(-x^2, x)", "maximize(sin(x), x, 0, 2*pi)"] },
+    "nIntegrate": { "description": "Numeric Integration via Composite Simpson's Rule with Richardson extrapolation. Optional 5th arg: subinterval count n (default 100).", "syntax": "nIntegrate(f, x, a, b, [n])", "examples": ["nIntegrate(exp(-x^2), x, 0, 1)", "nIntegrate(sin(x), x, 0, pi, 200)"] },
     "vectorfield": { "description": "Plots a 2D vector field.", "syntax": "vectorfield([u, v], x, y)", "examples": ["vectorfield([-y, x], x, y)"] },
     "trigReduce": { "description": "Linearize trigonometric powers.", "syntax": "trigReduce(expr)", "examples": ["trigReduce(sin(x)^2)"] },
     "trigExpand": { "description": "Expand trigonometric sums.", "syntax": "trigExpand(expr)", "examples": ["trigExpand(sin(2x))"] },
