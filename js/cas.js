@@ -1010,6 +1010,86 @@ class CAS {
                 };
             }
 
+            if (node.funcName === 'odeplot') {
+                if (node.args.length !== 1) throw new Error("odeplot requires 1 argument (solution vector)");
+                const sol = args[0];
+                if (!(sol instanceof Vec)) throw new Error("odeplot argument must be a list/vector");
+
+                // Assuming sol is the output of rk4/rk45, which is a Vec of rows.
+                // Typical row: [t, y] or [t, y1, y2, ..., err]
+                // For adaptive step size (rk45), the last row is metadata ["__meta__", ...]. We should ignore it.
+                // It also appends 'err' to the row, which we want to ignore. So y is from index 1 to row.length-2 (if rk45) or row.length-1 (if rk4).
+                // Actually, rk4 output is [t, y1, y2]. rk45 is [t, y1, y2, err].
+                // We don't strictly know if it's rk4 or rk45, so we can check if the last element is the error flag.
+                // The safest is to plot all dependent variables. If there are multiple, we create multiple plot objects and return them as an array (merged).
+
+                let numVars = 1;
+                // Sniff the first data row to determine number of dependent variables
+                for (let i = 0; i < sol.elements.length; i++) {
+                    const row = sol.elements[i];
+                    if (row instanceof Vec && row.elements.length >= 2) {
+                        const tNode = row.elements[0];
+                        if (typeof tNode.value === 'string' && tNode.value === "__meta__") continue;
+
+                        // Let's assume the last element is 'err' if the row length is e.g. > 2 and it looks like rk45
+                        // A simple heuristic: plot all elements except index 0 (t).
+                        // If it's rk45, we might accidentally plot the error flag. That's usually ~0 and acceptable or easy to ignore.
+                        // Or we can check the metadata row. If metadata exists, it's rk45, so ignore the last element.
+                        let isRK45 = false;
+                        const lastRow = sol.elements[sol.elements.length - 1];
+                        if (lastRow instanceof Vec && lastRow.elements[0] && lastRow.elements[0].value === "__meta__") {
+                            isRK45 = true;
+                        }
+
+                        numVars = isRK45 ? (row.elements.length - 2) : (row.elements.length - 1);
+                        break;
+                    }
+                }
+
+                const plots = [];
+                for (let v = 0; v < numVars; v++) {
+                    const points = [];
+                    for (let i = 0; i < sol.elements.length; i++) {
+                        const row = sol.elements[i];
+                        if (row instanceof Vec && row.elements.length > v + 1) {
+                            const tNode = row.elements[0];
+                            if (typeof tNode.value === 'string' && tNode.value === "__meta__") continue;
+
+                            const t = tNode.evaluateNumeric();
+                            const y = row.elements[v + 1].evaluateNumeric();
+                            if (!isNaN(t) && !isNaN(y)) points.push({x: t, y: y});
+                        }
+                    }
+
+                    if (points.length > 0) {
+                        plots.push({
+                            type: 'plot',
+                            subtype: 'list',
+                            scatter: points,
+                            min: 0,
+                            max: 0,
+                            toString: () => `ODE Plot Var ${v+1} (${points.length} points)`,
+                            toLatex: () => `\\text{ODE Plot Var ${v+1}}`
+                        });
+                    }
+                }
+
+                if (plots.length === 1) return plots[0];
+                if (plots.length > 1) {
+                    return {
+                        type: 'plot',
+                        subtype: 'list', // or we could rely on the caller to merge them. Wait, cas.js handles multiple plots natively if we return an array?
+                        // The engine handles multiple plots natively by returning an array in cas.evaluate? No, evaluate returns a single object.
+                        // cas.js merge logic combines plots if multiple plot commands are executed. Here we can return a single object with 'plots' array.
+                        plots: plots,
+                        toString: () => `ODE Plot (${plots.length} variables)`,
+                        toLatex: () => `\\text{ODE Plot}`
+                    };
+                }
+
+                return new Call('odeplot', [sol]);
+            }
+
             if (node.funcName === 'plotlist') {
                 if (node.args.length !== 1) throw new Error("plotlist requires 1 argument (list)");
                 const list = args[0];
