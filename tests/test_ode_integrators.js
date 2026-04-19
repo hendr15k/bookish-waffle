@@ -211,5 +211,27 @@ console.log('\n--- Problem 5: rk45 error estimation check ---');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────────
+// ── 6. odeplot check: ensure odeplot returns correct structure for list plotting ─
+console.log('\n--- Problem 6: odeplot test ---');
+{
+    const y = new Sym('y');
+    const t = new Sym('t');
+    const ode = new Mul(new Num(-0.5), y);
+    // Get sol from rk45
+    const sol45 = cas.evaluate(new Call('rk45', [ode, y, t, new Num(1), new Num(0), new Num(1), new Num(0.1), new Num(1e-6), new Vec([])]));
+    const plotObj = cas.evaluate(new Call('odeplot', [sol45]));
+
+    assertTrue(plotObj.type === 'plot', 'odeplot returns a plot type');
+    // It might return multiple plots, or single
+    const pts = plotObj.scatter || (plotObj.plots && plotObj.plots[0].scatter);
+    assertTrue(pts && pts.length > 0, 'odeplot has scatter points');
+
+    let validPoints = true;
+    for(let pt of pts) {
+        if(typeof pt.x !== 'number' || typeof pt.y !== 'number') validPoints = false;
+    }
+    assertTrue(validPoints, 'odeplot scatter points are valid numeric coordinates');
+}
+
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
 if (failed > 0) process.exit(1);
