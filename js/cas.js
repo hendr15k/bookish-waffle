@@ -1897,6 +1897,14 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 return this._rk4(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
             }
 
+            if (node.funcName === 'rk45') {
+                // Adaptive RK4/5 (Dormand-Prince):
+                // rk45(ode, depVar, indepVar, initVal, t0, t1, h0, tol, opts)
+                // opts: [maxSteps, maxStepRatio, dir]
+                if (node.args.length < 9) throw new Error("rk45 requires 9 args: ode, depVar, indepVar, initVal, t0, t1, h0, tol, opts");
+                return this._rk45(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]);
+            }
+
             if (node.funcName === 'rsolve') {
                 // rsolve(eq, a(n), [conds])
                 if (node.args.length < 2) throw new Error("rsolve requires at least 2 arguments: equation, recurrence_term");
@@ -10472,6 +10480,181 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             } else {
                 points.push(new Vec([new Num(currentT), new Num(currentY)]));
             }
+        }
+
+        return new Vec(points);
+    }
+
+    // ── Adaptive RK4/5 (Dormand-Prince) ───────────────────────────────────────
+    _rk45(ode, depVar, indepVar, initVal, t0, t1, h0Node, tolNode, optsNode) {
+        // Implements the Dormand-Prince RK4(5) embedded pair for adaptive step-size control.
+        // 5th-order solution used for the result, 4th-order for error estimation.
+        // Error estimate: ε = |y5 - y4|, step accepted if ε <= tol.
+        // Step-size update: h_new = h * min(5, 0.84*(tol/ε)^(1/5)) limited by [h_min, h_max].
+        //
+        // Result: Vec of [t, y, err] rows + metadata at end: ["__meta__", steps, rejected, totalEvals].
+
+        const isSystem = (depVar instanceof Vec);
+        let h = h0Node.evaluateNumeric();
+        const tol = tolNode.evaluateNumeric();
+        let currentT = t0.evaluateNumeric();
+        let targetT = t1.evaluateNumeric();
+        let currentY = isSystem
+            ? initVal.elements.map(e => e.evaluateNumeric())
+            : initVal.evaluateNumeric();
+
+        // Options
+        const maxSteps = 50000;
+        const maxStepRatio = 100;
+        const dir = (targetT >= currentT) ? 1 : -1;
+        if (h < 0) h = -h;
+        const hMin = 1e-14;
+        const hMax = Math.abs(targetT - currentT) * 2;
+
+        if (isNaN(h) || isNaN(currentT) || isNaN(targetT) || isNaN(tol))
+            return new Call('rk45', [ode, depVar, indepVar, initVal, t0, t1, h0Node, tolNode, optsNode]);
+        if (tol <= 0) throw new Error("rk45: tolerance must be positive");
+
+        // Extract RHS
+        let rhs = ode;
+        if (ode instanceof Eq) rhs = ode.right;
+
+        // Ensure step direction
+        if ((targetT > currentT && h < 0) || (targetT < currentT && h > 0)) h = -h;
+
+        const f = (t, y) => {
+            if (isSystem) {
+                const res = [];
+                for (let i = 0; i < ode.elements.length; i++) {
+                    let e = ode.elements[i];
+                    e = e.substitute(indepVar, new Num(t));
+                    for (let j = 0; j < depVar.elements.length; j++)
+                        e = e.substitute(depVar.elements[j], new Num(y[j]));
+                    res.push(e.evaluateNumeric());
+                }
+                return res;
+            } else {
+                let e = rhs;
+                e = e.substitute(indepVar, new Num(t));
+                e = e.substitute(depVar, new Num(y));
+                return e.evaluateNumeric();
+            }
+        };
+
+        const vAdd = (y, k, s) => isSystem ? y.map((v, i) => v + k[i] * s) : y + k * s;
+        const vNorm = (y) => isSystem
+            ? Math.sqrt(y.reduce((s, v) => s + v * v, 0))
+            : Math.abs(y);
+        const vCopy = (y) => {
+            if (isSystem) return [...y];
+            // Defensive: unwrap Num objects (prevents string-concatenation bugs in Num.valueOf)
+            if (Array.isArray(y)) {
+                const unwrapped = y.map(v => typeof v === 'object' && v !== null && v.constructor.name === 'Num' ? v.value : v);
+                // Scalar case: y5 is [y_val] → return the scalar, not the array
+                return isSystem ? unwrapped : unwrapped[0];
+            }
+            if (typeof y === 'object' && y !== null && y.constructor.name === 'Num') return y.value;
+            return y;
+        };
+
+        const points = [];
+        let steps = 0, rejected = 0, totalEvals = 0;
+
+        // Dormand-Prince coefficients
+        const DP = {
+            c: [0, 1/5, 3/10, 4/5, 8/9, 1, 1],
+            a: [
+                [0],
+                [1/5],
+                [3/40, 9/40],
+                [44/45, -56/15, 32/9],
+                [19372/6561, -25360/2187, 64448/6561, -212/729],
+                [9017/3168, -355/33, 46732/5247, 49/176, -5103/18656],
+                [35/384, 0, 500/1113, 125/192, -2187/6784, 11/84]
+            ],
+            b5: [35/384, 0, 500/1113, 125/192, -2187/6784, 11/84, 0],
+            b4: [5179/57600, 0, 7571/16695, 393/640, -92097/339200, 187/2100, 1/40]
+        };
+
+        const y5 = [], y4 = [];
+
+        let done = false;
+
+        while (!done && steps < maxSteps) {
+            if ((dir > 0 && currentT >= targetT) || (dir < 0 && currentT <= targetT)) { done = true; break; }
+
+            // Adjust last step
+            if (dir > 0) h = Math.min(h, targetT - currentT);
+            else        h = Math.min(h, currentT - targetT);
+
+            // Compute DP stages
+            const k = [[], [], [], [], [], [], []];
+            for (let stage = 0; stage < 7; stage++) {
+                const tStage = currentT + DP.c[stage] * h;
+                let yStage = vCopy(currentY);
+                for (let j = 0; j < stage; j++)
+                    yStage = vAdd(yStage, k[j], DP.a[stage][j] * h);
+                const kt = f(tStage, yStage);
+                totalEvals++;
+                k[stage] = kt;
+                if (isSystem && kt.some(isNaN)) { done = true; break; }
+                if (!isSystem && isNaN(kt)) { done = true; break; }
+            }
+
+            // Combine for y5 and y4
+            for (let i = 0; i < (isSystem ? currentY.length : 1); i++) {
+                let s5 = 0, s4 = 0;
+                for (let stage = 0; stage < 7; stage++) {
+                    const kv = isSystem ? k[stage][i] : k[stage];
+                    s5 += DP.b5[stage] * kv;
+                    s4 += DP.b4[stage] * kv;
+                }
+                if (isSystem) {
+                    if (!y5[i]) y5[i] = currentY[i] + h * s5;
+                    else        y5[i] = currentY[i] + h * s5;
+                    if (!y4[i]) y4[i] = currentY[i] + h * s4;
+                    else        y4[i] = currentY[i] + h * s4;
+                } else {
+                    y5[0] = currentY + h * s5;
+                    y4[0] = currentY + h * s4;
+                }
+            }
+
+            // Error estimate
+            const err = isSystem
+                ? Math.sqrt(y5.reduce((s, v, i) => s + (v - y4[i]) ** 2, 0))
+                : Math.abs(y5[0] - y4[0]);
+
+            if (err <= tol || h <= hMin) {
+                // Accept step
+                steps++;
+                currentT += h;
+                currentY = vCopy(y5);
+
+                // Store: [t, y, err] (err=0 at accepted steps, error at rejected steps)
+                if (isSystem) {
+                    points.push(new Vec([new Num(currentT), ...currentY.map(v => new Num(v)), new Num(0)]));
+                } else {
+                    points.push(new Vec([new Num(currentT), new Num(y5[0]), new Num(0)]));
+                }
+
+                // Adapt step size (only on accepted steps)
+                if (err <= tol && h > hMin) {
+                    const factor = Math.min(5, 0.84 * Math.pow(tol / Math.max(err, 1e-20), 0.2));
+                    h = Math.min(Math.max(h * factor, hMin), hMax);
+                }
+            } else {
+                // Reject: reduce step, don't advance
+                rejected++;
+                h = Math.max(h * 0.84 * Math.pow(tol / Math.max(err, 1e-20), 0.2), hMin);
+            }
+        }
+
+        // Metadata row: ["__meta__", steps, rejected, totalEvals, finalT, finalY]
+        if (isSystem) {
+            points.push(new Vec([new Sym('__meta__'), new Num(steps), new Num(rejected), new Num(totalEvals), new Num(currentT), ...currentY.map(v => new Num(v))]));
+        } else {
+            points.push(new Vec([new Sym('__meta__'), new Num(steps), new Num(rejected), new Num(totalEvals), new Num(currentT), new Num(currentY)]));
         }
 
         return new Vec(points);
