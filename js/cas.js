@@ -235,10 +235,6 @@ class CAS {
             }
 
 
-            if (node.funcName === 'rk4' || node.funcName === 'rk45' || node.funcName === 'odeplot' || node.funcName === 'odetable') {
-                return this._solveODE(node.funcName, node.args);
-            }
-
             if (node.funcName === 'N') {
                 if (node.args.length !== 1) throw new Error("N requires 1 argument");
                 const val = args[0].evaluateNumeric();
@@ -1990,14 +1986,14 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 return this._rk45(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]);
             }
 
-            if (node.funcName === 'ode_table') {
-                if (node.args.length !== 2) throw new Error("ode_table requires 2 arguments: solution, [options]");
-                return this._odeTable(args[0], args[1]);
+            if (node.funcName === 'ode_table' || node.funcName === 'odetable') {
+                if (node.args.length !== 1) throw new Error("odetable requires 1 argument (solution vector)");
+                return this._odeTable(args[0]);
             }
 
             if (node.funcName === 'ode_plot') {
-                if (node.args.length !== 2) throw new Error("ode_plot requires 2 arguments: solution, [options]");
-                return this._odePlot(args[0], args[1]);
+                if (node.args.length !== 1) throw new Error("ode_plot requires 1 argument (solution vector)");
+                return this.evaluate(new Call('odeplot', node.args));
             }
 
             if (node.funcName === 'rsolve') {
@@ -4387,85 +4383,6 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         return new Num(result2);
     }
 
-
-    _solveODE(name, args) {
-        const toNumber = (expr, label) => {
-            const n = this._recursiveEval(expr);
-            if (n instanceof Num) return n.value;
-            const v = n.evaluateNumeric ? n.evaluateNumeric() : NaN;
-            if (!Number.isFinite(v)) throw new Error(`${label} must be numeric`);
-            return v;
-        };
-        const toExprArray = (expr) => {
-            const v = this._recursiveEval(expr);
-            if (v instanceof Vec) return v.elements;
-            return [v];
-        };
-        const odeExpr = this._recursiveEval(args[0]);
-        const depExpr = this._recursiveEval(args[1]);
-        const tSym = args[2] instanceof Sym ? args[2] : new Sym('t');
-        const yExprs = depExpr instanceof Vec ? depExpr.elements : [depExpr];
-        const fExprs = odeExpr instanceof Vec ? odeExpr.elements : [odeExpr];
-        const y0Raw = toExprArray(args[3]);
-        if (y0Raw.length !== yExprs.length || yExprs.length !== fExprs.length) throw new Error('ODE dimension mismatch');
-        const y0 = y0Raw.map(e => toNumber(e, 'initial condition'));
-        const t0 = toNumber(args[4], 't0');
-        const t1 = toNumber(args[5], 't1');
-        let h = Math.abs(toNumber(args[6], 'step size')) * (t1 >= t0 ? 1 : -1);
-        const tol = args[7] ? toNumber(args[7], 'tolerance') : 1e-6;
-        const maxSteps = 100000;
-        const evalF = (t, y) => {
-            const savedT = this.variables[tSym.name];
-            const savedY = {};
-            this.variables[tSym.name] = new Num(t);
-            yExprs.forEach((sym, i) => { savedY[sym.name] = this.variables[sym.name]; this.variables[sym.name] = new Num(y[i]); });
-            const out = fExprs.map(e => { const v = this._recursiveEval(e); return v.evaluateNumeric(); });
-            if (savedT === undefined) delete this.variables[tSym.name]; else this.variables[tSym.name] = savedT;
-            yExprs.forEach(sym => { if (savedY[sym.name] === undefined) delete this.variables[sym.name]; else this.variables[sym.name] = savedY[sym.name]; });
-            return out;
-        };
-        const rows = [];
-        let t = t0, y = y0.slice(), steps = 0, rejected = 0, evals = 0;
-        const push = (err=0) => rows.push(new Vec([new Num(t), ...y.map(v=>new Num(v)), new Num(err)]));
-        push(0);
-        const add = (a,b,s=1)=>a.map((v,i)=>v+s*b[i]);
-        const scale = (a,s)=>a.map(v=>v*s);
-        const rk4Step = (tt, yy, hh) => {
-            const k1 = evalF(tt, yy); evals++;
-            const k2 = evalF(tt+hh/2, add(yy, scale(k1, hh/2))); evals++;
-            const k3 = evalF(tt+hh/2, add(yy, scale(k2, hh/2))); evals++;
-            const k4 = evalF(tt+hh, add(yy, scale(k3, hh))); evals++;
-            return yy.map((v,i)=>v + hh*(k1[i]+2*k2[i]+2*k3[i]+k4[i])/6);
-        };
-        const dpStep = (tt, yy, hh) => {
-            const k1 = evalF(tt, yy); evals++;
-            const k2 = evalF(tt+hh*1/5, add(yy, scale(k1, hh*1/5))); evals++;
-            const k3 = evalF(tt+hh*3/10, add(yy, scale(k1, hh*3/40).map((v,i)=>v+scale(k2, hh*9/40)[i]))); evals++;
-            const k4 = evalF(tt+hh*4/5, add(yy, scale(k1, hh*44/45).map((v,i)=>v+scale(k2, hh*-56/15)[i]+scale(k3, hh*32/9)[i]))); evals++;
-            const k5 = evalF(tt+hh*8/9, add(yy, scale(k1, hh*19372/6561).map((v,i)=>v+scale(k2, hh*-25360/2187)[i]+scale(k3, hh*64448/6561)[i]+scale(k4, hh*-212/729)[i]))); evals++;
-            const k6 = evalF(tt+hh, add(yy, scale(k1, hh*9017/3168).map((v,i)=>v+scale(k2, hh*-355/33)[i]+scale(k3, hh*46732/5247)[i]+scale(k4, hh*49/176)[i]+scale(k5, hh*-5103/18656)[i]))); evals++;
-            const y5 = yy.map((v,i)=>v + hh*(35*k1[i]/384 + 500*k3[i]/1113 + 125*k4[i]/192 - 2187*k5[i]/6784 + 11*k6[i]/84));
-            const k7 = evalF(tt+hh, y5); evals++;
-            const y4 = yy.map((v,i)=>v + hh*(5179*k1[i]/57600 + 7571*k3[i]/16695 + 393*k4[i]/640 - 92097*k5[i]/339200 + 187*k6[i]/2100 + k7[i]/40));
-            const err = Math.max(...y5.map((v,i)=>Math.abs(v-y4[i])));
-            return {y:y5, err};
-        };
-        while ((t < t1 && h > 0) || (t > t1 && h < 0)) {
-            if (steps > maxSteps) throw new Error('ODE solver exceeded max steps');
-            if (Math.abs(h) > Math.abs(t1 - t)) h = t1 - t;
-            const res = name === 'rk4' ? {y: rk4Step(t, y, h), err: 0} : dpStep(t, y, h);
-            const accept = name === 'rk4' || res.err <= tol || Math.abs(h) < 1e-14;
-            if (accept) { t += h; y = res.y; steps++; push(name === 'rk4' ? 0 : res.err); } else { rejected++; }
-            if (name === 'rk45') {
-                const safety = 0.9;
-                const order = 5;
-                const scaleFactor = res.err === 0 ? 5 : safety * Math.pow(tol / Math.max(res.err, 1e-16), 1 / order);
-                h *= Math.min(5, Math.max(0.2, scaleFactor));
-            }
-        }
-        rows.push(new Vec([new Sym('meta'), new Num(steps), new Num(rejected), new Num(evals)]));
-        return new Vec(rows);
-    }
 
     _roots(poly, varNode) {
         const sol = this._solve(poly, varNode);
@@ -10843,6 +10760,22 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         }
 
         return new Vec(points);
+    }
+
+    _odeTable(sol) {
+        if (!(sol instanceof Vec)) throw new Error("odetable argument must be a solution vector");
+        // We will strip the __meta__ row if it exists and just return the vector.
+        const elements = [...sol.elements];
+        if (elements.length > 0) {
+            const lastRow = elements[elements.length - 1];
+            if (lastRow instanceof Vec && lastRow.elements.length > 0) {
+                const firstCol = lastRow.elements[0];
+                if (firstCol instanceof Sym && (firstCol.name === '__meta__' || firstCol.name === 'meta')) {
+                    elements.pop(); // Remove metadata
+                }
+            }
+        }
+        return new Vec(elements);
     }
 
     _fourier(expr, varNode, n, L) {

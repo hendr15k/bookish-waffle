@@ -27,6 +27,9 @@ assert("rk45 returns a vector", r2 instanceof sandbox.Vec);
 assert("rk45 includes metadata", r2.elements[r2.elements.length - 1] instanceof sandbox.Vec && r2.elements[r2.elements.length - 1].elements[0] instanceof sandbox.Sym);
 
 ok("odeplot creates plot object", "odeplot(rk45(-0.5*y, y, t, 1, 0, 2, 0.1, 1e-6, []))");
+ok("ode_plot creates plot object", "ode_plot(rk45(-0.5*y, y, t, 1, 0, 2, 0.1, 1e-6, []))");
+ok("odetable creates table", "odetable(rk45(-0.5*y, y, t, 1, 0, 2, 0.1, 1e-6, []))");
+ok("ode_table creates table", "ode_table(rk45(-0.5*y, y, t, 1, 0, 2, 0.1, 1e-6, []))");
 ok("harmonic oscillator second-order setup", "rk4([y2, -1*y1], [y1, y2], t, [1, 0], 0, 1, 0.1)");
 ok("damped oscillation example", "rk45([y2, -0.2*y2 - y1], [y1, y2], t, [1, 0], 0, 10, 0.1, 1e-6, [])");
 ok("exponential decay example", "rk45(-0.7*y, y, t, 1, 0, 5, 0.1, 1e-6, [])");
