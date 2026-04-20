@@ -1979,7 +1979,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
             if (node.funcName === 'rk4') {
                 if (node.args.length !== 7) throw new Error("rk4 requires 7 arguments: ode, depVar, indepVar, initVal, t0, t1, step");
-                return this._rk4(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
+                return this._rk4(node.args[0], node.args[1], node.args[2], node.args[3], node.args[4], node.args[5], node.args[6]);
             }
 
             if (node.funcName === 'rk45') {
@@ -1987,17 +1987,17 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 // rk45(ode, depVar, indepVar, initVal, t0, t1, h0, tol, opts)
                 // opts: [maxSteps, maxStepRatio, dir]
                 if (node.args.length < 9) throw new Error("rk45 requires 9 args: ode, depVar, indepVar, initVal, t0, t1, h0, tol, opts");
-                return this._rk45(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]);
+                return this._rk45(node.args[0], node.args[1], node.args[2], node.args[3], node.args[4], node.args[5], node.args[6], node.args[7], node.args[8]);
             }
 
             if (node.funcName === 'ode_table') {
                 if (node.args.length !== 2) throw new Error("ode_table requires 2 arguments: solution, [options]");
-                return this._odeTable(args[0], args[1]);
+                return this._odeTable(node.args[0], node.args[1]);
             }
 
             if (node.funcName === 'ode_plot') {
                 if (node.args.length !== 2) throw new Error("ode_plot requires 2 arguments: solution, [options]");
-                return this._odePlot(args[0], args[1]);
+                return this._odePlot(node.args[0], node.args[1]);
             }
 
             if (node.funcName === 'rsolve') {
@@ -4406,7 +4406,8 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         const tSym = args[2] instanceof Sym ? args[2] : new Sym('t');
         const yExprs = depExpr instanceof Vec ? depExpr.elements : [depExpr];
         const fExprs = odeExpr instanceof Vec ? odeExpr.elements : [odeExpr];
-        const y0Raw = toExprArray(args[3]);
+        const initExpr = this._recursiveEval(args[3]);
+        const y0Raw = initExpr instanceof Vec ? initExpr.elements : [initExpr];
         if (y0Raw.length !== yExprs.length || yExprs.length !== fExprs.length) throw new Error('ODE dimension mismatch');
         const y0 = y0Raw.map(e => toNumber(e, 'initial condition'));
         const t0 = toNumber(args[4], 't0');
