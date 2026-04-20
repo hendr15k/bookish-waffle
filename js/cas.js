@@ -1985,6 +1985,16 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 return this._rk45(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]);
             }
 
+            if (node.funcName === 'ode_table') {
+                if (node.args.length !== 2) throw new Error("ode_table requires 2 arguments: solution, [options]");
+                return this._odeTable(args[0], args[1]);
+            }
+
+            if (node.funcName === 'ode_plot') {
+                if (node.args.length !== 2) throw new Error("ode_plot requires 2 arguments: solution, [options]");
+                return this._odePlot(args[0], args[1]);
+            }
+
             if (node.funcName === 'rsolve') {
                 // rsolve(eq, a(n), [conds])
                 if (node.args.length < 2) throw new Error("rsolve requires at least 2 arguments: equation, recurrence_term");
