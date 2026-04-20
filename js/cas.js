@@ -4406,8 +4406,9 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         const tSym = args[2] instanceof Sym ? args[2] : new Sym('t');
         const yExprs = depExpr instanceof Vec ? depExpr.elements : [depExpr];
         const fExprs = odeExpr instanceof Vec ? odeExpr.elements : [odeExpr];
-        if (yExprs.length !== fExprs.length) throw new Error('ODE dimension mismatch');
-        const y0 = toExprArray(args[3]).map(e => toNumber(e, 'initial condition'));
+        const y0Raw = toExprArray(args[3]);
+        if (y0Raw.length !== yExprs.length || yExprs.length !== fExprs.length) throw new Error('ODE dimension mismatch');
+        const y0 = y0Raw.map(e => toNumber(e, 'initial condition'));
         const t0 = toNumber(args[4], 't0');
         const t1 = toNumber(args[5], 't1');
         let h = Math.abs(toNumber(args[6], 'step size')) * (t1 >= t0 ? 1 : -1);
@@ -10576,6 +10577,15 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         // Ensure step direction
         if ((targetT > currentT && h < 0) || (targetT < currentT && h > 0)) h = -h;
 
+        const depVars = isSystem ? depVar.elements : [depVar];
+        const odeVec = ode instanceof Vec ? ode.elements : null;
+        const ensureSystemDimension = () => {
+            if (!isSystem) return;
+            if (!odeVec) throw new Error('ODE dimension mismatch');
+            if (odeVec.length !== depVars.length) throw new Error('ODE dimension mismatch');
+        };
+        ensureSystemDimension();
+
         const points = [];
         // Push initial point
         if (isSystem) {
@@ -10593,11 +10603,11 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
             if (isSystem) {
                 const res = [];
-                for(let i=0; i<ode.elements.length; i++) {
-                    let e = ode.elements[i];
+                for(let i=0; i<odeVec.length; i++) {
+                    let e = odeVec[i];
                     e = e.substitute(indepVar, new Num(t));
-                    for(let j=0; j<depVar.elements.length; j++) {
-                        e = e.substitute(depVar.elements[j], new Num(y[j]));
+                    for(let j=0; j<depVars.length; j++) {
+                        e = e.substitute(depVars[j], new Num(y[j]));
                     }
                     res.push(e.evaluateNumeric());
                 }
@@ -10688,14 +10698,23 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         // Ensure step direction
         if ((targetT > currentT && h < 0) || (targetT < currentT && h > 0)) h = -h;
 
+        const depVars = isSystem ? depVar.elements : [depVar];
+        const odeVec = ode instanceof Vec ? ode.elements : null;
+        const ensureSystemDimension = () => {
+            if (!isSystem) return;
+            if (!odeVec) throw new Error('ODE dimension mismatch');
+            if (odeVec.length !== depVars.length) throw new Error('ODE dimension mismatch');
+        };
+        ensureSystemDimension();
+
         const f = (t, y) => {
             if (isSystem) {
                 const res = [];
-                for (let i = 0; i < ode.elements.length; i++) {
-                    let e = ode.elements[i];
+                for (let i = 0; i < odeVec.length; i++) {
+                    let e = odeVec[i];
                     e = e.substitute(indepVar, new Num(t));
-                    for (let j = 0; j < depVar.elements.length; j++)
-                        e = e.substitute(depVar.elements[j], new Num(y[j]));
+                    for (let j = 0; j < depVars.length; j++)
+                        e = e.substitute(depVars[j], new Num(y[j]));
                     res.push(e.evaluateNumeric());
                 }
                 return res;
