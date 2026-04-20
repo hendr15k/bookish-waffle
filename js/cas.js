@@ -1025,24 +1025,15 @@ class CAS {
                 // The safest is to plot all dependent variables. If there are multiple, we create multiple plot objects and return them as an array (merged).
 
                 let numVars = 1;
-                // Sniff the first data row to determine number of dependent variables
+                // rk45 rows are always [t, y1,..., err] — the __meta__ row is always last.
+                // Skip any __meta__ row and use the first real data row to determine numVars.
                 for (let i = 0; i < sol.elements.length; i++) {
                     const row = sol.elements[i];
                     if (row instanceof Vec && row.elements.length >= 2) {
-                        const tNode = row.elements[0];
-                        if (typeof tNode.value === 'string' && tNode.value === "__meta__") continue;
-
-                        // Let's assume the last element is 'err' if the row length is e.g. > 2 and it looks like rk45
-                        // A simple heuristic: plot all elements except index 0 (t).
-                        // If it's rk45, we might accidentally plot the error flag. That's usually ~0 and acceptable or easy to ignore.
-                        // Or we can check the metadata row. If metadata exists, it's rk45, so ignore the last element.
-                        let isRK45 = false;
-                        const lastRow = sol.elements[sol.elements.length - 1];
-                        if (lastRow instanceof Vec && lastRow.elements[0] && lastRow.elements[0].value === "__meta__") {
-                            isRK45 = true;
-                        }
-
-                        numVars = isRK45 ? (row.elements.length - 2) : (row.elements.length - 1);
+                        if (row.elements[0] instanceof Sym && row.elements[0].name === '__meta__') continue;
+                        // rk45 row: [t, y1,..., err] → subtract 2 (time + error)
+                        numVars = row.elements.length - 2;
+                        if (numVars < 1) numVars = 1;
                         break;
                     }
                 }
