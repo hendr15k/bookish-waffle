@@ -10582,18 +10582,10 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             // But since we don't have a compiled function, we must substitute.
 
             if (isSystem) {
-                // ode is Vec of expressions
                 const res = [];
-                // Create substitution map for this step to avoid creating intermediate Exprs repeatedly?
-                // Actually, substitute takes one variable.
-
-                // Construct a temporary assignment? No.
-                // We must iterate.
                 for(let i=0; i<ode.elements.length; i++) {
                     let e = ode.elements[i];
-                    // Substitute t
                     e = e.substitute(indepVar, new Num(t));
-                    // Substitute all y vars
                     for(let j=0; j<depVar.elements.length; j++) {
                         e = e.substitute(depVar.elements[j], new Num(y[j]));
                     }
