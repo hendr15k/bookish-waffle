@@ -4994,7 +4994,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
                 if (target instanceof Call) {
                     const f = target.funcName;
-                    if (['sin', 'cos', 'tan', 'exp', 'ln', 'log', 'asin', 'acos', 'atan', 'sqrt'].includes(f)) {
+                    if (['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'exp', 'ln', 'log', 'asin', 'acos', 'atan', 'asec', 'acsc', 'acot', 'sqrt'].includes(f)) {
                         core = target;
                         c1 = coeff.simplify();
                         c0 = constantTerm;
@@ -5059,6 +5059,12 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                         solExpr = new Call('cos', [rhs]);
                     } else if (fn === 'atan') {
                         solExpr = new Call('tan', [rhs]);
+                    } else if (fn === 'asec') {
+                        solExpr = new Call('sec', [rhs]);
+                    } else if (fn === 'acsc') {
+                        solExpr = new Call('csc', [rhs]);
+                    } else if (fn === 'acot') {
+                        solExpr = new Call('cot', [rhs]);
                     }
                 } else if (coreType === 'pow_exp') {
                     // a^f(x) = rhs => f(x) = ln(rhs)/ln(a)
@@ -14060,21 +14066,27 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
         const mapFunc = (func) => {
             if (lang === 'python' || lang === 'py') {
-                const np = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'exp', 'log', 'sqrt', 'abs', 'floor', 'ceil', 'erf', 'gamma'];
+                const np = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'asec', 'acsc', 'acot', 'sinh', 'cosh', 'tanh', 'exp', 'log', 'sqrt', 'abs', 'floor', 'ceil', 'erf', 'gamma'];
                 if (np.includes(func)) return 'np.' + func;
                 if (func === 'ln') return 'np.log';
+                if (func === 'arcsec') return 'np.arcsec';
+                if (func === 'arccsc') return 'np.arccsc';
+                if (func === 'arccot') return 'np.arccot';
                 if (func === 'arctan') return 'np.arctan';
                 if (func === 'arcsin') return 'np.arcsin';
                 if (func === 'arccos') return 'np.arccos';
             } else if (lang === 'js' || lang === 'javascript') {
-                const math = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'exp', 'log', 'sqrt', 'abs', 'floor', 'ceil', 'round', 'min', 'max', 'pow', 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', 'cbrt', 'sign', 'trunc'];
+                const math = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'asec', 'acsc', 'acot', 'exp', 'log', 'sqrt', 'abs', 'floor', 'ceil', 'round', 'min', 'max', 'pow', 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', 'cbrt', 'sign', 'trunc'];
                 if (math.includes(func)) return 'Math.' + func;
                 if (func === 'ln') return 'Math.log';
             } else if (lang === 'c' || lang === 'cpp') {
                 if (func === 'ln') return 'log';
                 if (func === 'abs') return 'fabs';
-                const std = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'exp', 'sqrt', 'floor', 'ceil', 'erf', 'tgamma'];
+                const std = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'asec', 'acsc', 'acot', 'sinh', 'cosh', 'tanh', 'exp', 'sqrt', 'floor', 'ceil', 'erf', 'tgamma'];
                 if (func === 'gamma') return 'tgamma';
+                if (func === 'arcsec') return 'asec';
+                if (func === 'arccsc') return 'acsc';
+                if (func === 'arccot') return 'acot';
                 if (std.includes(func)) return func;
             } else if (lang === 'matlab' || lang === 'octave') {
                 if (func === 'ln') return 'log';
