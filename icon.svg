@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0f172a"/>
+  <text x="256" y="300" text-anchor="middle" font-family="serif" font-size="280" fill="#4da3ff" font-style="italic">∫</text>
+  <text x="340" y="200" text-anchor="middle" font-family="monospace" font-size="100" fill="#80bdff">x</text>
+  <line x1="120" y1="400" x2="392" y2="400" stroke="#4da3ff" stroke-width="8" stroke-linecap="round"/>
+  <line x1="120" y1="380" x2="180" y2="340" stroke="#4da3ff" stroke-width="6" stroke-linecap="round"/>
+  <line x1="392" y1="380" x2="332" y2="340" stroke="#4da3ff" stroke-width="6" stroke-linecap="round"/>
+</svg>
