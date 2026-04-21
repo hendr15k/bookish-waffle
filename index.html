@@ -600,6 +600,7 @@
         <h1 style="margin: 0; font-size: 1.5em;">Web CAS</h1>
         <div>
             <button id="shortcuts-btn" title="Keyboard Shortcuts" style="padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px; cursor: pointer; font-weight: 600; margin-right: 6px; font-size: 1em;">?</button>
+            <button id="sessions-btn" title="Sessions" style="padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px; cursor: pointer; font-weight: 600; margin-right: 6px; font-size: 1em;">📁</button>
             <button id="graphing-toggle">Graphing Mode</button>
             <button id="mode-toggle">App Mode</button>
         </div>
@@ -5125,6 +5126,122 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         });
         document.getElementById('shortcuts-close').addEventListener('click', () => {
             shortcutsModal.style.display = 'none';
+        });
+
+        // === Sessions Modal ===
+        const sessionsBtn = document.getElementById('sessions-btn');
+        const sessionsModal = document.createElement('div');
+        sessionsModal.id = 'sessions-modal';
+        sessionsModal.style.cssText = 'display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;';
+        sessionsModal.innerHTML = `
+            <div style="background:var(--card-bg); border-radius:12px; padding:30px; max-width:480px; width:90%; box-shadow:0 8px 32px rgba(0,0,0,0.3); color:var(--text_color);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                    <h2 style="margin:0; border:none; padding:0;">📁 Session Manager</h2>
+                    <button id="sessions-close" style="background:none; border:none; font-size:1.5em; cursor:pointer; color:var(--text_color);">×</button>
+                </div>
+                <div style="display:flex; gap:8px; margin-bottom:16px;">
+                    <input type="text" id="session-name-input" placeholder="Session name (e.g. HM2 Übungen)" style="flex:1; background:var(--bg-color); border:1px solid var(--border-color); border-radius:6px; padding:8px 12px; color:var(--text_color); font-size:0.95em;">
+                    <button id="session-save-btn" style="padding:8px 16px; background:#28a745; border:none; border-radius:6px; color:white; cursor:pointer; font-weight:600;">Save</button>
+                </div>
+                <div id="sessions-list" style="max-height:300px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;"></div>
+            </div>
+        `;
+        document.body.appendChild(sessionsModal);
+
+        function renderSessionsList() {
+            const list = document.getElementById('sessions-list');
+            const sessions = JSON.parse(localStorage.getItem('bw_sessions') || '[]');
+            if (sessions.length === 0) {
+                list.innerHTML = '<div style="color:var(--text_color); opacity:0.5; text-align:center; padding:20px;">No saved sessions yet</div>';
+                return;
+            }
+            list.innerHTML = sessions.slice().reverse().map((s, i) => `
+                <div style="display:flex; justify-content:space-between; align-items:center; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px; padding:10px 12px;">
+                    <div>
+                        <div style="font-weight:600; color:var(--text_color);">${escapeHtml(s.name)}</div>
+                        <div style="font-size:0.8em; color:var(--text_color); opacity:0.5;">${new Date(s.timestamp).toLocaleDateString('de-DE')} ${new Date(s.timestamp).toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'})}</div>
+                    </div>
+                    <div style="display:flex; gap:6px;">
+                        <button class="session-load-btn" data-index="${sessions.length - 1 - i}" style="padding:6px 12px; background:#007bff; border:none; border-radius:6px; color:white; cursor:pointer; font-size:0.85em;">Load</button>
+                        <button class="session-delete-btn" data-index="${sessions.length - 1 - i}" style="padding:6px 10px; background:#dc3545; border:none; border-radius:6px; color:white; cursor:pointer; font-size:0.85em;">×</button>
+                    </div>
+                </div>
+            `).join('');
+            list.querySelectorAll('.session-load-btn').forEach(btn => {
+                btn.addEventListener('click', () => loadNamedSession(parseInt(btn.dataset.index)));
+            });
+            list.querySelectorAll('.session-delete-btn').forEach(btn => {
+                btn.addEventListener('click', () => deleteNamedSession(parseInt(btn.dataset.index)));
+            });
+        }
+
+        function saveNamedSession() {
+            const name = document.getElementById('session-name-input').value.trim();
+            if (!name) { alert('Bitte einen Namen eingeben.'); return; }
+            const history = document.getElementById('history');
+            const entries = Array.from(history.querySelectorAll('.entry')).map(e => e.innerHTML);
+            const inputContent = document.getElementById('command-input').value;
+            let sessions = JSON.parse(localStorage.getItem('bw_sessions') || '[]');
+            sessions.push({ name, timestamp: Date.now(), inputContent, entries });
+            if (sessions.length > 20) sessions = sessions.slice(-20);
+            localStorage.setItem('bw_sessions', JSON.stringify(sessions));
+            document.getElementById('session-name-input').value = '';
+            renderSessionsList();
+            showToast('Session "' + name + '" gespeichert!', 'success');
+        }
+
+        function loadNamedSession(index) {
+            const sessions = JSON.parse(localStorage.getItem('bw_sessions') || '[]');
+            const s = sessions[index];
+            if (!s) return;
+            const history = document.getElementById('history');
+            history.innerHTML = s.entries.join('');
+            document.getElementById('command-input').value = s.inputContent;
+            sessionsModal.style.display = 'none';
+            showToast('Session "' + s.name + '" geladen!', 'success');
+            // Re-render any KaTeX in loaded entries
+            if (window.renderMathInElement) {
+                history.querySelectorAll('.katex-output').forEach(el => {
+                    renderMath(el, el.dataset.tex || '');
+                });
+            }
+        }
+
+        function deleteNamedSession(index) {
+            let sessions = JSON.parse(localStorage.getItem('bw_sessions') || '[]');
+            sessions.splice(index, 1);
+            localStorage.setItem('bw_sessions', JSON.stringify(sessions));
+            renderSessionsList();
+        }
+
+        window.escapeHtml = function(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        };
+
+
+        window.showToast = function(msg, type) {
+            const t = document.createElement('div');
+            t.textContent = msg;
+            t.style.cssText = 'position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:' + (type === 'success' ? '#28a745' : '#dc3545') + '; color:white; padding:10px 20px; border-radius:8px; font-size:0.9em; z-index:10000;';
+            document.body.appendChild(t);
+            setTimeout(() => t.remove(), 2500);
+        };
+
+        sessionsBtn.addEventListener('click', () => {
+            renderSessionsList();
+            sessionsModal.style.display = 'flex';
+        });
+        sessionsModal.addEventListener('click', (e) => {
+            if (e.target === sessionsModal) sessionsModal.style.display = 'none';
+        });
+        document.getElementById('sessions-close').addEventListener('click', () => {
+            sessionsModal.style.display = 'none';
+        });
+        document.getElementById('session-save-btn').addEventListener('click', saveNamedSession);
+        document.getElementById('session-name-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') saveNamedSession();
         });
 
         // Matrix Builder Logic
