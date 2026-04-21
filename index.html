@@ -599,6 +599,7 @@
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <h1 style="margin: 0; font-size: 1.5em;">Web CAS</h1>
         <div>
+            <button id="shortcuts-btn" title="Keyboard Shortcuts" style="padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px; cursor: pointer; font-weight: 600; margin-right: 6px; font-size: 1em;">?</button>
             <button id="graphing-toggle">Graphing Mode</button>
             <button id="mode-toggle">App Mode</button>
         </div>
@@ -5025,6 +5026,108 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             if (e.key === 'Enter') {
                 evaluate();
             }
+        });
+
+        // === Keyboard Shortcuts ===
+        let inputHistoryStack = []; // stack for Ctrl+Z undo
+
+        // Save input state before each evaluation for undo
+        const originalEvaluate = evaluate;
+        evaluate = function() {
+            const val = input.value;
+            if (val.trim()) {
+                inputHistoryStack.push(val);
+                if (inputHistoryStack.length > 100) inputHistoryStack.shift();
+            }
+            originalEvaluate();
+        };
+
+        // Global keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Escape — close any open tool/modal
+            if (e.key === 'Escape') {
+                const shortcutModal = document.getElementById('shortcuts-modal');
+                if (shortcutModal && shortcutModal.style.display === 'flex') {
+                    shortcutModal.style.display = 'none';
+                    e.preventDefault();
+                    return;
+                }
+                // Close any open tool view
+                const openTools = document.querySelectorAll('.tool-view');
+                let closed = false;
+                openTools.forEach(el => {
+                    if (el.style.display === 'block') {
+                        closeTool();
+                        closed = true;
+                    }
+                });
+                if (closed) { e.preventDefault(); return; }
+                // Clear input focus
+                if (document.activeElement === input && input.value === '') {
+                    input.blur();
+                }
+                return;
+            }
+
+            // Ctrl+L — clear all history
+            if (e.ctrlKey && e.key === 'l') {
+                e.preventDefault();
+                clearHistory();
+                input.focus();
+                return;
+            }
+
+            // Ctrl+S — export session as JSON
+            if (e.ctrlKey && e.key === 's') {
+                e.preventDefault();
+                saveSession();
+                return;
+            }
+
+            // Ctrl+Z — undo last input (only in command-input)
+            if (e.ctrlKey && e.key === 'z' && document.activeElement === input) {
+                e.preventDefault();
+                if (inputHistoryStack.length > 0) {
+                    input.value = inputHistoryStack.pop();
+                } else {
+                    input.value = '';
+                }
+                return;
+            }
+        });
+
+        // === Shortcuts Modal ===
+        const shortcutsBtn = document.getElementById('shortcuts-btn');
+        const shortcutsModal = document.createElement('div');
+        shortcutsModal.id = 'shortcuts-modal';
+        shortcutsModal.style.cssText = 'display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;';
+        shortcutsModal.innerHTML = `
+            <div style="background:var(--card-bg); border-radius:12px; padding:30px; max-width:420px; width:90%; box-shadow:0 8px 32px rgba(0,0,0,0.3); color:var(--text-color);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                    <h2 style="margin:0; border:none; padding:0;">⌨️ Keyboard Shortcuts</h2>
+                    <button id="shortcuts-close" style="background:none; border:none; font-size:1.5em; cursor:pointer; color:var(--text-color);">×</button>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:10px; font-size:0.95em;">
+                    <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-color);opacity:0.7;">Execute calculation</span><kbd style="background:var(--bg-color);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:0.9em;">Enter</kbd></div>
+                    <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-color);opacity:0.7;">Undo last input</span><kbd style="background:var(--bg-color);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:0.9em;">Ctrl+Z</kbd></div>
+                    <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-color);opacity:0.7;">Clear history</span><kbd style="background:var(--bg-color);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:0.9em;">Ctrl+L</kbd></div>
+                    <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-color);opacity:0.7;">Export session (JSON)</span><kbd style="background:var(--bg-color);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:0.9em;">Ctrl+S</kbd></div>
+                    <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-color);opacity:0.7;">Close tool / modal</span><kbd style="background:var(--bg-color);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:0.9em;">Escape</kbd></div>
+                    <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-color);opacity:0.7;">Command history</span><kbd style="background:var(--bg-color);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:0.9em;">↑ / ↓</kbd></div>
+                    <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-color);opacity:0.7;">Autocomplete</span><kbd style="background:var(--bg-color);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:0.9em;">Tab</kbd></div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(shortcutsModal);
+
+        shortcutsBtn.addEventListener('click', () => {
+            shortcutsModal.style.display = 'flex';
+        });
+        shortcutsModal.addEventListener('click', (e) => {
+            if (e.target === shortcutsModal) shortcutsModal.style.display = 'none';
+        });
+        document.getElementById('shortcuts-close').addEventListener('click', () => {
+            shortcutsModal.style.display = 'none';
         });
 
         // Matrix Builder Logic
