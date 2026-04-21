@@ -4673,10 +4673,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
 
             // LaTeX already rendered above via renderMath for the main result path
             // No additional typesetting needed - KaTeX renders synchronously
-                        .then(() => { history.scrollTop = history.scrollHeight; })
-                        .catch(err => console.error('MathJax error:', err));
-                }
-            }
+            history.scrollTop = history.scrollHeight;
         }
 
         function evaluate() {
