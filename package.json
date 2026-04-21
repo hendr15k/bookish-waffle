@@ -21,5 +21,15 @@
     "@capacitor/android": "^8.3.0",
     "@capacitor/cli": "^8.3.0",
     "@capacitor/core": "^8.3.0"
-  }
+  },
+  "keywords": [
+    "CAS",
+    "computer-algebra",
+    "mathematics",
+    "xcas",
+    "symbolic-computation",
+    "ODE-solver",
+    "javascript"
+  ],
+  "license": "MIT"
 }
