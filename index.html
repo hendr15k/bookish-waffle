@@ -15,6 +15,9 @@
         };
     </script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
     <style>
         :root {
             --primary-color: #007bff;
@@ -129,6 +132,12 @@
             margin-top: 5px;
             color: #005cc5;
             font-size: 1.1em;
+        }
+        .katex-output {
+            margin: 4px 0;
+        }
+        .katex-output .katex {
+            font-size: 1.15em;
         }
         .error {
             color: #d73a49;
@@ -2274,6 +2283,55 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         // Initialize CAS
         const cas = new CAS();
         window.cas = cas;
+
+        // ============================================================
+        // KaTeX Rendering Helper
+        // ============================================================
+        // Renders LaTeX into a DOM element using KaTeX with MathJax fallback.
+        // Falls back to plain text if KaTeX fails (offline).
+        window.renderMath = function(element, latexCode) {
+            if (!latexCode) return;
+
+            // Prefer KaTeX (faster, synchronous)
+            if (typeof katex !== 'undefined') {
+                try {
+                    katex.render(latexCode, element, {
+                        displayMode: true,
+                        throwOnError: false,
+                        trust: true,
+                        strict: false
+                    });
+                    return true;
+                } catch (e) {
+                    console.warn('KaTeX render error, falling back to plain text:', e.message);
+                }
+            }
+
+            // KaTeX not available: fallback to plain text display
+            element.textContent = latexCode;
+            return false;
+        };
+
+        // Same but for inline math
+        window.renderMathInline = function(element, latexCode) {
+            if (!latexCode) return;
+            if (typeof katex !== 'undefined') {
+                try {
+                    katex.render(latexCode, element, {
+                        displayMode: false,
+                        throwOnError: false,
+                        trust: true,
+                        strict: false
+                    });
+                    return true;
+                } catch (e) {
+                    element.textContent = latexCode;
+                    return false;
+                }
+            }
+            element.textContent = latexCode;
+            return false;
+        };
         const input = document.getElementById('command-input');
         const submitBtn = document.getElementById('submit-btn');
         const history = document.getElementById('history');
@@ -4159,8 +4217,8 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                     const resultBox = document.querySelector('#tool-calculator .tool-result');
                     if(resultBox) {
                         if(res && res.toLatex) {
-                             resultBox.innerHTML = `\\[${res.toLatex()}\\]`;
-                             if(window.MathJax) MathJax.typesetPromise([resultBox]).catch(()=>{});
+                             const ok = renderMath(resultBox, res.toLatex());
+                             if (!ok && window.MathJax) MathJax.typesetPromise([resultBox]).catch(()=>{});
                         } else {
                              resultBox.innerText = res.toString();
                         }
@@ -4502,8 +4560,9 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 history.appendChild(entryDiv);
                 history.scrollTop = history.scrollHeight;
 
-                if (window.MathJax && typeof MathJax.typesetPromise === 'function') {
-                    MathJax.typesetPromise([resultDiv]).catch(err => console.error('MathJax error:', err));
+                // Render LaTeX in resultDiv if it contains math content
+                if (result && result.toLatex && !(result.type === 'plot' || (result.type === 'help'))) {
+                    renderMath(resultDiv, result.toLatex());
                 }
                 return;
             }
@@ -4564,8 +4623,17 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                  resultDiv.appendChild(textDiv);
 
             } else if (latex && !isError) {
-                // Render LaTeX
-                resultDiv.textContent = `\\[${latex}\\]`;
+                // Render LaTeX using KaTeX (with MathJax fallback)
+                const latexContainer = document.createElement('div');
+                latexContainer.className = 'katex-output';
+                const ok = renderMath(latexContainer, latex);
+                if (!ok && window.MathJax && typeof MathJax.typesetPromise === 'function') {
+                    latexContainer.textContent = `\\[${latex}\\]`;
+                    MathJax.typesetPromise([latexContainer]).catch(err => {
+                        latexContainer.textContent = latex;
+                    });
+                }
+                resultDiv.appendChild(latexContainer);
             } else {
                 resultDiv.textContent = result;
             }
@@ -4597,9 +4665,8 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             entryDiv.style.position = 'relative';
             entryDiv.appendChild(copyBtn);
 
-            if ((latex || (result && result.toLatex)) && !isError) {
-                if (window.MathJax && typeof MathJax.typesetPromise === 'function') {
-                    MathJax.typesetPromise([resultDiv])
+            // LaTeX already rendered above via renderMath for the main result path
+            // No additional typesetting needed - KaTeX renders synchronously
                         .then(() => { history.scrollTop = history.scrollHeight; })
                         .catch(err => console.error('MathJax error:', err));
                 }
@@ -5446,8 +5513,19 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                         validPlots.push(plotObj);
                     }
 
-                    // Success output
-                    outputDiv.textContent = result.toString();
+                    // Success output - render LaTeX with KaTeX fallback
+                    if (result && result.toLatex) {
+                        const latexCode = result.toLatex();
+                        const ok = renderMath(outputDiv, latexCode);
+                        if (!ok && window.MathJax && typeof MathJax.typesetPromise === 'function') {
+                            outputDiv.textContent = latexCode;
+                            MathJax.typesetPromise([outputDiv]).catch(() => {
+                                outputDiv.textContent = latexCode;
+                            });
+                        }
+                    } else {
+                        outputDiv.textContent = result.toString();
+                    }
                     outputDiv.style.color = '#666';
                     cell.valid = true;
 
@@ -6551,8 +6629,8 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                          }
                     } else {
                          const latex = (result && result.toLatex) ? result.toLatex() : (result ? result.toString() : 'Done');
-                         resultBox.innerHTML = `\\[${latex}\\]`;
-                         if(window.MathJax && typeof MathJax.typesetPromise === 'function') {
+                         const ok = renderMath(resultBox, latex);
+                         if (!ok && window.MathJax && typeof MathJax.typesetPromise === 'function') {
                              MathJax.typesetPromise([resultBox]).catch(()=>{});
                          }
                     }
@@ -7490,7 +7568,8 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                         resultBox.innerHTML = '';
                         resultBox.appendChild(resultDiv.cloneNode(true));
                         resultBox.style.display = 'block';
-                        if (window.MathJax) MathJax.typesetPromise([resultBox]).catch(()=>{});
+                        // KaTeX renders on clone since DOM already contains rendered output
+                        // No re-typesetting needed
                     }
                 }
             }, 50);
