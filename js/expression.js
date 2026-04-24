@@ -2160,6 +2160,12 @@ class Call extends Expr {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 0) return new Num(0);
         }
+        if (this.funcName === 'cbrt') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num && arg.value === 0) return new Num(0);
+            const val = arg.evaluateNumeric();
+            if (!isNaN(val)) return new Num(Math.cbrt(val));
+        }
         if (this.funcName === 'sec') {
             const arg = simpleArgs[0];
             const val = arg.evaluateNumeric();
