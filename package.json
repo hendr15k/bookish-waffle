@@ -15,7 +15,7 @@
     "cap:sync": "npm run build:android:web && npx cap sync android"
   },
   "devDependencies": {
-    "jsdom": "^27.4.0"
+    "jsdom": "^29.0.2"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.1",
