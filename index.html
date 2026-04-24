@@ -3035,9 +3035,15 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             const appSearch = document.getElementById('app-search-container');
             const appCategories = document.getElementById('app-categories');
 
-            if (appGrid) appGrid.style.display = 'grid';
-            if (appSearch) appSearch.style.display = 'block';
-            if (appCategories) appCategories.style.display = 'flex';
+            if (isMobileMode) {
+                if (appGrid) appGrid.style.display = 'grid';
+                if (appSearch) appSearch.style.display = 'block';
+                if (appCategories) appCategories.style.display = 'flex';
+            } else {
+                if (appGrid) appGrid.style.display = 'none';
+                if (appSearch) appSearch.style.display = 'none';
+                if (appCategories) appCategories.style.display = 'none';
+            }
         };
 
         window.saveSession = function() {
