@@ -1038,6 +1038,32 @@ class Mul extends BinaryOp {
             return new Pow(l.left, new Num(sum)).simplify();
         }
 
+        // (c1 * x^n) * (c2 * x^m) -> (c1*c2) * x^(n+m)
+        const getMulParts = (expr) => {
+            if (expr instanceof Pow && expr.right instanceof Num) {
+                return { coeff: 1, base: expr.left, exp: expr.right.value };
+            }
+            if (expr instanceof Mul && expr.left instanceof Num) {
+                const inner = getMulParts(expr.right);
+                if (!inner) return null;
+                return { coeff: expr.left.value * inner.coeff, base: inner.base, exp: inner.exp };
+            }
+            if (expr instanceof Sym) {
+                return { coeff: 1, base: expr, exp: 1 };
+            }
+            return null;
+        };
+        const lp = getMulParts(l);
+        const rp = getMulParts(r);
+        if (lp && rp && lp.base.toString() === rp.base.toString()) {
+            const newCoeff = lp.coeff * rp.coeff;
+            const newExp = lp.exp + rp.exp;
+            if (newCoeff === 1 && newExp === 1) return lp.base;
+            if (newCoeff === 1) return new Pow(lp.base, new Num(newExp)).simplify();
+            if (newExp === 1) return new Mul(new Num(newCoeff), lp.base).simplify();
+            return new Mul(new Num(newCoeff), new Pow(lp.base, new Num(newExp))).simplify();
+        }
+
         // exp(a) * exp(b) -> exp(a+b)
         if (l instanceof Call && l.funcName === 'exp' && r instanceof Call && r.funcName === 'exp') {
             return new Call('exp', [new Add(l.args[0], r.args[0]).simplify()]).simplify();
@@ -1784,6 +1810,8 @@ class Pow extends BinaryOp {
 
         if (r instanceof Num && r.value === 0) return new Num(1);
         if (r instanceof Num && r.value === 1) return l;
+        if (l instanceof Num && l.value === 1) return new Num(1); // 1^x = 1
+        if (l instanceof Num && l.value === 0 && r instanceof Num && r.value > 0) return new Num(0); // 0^n = 0 for n>0
         if (l instanceof Num && r instanceof Num) return new Num(Math.pow(l.value, r.value));
 
         // Rational Exponents: n ^ (a/b)
