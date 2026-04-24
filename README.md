@@ -9,12 +9,14 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 ## Highlights
 
 - **15 functional domains** — from basic arithmetic to control theory
-- **~34,000 lines of code** — 26k JS engine + 7.5k UI
+- **~34,000 lines of code** — 23k JS engine + 7.5k UI
 - **40 test files** — all passing
 - **Zero dependencies at runtime** — only MathJax (LaTeX rendering)
 - **Dark Mode** — easy on the eyes
 - **Mobile App Mode** — grid-based tool interface for touch devices
 - **Offline capable** — everything runs locally
+- **Exact trigonometric values** — sin(π/6)=1/2, cos(π/3)=1/2, tan(π/4)=1, etc.
+- **Smart algebraic simplification** — like-term collection, negative exponents as fractions
 
 ---
 
@@ -167,18 +169,45 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 
 **Examples:**
 ```js
-diff(sin(x^2), x)                    // Differentiate
-integrate(x * e^x, x)                // Integrate
-solve(x^2 - 4 = 0, x)                // Solve equation
+diff(sin(x^2), x)                    // Differentiate → 2x·cos(x²)
+integrate(x * e^x, x)                // Integrate → x·eˣ - eˣ
+solve(x^2 - 4 = 0, x)                // Solve → {2, -2}
 [[1, 2], [3, 4]] * [x, y]            // Matrix-vector multiply
 plot(sin(x), x, -10, 10)             // Plot function
-limit(sin(x)/x, x, 0)                // Limit
-laplace(t^2, t, s)                   // Laplace transform
+limit(sin(x)/x, x, 0)                // Limit → 1
+laplace(t^2, t, s)                   // Laplace → 2/s³
 fourierSeries(x^2, x, 0, 5)          // Fourier series
-det([[1,2],[3,4]])                   // Determinant
+det([[1,2],[3,4]])                   // Determinant → -2
+sin(pi/6)                            // Exact value → 1/2
+cos(pi/3)                            // Exact value → 1/2
+atan(Infinity)                       // → π/2
+factor(x^3 - 1)                      // → (x-1)(x²+x+1)
+expand((x+1)*(x-1))                  // → x²-1
+simplify(sin(x)/cos(x))              // → tan(x)
+x^(-2)                               // → 1/x²
+2*x + 3*x                            // → 5x
 ```
 
 ---
+
+## Recent Improvements (April 2026)
+
+### Bug Fixes & Enhancements
+- **Exact trigonometric values** — sin/cos/tan of π/6, π/4, π/3 multiples (all 12 quadrants)
+- **atan(∞) = π/2** — infinite limits for inverse trig
+- **Factor over ℝ** — irreducible quadratics like x²+1 stay unfactored (no complex factors)
+- **Like-term collection** — 2x+3x→5x, 5x-3x→2x in Add/Sub.simplify
+- **Negative exponents** — x⁻²→1/x² automatically
+- **Trig ratio simplification** — sin/cos→tan, 1/sin→csc, cos/sin→cot
+- **LaTeX improvements** — scientific notation (1×10⁻¹⁰), negated fractions (-1/x)
+- **Expand + simplify** — expand() now calls simplify() after distribution
+- **Parser roundtrip** — negative numbers parse correctly (no more Mul(-1,n) bloat)
+- **Jekyll compatibility** — .nojekyll added to prevent Liquid template errors
+
+### Bug Reports (from automated analysis)
+- `BUGS_PARSER.md` — 7 parser/LaTeX bugs identified
+- `BUGS_SIMPLIFY.md` — 22 simplification bugs identified
+- `BUGS_CALCULUS.md` — calculus edge cases documented
 
 ## Development & Testing
 
@@ -192,15 +221,15 @@ npm run test:chemistry   # Run chemistry tests
 
 ### Architecture
 
-| File | Purpose |
-|------|---------|
-| `js/parser.js` | Lexer and Parser (Recursive Descent) → AST |
-| `js/expression.js` | AST node definitions (`Expr`, `Add`, `Mul`, `Call`, etc.) |
-| `js/cas.js` | Core CAS engine: evaluation, substitution, algorithms |
-| `js/help.js` | Help system and command documentation |
-| `js/chemistry.js` | Chemistry module (molar mass, balancing) |
-| `index.html` | Frontend UI (command-line + app mode) |
-| `tests/` | 40 Node.js test files (3169 lines) |
+| File | Lines | Purpose |
+|------|-------|---------|
+| `js/parser.js` | 1,032 | Lexer and Parser (Recursive Descent) → AST |
+| `js/expression.js` | 4,933 | AST node definitions (`Expr`, `Add`, `Mul`, `Call`, etc.) |
+| `js/cas.js` | 16,077 | Core CAS engine: evaluation, substitution, algorithms |
+| `js/help.js` | 807 | Help system and command documentation |
+| `js/chemistry.js` | 230 | Chemistry module (molar mass, balancing) |
+| `index.html` | ~7,500 | Frontend UI (command-line + app mode) |
+| `tests/` | 3,169 | 40 Node.js test files |
 
 ---
 
@@ -209,12 +238,13 @@ npm run test:chemistry   # Run chemistry tests
 | Metric | Value |
 |--------|-------|
 | Total lines of code | ~34,000 |
-| JavaScript engine | 26,367 lines |
+| JavaScript engine | 23,049 lines |
 | Frontend | 7,466 lines |
 | Test files | 40 |
 | Test lines | 3,169 |
 | Feature domains | 15 |
 | Live since | March 2025 |
+| Last major update | April 2026 |
 
 ---
 
