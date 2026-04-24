@@ -965,6 +965,14 @@ class Mul extends BinaryOp {
             return new Pow(r, new Num(l.right.value + 1)).simplify();
         }
 
+        // x^n * x^m -> x^(n+m)
+        if (l instanceof Pow && r instanceof Pow && l.left.toString() === r.left.toString() && l.right instanceof Num && r.right instanceof Num) {
+            const sum = l.right.value + r.right.value;
+            if (sum === 0) return new Num(1);
+            if (sum === 1) return l.left;
+            return new Pow(l.left, new Num(sum)).simplify();
+        }
+
         // exp(a) * exp(b) -> exp(a+b)
         if (l instanceof Call && l.funcName === 'exp' && r instanceof Call && r.funcName === 'exp') {
             return new Call('exp', [new Add(l.args[0], r.args[0]).simplify()]).simplify();
@@ -1725,6 +1733,28 @@ class Pow extends BinaryOp {
         const checkInf = (n) => isInf(n) ? 1 : (isNegInf(n) ? -1 : 0);
 
         const infL = checkInf(l);
+        const infR = checkInf(r);
+
+        // Exponent is Infinity or -Infinity
+        if (infR !== 0 && l instanceof Num) {
+            if (l.value === 1) return new Num(1); // 1^inf = 1
+            if (l.value === 0) return new Num(0); // 0^inf = 0
+            if (l.value > 1) {
+                return infR === 1 ? new Sym('Infinity') : new Num(0); // a>1: a^inf=inf, a^-inf=0
+            }
+            if (l.value > 0 && l.value < 1) {
+                return infR === 1 ? new Num(0) : new Sym('Infinity'); // 0<a<1: a^inf=0, a^-inf=inf
+            }
+            if (l.value < 0) {
+                if (infR === 1) return new Sym('NaN'); // negative^inf undefined
+                return new Num(0); // negative^-inf = 0
+            }
+        }
+        // e^Infinity, e^(-Infinity)
+        if (infR !== 0 && l instanceof Sym && l.name === 'e') {
+            return infR === 1 ? new Sym('Infinity') : new Num(0);
+        }
+
         if (infL !== 0) {
             if (r instanceof Num) {
                 if (r.value === 0) return new Sym("NaN"); // Inf^0 indeterminate
@@ -1739,6 +1769,24 @@ class Pow extends BinaryOp {
                 // r < 0: 1/Inf -> 0
                 return new Num(0);
             }
+        }
+
+        // e^ln(x) -> x (exp-log cancellation)
+        if (l instanceof Sym && l.name === 'e' && r instanceof Call && r.funcName === 'ln') {
+            return r.args[0];
+        }
+        // a^log_a(x) -> x (base-log cancellation)
+        if (l instanceof Num && l.value === 10 && r instanceof Call && r.funcName === 'log') {
+            return r.args[0];
+        }
+        // 2^log2(x) -> x
+        if (l instanceof Num && l.value === 2 && r instanceof Call && r.funcName === 'log2') {
+            return r.args[0];
+        }
+
+        // (sqrt(x))^2 -> x
+        if (r instanceof Num && r.value === 2 && l instanceof Call && l.funcName === 'sqrt') {
+            return l.args[0];
         }
 
         // Simplify (-x)^even -> x^even

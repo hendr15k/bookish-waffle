@@ -1482,7 +1482,7 @@ class CAS {
                 return this._factor(args[0]);
             }
 
-            if (node.funcName === 'factorial') {
+            if (node.funcName === 'factorial' || node.funcName === 'fact') {
                  if (node.args.length !== 1) throw new Error("factorial requires 1 argument");
                  const n = args[0];
                  if (n instanceof Num && Number.isInteger(n.value) && n.value >= 0) {
@@ -5798,26 +5798,78 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         }
         if (depth > 5) return new Call("limit", [expr, varNode, point]);
 
+        // Handle a^f(x) exponential limits
+        if (expr instanceof Pow && !(expr.left instanceof Num && expr.left.value === 0)) {
+            const limBase = this._limit(expr.left, varNode, point, depth + 1, dir);
+            const limExp = this._limit(expr.right, varNode, point, depth + 1, dir);
+            const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+            const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
+            const isZero = (n) => n instanceof Num && n.value === 0;
+
+            // a > 1, exponent -> -Infinity => 0
+            const baseVal = limBase.evaluateNumeric();
+            if (!isNaN(baseVal) && baseVal > 1 && isNegInf(limExp)) return new Num(0);
+            // a > 1, exponent -> Infinity => Infinity
+            if (!isNaN(baseVal) && baseVal > 1 && isInf(limExp)) return new Sym('Infinity');
+            // a > 1, exponent -> some finite value => a^val
+            if (!isNaN(baseVal) && baseVal > 0 && limExp instanceof Num) {
+                return new Num(Math.pow(baseVal, limExp.value));
+            }
+            // 0 < a < 1, exponent -> Infinity => 0
+            if (!isNaN(baseVal) && baseVal > 0 && baseVal < 1 && isInf(limExp)) return new Num(0);
+            // 0 < a < 1, exponent -> -Infinity => Infinity
+            if (!isNaN(baseVal) && baseVal > 0 && baseVal < 1 && isNegInf(limExp)) return new Sym('Infinity');
+        }
+
+        // Handle Call nodes: e^f(x), exp(f(x)) etc.
+        if (expr instanceof Call && (expr.funcName === 'exp') && expr.args.length === 1) {
+            const limArg = this._limit(expr.args[0], varNode, point, depth + 1, dir);
+            const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+            const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
+            if (isInf(limArg)) return new Sym('Infinity');
+            if (isNegInf(limArg)) return new Num(0);
+        }
+
+        // Handle log/ln limits: ln(0+) -> -Infinity
+        if (expr instanceof Call && (expr.funcName === 'ln' || expr.funcName === 'log') && expr.args.length === 1) {
+            const limArg = this._limit(expr.args[0], varNode, point, depth + 1, dir);
+            const isZero = (n) => n instanceof Num && n.value === 0;
+            const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+            if (isZero(limArg)) return new Mul(new Num(-1), new Sym('Infinity'));
+            if (isInf(limArg)) return new Sym('Infinity');
+        }
+
         // Check for Indeterminate form NaN (from 0*Inf)
         // If expr is Mul, convert to Div
         if (expr instanceof Mul) {
             const val = expr.substitute(varNode, point).simplify();
             if (val instanceof Sym && val.name === 'NaN') {
-                // 0 * Inf -> Transform to Div
-                // f * g -> f / (1/g) or g / (1/f)
-                // Prefer keeping log or simpler term in numerator
-                // Heuristic: If one is exp or trig, keep in num?
-                // Let's try 1st / (1/2nd)
-                // If right is 1/x (Div(1,x)), 1/right is x.
-                // 1/ (1/x) -> x.
-                // if expr.right is Div(1, x).
-                // den = new Div(1, Div(1, x)) -> simplifies to x.
-                // so newExpr = num / den = x / x.
+                // 0 * Inf -> Transform to Div for L'Hopital
+                // Try both: f/(1/g) and g/(1/f), pick the one that becomes a Div
+                const num1 = expr.left;
+                const den1 = new Div(new Num(1), expr.right).simplify();
+                const newExpr1 = new Div(num1, den1).simplify();
 
-                const num = expr.left;
-                const den = new Div(new Num(1), expr.right).simplify();
-                const newExpr = new Div(num, den).simplify(); // Simplify here!
-                return this._limit(newExpr, varNode, point, depth + 1, dir);
+                const num2 = expr.right;
+                const den2 = new Div(new Num(1), expr.left).simplify();
+                const newExpr2 = new Div(num2, den2).simplify();
+
+                // Pick whichever is a Div (not a Mul)
+                if (newExpr1 instanceof Div) return this._limit(newExpr1, varNode, point, depth + 1, dir);
+                if (newExpr2 instanceof Div) return this._limit(newExpr2, varNode, point, depth + 1, dir);
+
+                // If neither became a Div, force a Div form
+                // Rewrite x * f(x) as x / (1/f(x)) where 1/f(x) is computed symbolically
+                if (expr.right instanceof Pow && expr.right.right instanceof Mul && expr.right.right.left instanceof Num && expr.right.right.left.value === -1) {
+                    // x * e^(-g(x)) -> x / e^(g(x))
+                    const base = expr.right.left;
+                    const posExp = expr.right.right.right;
+                    const forcedDen = new Pow(base, posExp).simplify();
+                    const forcedExpr = new Div(expr.left, forcedDen).simplify();
+                    return this._limit(forcedExpr, varNode, point, depth + 1, dir);
+                }
+
+                return new Call('limit', [expr, varNode, point]);
             }
         }
 
