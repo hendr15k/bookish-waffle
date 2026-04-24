@@ -899,52 +899,6 @@
         }
 
     
-        /* Mobile tool navigation bar */
-        .mobile-tool-nav {
-            display: none;
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            background: var(--card-bg);
-            border-bottom: 1px solid var(--border-color);
-            padding: 8px 10px;
-            overflow-x: auto;
-            white-space: nowrap;
-            -webkit-overflow-scrolling: touch;
-            scrollbar-width: none;
-        }
-        .mobile-tool-nav::-webkit-scrollbar {
-            display: none;
-        }
-        @media (max-width: 768px) {
-            .mobile-tool-nav {
-                display: flex;
-                gap: 8px;
-                flex-wrap: nowrap;
-            }
-            .mobile-tool-nav button {
-                flex-shrink: 0;
-                padding: 10px 14px;
-                border: 1px solid var(--border-color);
-                background: var(--card-bg);
-                color: var(--text-color);
-                border-radius: 20px;
-                font-size: 0.85em;
-                cursor: pointer;
-                white-space: nowrap;
-                transition: background 0.2s, color 0.2s;
-            }
-            .mobile-tool-nav button.active {
-                background: var(--primary-color);
-                color: white;
-                border-color: var(--primary-color);
-            }
-            .mobile-tool-nav button:active {
-                transform: scale(0.95);
-            }
-        }
-
-    
         /* Mobile bottom toolbar */
         .mobile-bottom-bar {
             display: none;
@@ -959,11 +913,18 @@
             z-index: 1000;
             box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
         }
-        @media (max-width: 768px) {
+                @media (max-width: 768px) {
             .mobile-bottom-bar {
                 display: flex;
-                justify-content: space-around;
+                justify-content: flex-start;
                 align-items: center;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                gap: 8px;
+            }
+            .mobile-bottom-bar::-webkit-scrollbar {
+                display: none;
             }
             body {
                 padding-bottom: 70px; /* Space for bottom bar */
@@ -981,6 +942,7 @@
                 cursor: pointer;
                 border-radius: 8px;
                 min-width: 60px;
+                flex-shrink: 0;
             }
             .mobile-bottom-bar button.active {
                 color: var(--primary-color);
@@ -1182,24 +1144,6 @@
     <!-- Tool Views -->
     <!-- CALCULATOR -->
 <div id="tool-calculator" class="tool-view">
-            <div class="mobile-tool-nav">
-                <button onclick="closeTool()" style="font-weight:bold;">🏠</button>
-                <button onclick="openTool('calculator')">🔢 Calc</button>
-                <button onclick="openTool('algebra')">📐 Algebra</button>
-                <button onclick="openTool('calculus')">📊 Calculus</button>
-                <button onclick="openTool('plotting')">📈 Plot</button>
-                <button onclick="openTool('linear')">📏 Matrix</button>
-                <button onclick="openTool('statistics')">📉 Stats</button>
-                <button onclick="openTool('numbers')">🔢 Numbers</button>
-                <button onclick="openTool('converter')">🔄 Convert</button>
-                <button onclick="openTool('geometry')">📐 Geo</button>
-                <button onclick="openTool('physics')">⚛️ Physics</button>
-                <button onclick="openTool('logic')">🧮 Logic</button>
-                <button onclick="openTool('trig')">📐 Trig</button>
-                <button onclick="openTool('chemistry')">⚗️ Chem</button>
-                <button onclick="openTool('editor')">📝 Editor</button>
-                <button onclick="openTool('finance')">💰 Finance</button>
-            </div>
         <div class="tool-header">
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Scientific Calculator</span>
@@ -1247,24 +1191,6 @@
 
     <!-- ALGEBRA -->
 <div id="tool-algebra" class="tool-view">
-            <div class="mobile-tool-nav">
-                <button onclick="closeTool()" style="font-weight:bold;">🏠</button>
-                <button onclick="openTool('calculator')">🔢 Calc</button>
-                <button onclick="openTool('algebra')">📐 Algebra</button>
-                <button onclick="openTool('calculus')">📊 Calculus</button>
-                <button onclick="openTool('plotting')">📈 Plot</button>
-                <button onclick="openTool('linear')">📏 Matrix</button>
-                <button onclick="openTool('statistics')">📉 Stats</button>
-                <button onclick="openTool('numbers')">🔢 Numbers</button>
-                <button onclick="openTool('converter')">🔄 Convert</button>
-                <button onclick="openTool('geometry')">📐 Geo</button>
-                <button onclick="openTool('physics')">⚛️ Physics</button>
-                <button onclick="openTool('logic')">🧮 Logic</button>
-                <button onclick="openTool('trig')">📐 Trig</button>
-                <button onclick="openTool('chemistry')">⚗️ Chem</button>
-                <button onclick="openTool('editor')">📝 Editor</button>
-                <button onclick="openTool('finance')">💰 Finance</button>
-            </div>
         <div class="tool-header">
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Algebra</span>
@@ -1331,24 +1257,6 @@
 
     <!-- CALCULUS -->
 <div id="tool-calculus" class="tool-view">
-            <div class="mobile-tool-nav">
-                <button onclick="closeTool()" style="font-weight:bold;">🏠</button>
-                <button onclick="openTool('calculator')">🔢 Calc</button>
-                <button onclick="openTool('algebra')">📐 Algebra</button>
-                <button onclick="openTool('calculus')">📊 Calculus</button>
-                <button onclick="openTool('plotting')">📈 Plot</button>
-                <button onclick="openTool('linear')">📏 Matrix</button>
-                <button onclick="openTool('statistics')">📉 Stats</button>
-                <button onclick="openTool('numbers')">🔢 Numbers</button>
-                <button onclick="openTool('converter')">🔄 Convert</button>
-                <button onclick="openTool('geometry')">📐 Geo</button>
-                <button onclick="openTool('physics')">⚛️ Physics</button>
-                <button onclick="openTool('logic')">🧮 Logic</button>
-                <button onclick="openTool('trig')">📐 Trig</button>
-                <button onclick="openTool('chemistry')">⚗️ Chem</button>
-                <button onclick="openTool('editor')">📝 Editor</button>
-                <button onclick="openTool('finance')">💰 Finance</button>
-            </div>
         <div class="tool-header">
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Calculus</span>
@@ -1618,24 +1526,6 @@
 
     <!-- PLOTTING -->
 <div id="tool-plotting" class="tool-view">
-            <div class="mobile-tool-nav">
-                <button onclick="closeTool()" style="font-weight:bold;">🏠</button>
-                <button onclick="openTool('calculator')">🔢 Calc</button>
-                <button onclick="openTool('algebra')">📐 Algebra</button>
-                <button onclick="openTool('calculus')">📊 Calculus</button>
-                <button onclick="openTool('plotting')">📈 Plot</button>
-                <button onclick="openTool('linear')">📏 Matrix</button>
-                <button onclick="openTool('statistics')">📉 Stats</button>
-                <button onclick="openTool('numbers')">🔢 Numbers</button>
-                <button onclick="openTool('converter')">🔄 Convert</button>
-                <button onclick="openTool('geometry')">📐 Geo</button>
-                <button onclick="openTool('physics')">⚛️ Physics</button>
-                <button onclick="openTool('logic')">🧮 Logic</button>
-                <button onclick="openTool('trig')">📐 Trig</button>
-                <button onclick="openTool('chemistry')">⚗️ Chem</button>
-                <button onclick="openTool('editor')">📝 Editor</button>
-                <button onclick="openTool('finance')">💰 Finance</button>
-            </div>
         <div class="tool-header">
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Plotting</span>
@@ -1807,24 +1697,6 @@
 
     <!-- LINEAR ALGEBRA -->
 <div id="tool-linear" class="tool-view">
-            <div class="mobile-tool-nav">
-                <button onclick="closeTool()" style="font-weight:bold;">🏠</button>
-                <button onclick="openTool('calculator')">🔢 Calc</button>
-                <button onclick="openTool('algebra')">📐 Algebra</button>
-                <button onclick="openTool('calculus')">📊 Calculus</button>
-                <button onclick="openTool('plotting')">📈 Plot</button>
-                <button onclick="openTool('linear')">📏 Matrix</button>
-                <button onclick="openTool('statistics')">📉 Stats</button>
-                <button onclick="openTool('numbers')">🔢 Numbers</button>
-                <button onclick="openTool('converter')">🔄 Convert</button>
-                <button onclick="openTool('geometry')">📐 Geo</button>
-                <button onclick="openTool('physics')">⚛️ Physics</button>
-                <button onclick="openTool('logic')">🧮 Logic</button>
-                <button onclick="openTool('trig')">📐 Trig</button>
-                <button onclick="openTool('chemistry')">⚗️ Chem</button>
-                <button onclick="openTool('editor')">📝 Editor</button>
-                <button onclick="openTool('finance')">💰 Finance</button>
-            </div>
         <div class="tool-header">
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Linear Algebra</span>
@@ -1904,24 +1776,6 @@
 
     <!-- STATISTICS -->
 <div id="tool-statistics" class="tool-view">
-            <div class="mobile-tool-nav">
-                <button onclick="closeTool()" style="font-weight:bold;">🏠</button>
-                <button onclick="openTool('calculator')">🔢 Calc</button>
-                <button onclick="openTool('algebra')">📐 Algebra</button>
-                <button onclick="openTool('calculus')">📊 Calculus</button>
-                <button onclick="openTool('plotting')">📈 Plot</button>
-                <button onclick="openTool('linear')">📏 Matrix</button>
-                <button onclick="openTool('statistics')">📉 Stats</button>
-                <button onclick="openTool('numbers')">🔢 Numbers</button>
-                <button onclick="openTool('converter')">🔄 Convert</button>
-                <button onclick="openTool('geometry')">📐 Geo</button>
-                <button onclick="openTool('physics')">⚛️ Physics</button>
-                <button onclick="openTool('logic')">🧮 Logic</button>
-                <button onclick="openTool('trig')">📐 Trig</button>
-                <button onclick="openTool('chemistry')">⚗️ Chem</button>
-                <button onclick="openTool('editor')">📝 Editor</button>
-                <button onclick="openTool('finance')">💰 Finance</button>
-            </div>
         <div class="tool-header">
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Statistics</span>
@@ -2077,24 +1931,6 @@
 
     <!-- NUMBERS -->
 <div id="tool-numbers" class="tool-view">
-            <div class="mobile-tool-nav">
-                <button onclick="closeTool()" style="font-weight:bold;">🏠</button>
-                <button onclick="openTool('calculator')">🔢 Calc</button>
-                <button onclick="openTool('algebra')">📐 Algebra</button>
-                <button onclick="openTool('calculus')">📊 Calculus</button>
-                <button onclick="openTool('plotting')">📈 Plot</button>
-                <button onclick="openTool('linear')">📏 Matrix</button>
-                <button onclick="openTool('statistics')">📉 Stats</button>
-                <button onclick="openTool('numbers')">🔢 Numbers</button>
-                <button onclick="openTool('converter')">🔄 Convert</button>
-                <button onclick="openTool('geometry')">📐 Geo</button>
-                <button onclick="openTool('physics')">⚛️ Physics</button>
-                <button onclick="openTool('logic')">🧮 Logic</button>
-                <button onclick="openTool('trig')">📐 Trig</button>
-                <button onclick="openTool('chemistry')">⚗️ Chem</button>
-                <button onclick="openTool('editor')">📝 Editor</button>
-                <button onclick="openTool('finance')">💰 Finance</button>
-            </div>
         <div class="tool-header">
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Numbers</span>
@@ -2141,24 +1977,6 @@
 
     <!-- CONVERTER -->
 <div id="tool-converter" class="tool-view">
-            <div class="mobile-tool-nav">
-                <button onclick="closeTool()" style="font-weight:bold;">🏠</button>
-                <button onclick="openTool('calculator')">🔢 Calc</button>
-                <button onclick="openTool('algebra')">📐 Algebra</button>
-                <button onclick="openTool('calculus')">📊 Calculus</button>
-                <button onclick="openTool('plotting')">📈 Plot</button>
-                <button onclick="openTool('linear')">📏 Matrix</button>
-                <button onclick="openTool('statistics')">📉 Stats</button>
-                <button onclick="openTool('numbers')">🔢 Numbers</button>
-                <button onclick="openTool('converter')">🔄 Convert</button>
-                <button onclick="openTool('geometry')">📐 Geo</button>
-                <button onclick="openTool('physics')">⚛️ Physics</button>
-                <button onclick="openTool('logic')">🧮 Logic</button>
-                <button onclick="openTool('trig')">📐 Trig</button>
-                <button onclick="openTool('chemistry')">⚗️ Chem</button>
-                <button onclick="openTool('editor')">📝 Editor</button>
-                <button onclick="openTool('finance')">💰 Finance</button>
-            </div>
         <div class="tool-header">
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Unit Converter</span>
@@ -2195,24 +2013,6 @@
 
     <!-- GEOMETRY -->
 <div id="tool-geometry" class="tool-view">
-            <div class="mobile-tool-nav">
-                <button onclick="closeTool()" style="font-weight:bold;">🏠</button>
-                <button onclick="openTool('calculator')">🔢 Calc</button>
-                <button onclick="openTool('algebra')">📐 Algebra</button>
-                <button onclick="openTool('calculus')">📊 Calculus</button>
-                <button onclick="openTool('plotting')">📈 Plot</button>
-                <button onclick="openTool('linear')">📏 Matrix</button>
-                <button onclick="openTool('statistics')">📉 Stats</button>
-                <button onclick="openTool('numbers')">🔢 Numbers</button>
-                <button onclick="openTool('converter')">🔄 Convert</button>
-                <button onclick="openTool('geometry')">📐 Geo</button>
-                <button onclick="openTool('physics')">⚛️ Physics</button>
-                <button onclick="openTool('logic')">🧮 Logic</button>
-                <button onclick="openTool('trig')">📐 Trig</button>
-                <button onclick="openTool('chemistry')">⚗️ Chem</button>
-                <button onclick="openTool('editor')">📝 Editor</button>
-                <button onclick="openTool('finance')">💰 Finance</button>
-            </div>
         <div class="tool-header">
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Geometry</span>
@@ -2284,24 +2084,6 @@
 
     <!-- FINANCE -->
 <div id="tool-finance" class="tool-view">
-            <div class="mobile-tool-nav">
-                <button onclick="closeTool()" style="font-weight:bold;">🏠</button>
-                <button onclick="openTool('calculator')">🔢 Calc</button>
-                <button onclick="openTool('algebra')">📐 Algebra</button>
-                <button onclick="openTool('calculus')">📊 Calculus</button>
-                <button onclick="openTool('plotting')">📈 Plot</button>
-                <button onclick="openTool('linear')">📏 Matrix</button>
-                <button onclick="openTool('statistics')">📉 Stats</button>
-                <button onclick="openTool('numbers')">🔢 Numbers</button>
-                <button onclick="openTool('converter')">🔄 Convert</button>
-                <button onclick="openTool('geometry')">📐 Geo</button>
-                <button onclick="openTool('physics')">⚛️ Physics</button>
-                <button onclick="openTool('logic')">🧮 Logic</button>
-                <button onclick="openTool('trig')">📐 Trig</button>
-                <button onclick="openTool('chemistry')">⚗️ Chem</button>
-                <button onclick="openTool('editor')">📝 Editor</button>
-                <button onclick="openTool('finance')">💰 Finance</button>
-            </div>
         <div class="tool-header">
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Finance</span>
@@ -2374,24 +2156,6 @@
 
     <!-- PHYSICS -->
 <div id="tool-physics" class="tool-view">
-            <div class="mobile-tool-nav">
-                <button onclick="closeTool()" style="font-weight:bold;">🏠</button>
-                <button onclick="openTool('calculator')">🔢 Calc</button>
-                <button onclick="openTool('algebra')">📐 Algebra</button>
-                <button onclick="openTool('calculus')">📊 Calculus</button>
-                <button onclick="openTool('plotting')">📈 Plot</button>
-                <button onclick="openTool('linear')">📏 Matrix</button>
-                <button onclick="openTool('statistics')">📉 Stats</button>
-                <button onclick="openTool('numbers')">🔢 Numbers</button>
-                <button onclick="openTool('converter')">🔄 Convert</button>
-                <button onclick="openTool('geometry')">📐 Geo</button>
-                <button onclick="openTool('physics')">⚛️ Physics</button>
-                <button onclick="openTool('logic')">🧮 Logic</button>
-                <button onclick="openTool('trig')">📐 Trig</button>
-                <button onclick="openTool('chemistry')">⚗️ Chem</button>
-                <button onclick="openTool('editor')">📝 Editor</button>
-                <button onclick="openTool('finance')">💰 Finance</button>
-            </div>
         <div class="tool-header">
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Physics</span>
@@ -2563,24 +2327,6 @@
 
     <!-- LOGIC TOOL -->
 <div id="tool-logic" class="tool-view">
-            <div class="mobile-tool-nav">
-                <button onclick="closeTool()" style="font-weight:bold;">🏠</button>
-                <button onclick="openTool('calculator')">🔢 Calc</button>
-                <button onclick="openTool('algebra')">📐 Algebra</button>
-                <button onclick="openTool('calculus')">📊 Calculus</button>
-                <button onclick="openTool('plotting')">📈 Plot</button>
-                <button onclick="openTool('linear')">📏 Matrix</button>
-                <button onclick="openTool('statistics')">📉 Stats</button>
-                <button onclick="openTool('numbers')">🔢 Numbers</button>
-                <button onclick="openTool('converter')">🔄 Convert</button>
-                <button onclick="openTool('geometry')">📐 Geo</button>
-                <button onclick="openTool('physics')">⚛️ Physics</button>
-                <button onclick="openTool('logic')">🧮 Logic</button>
-                <button onclick="openTool('trig')">📐 Trig</button>
-                <button onclick="openTool('chemistry')">⚗️ Chem</button>
-                <button onclick="openTool('editor')">📝 Editor</button>
-                <button onclick="openTool('finance')">💰 Finance</button>
-            </div>
         <div class="tool-header">
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Logic Truth Table</span>
@@ -2598,24 +2344,6 @@
 
     <!-- TRIGONOMETRY TOOL -->
 <div id="tool-trig" class="tool-view">
-            <div class="mobile-tool-nav">
-                <button onclick="closeTool()" style="font-weight:bold;">🏠</button>
-                <button onclick="openTool('calculator')">🔢 Calc</button>
-                <button onclick="openTool('algebra')">📐 Algebra</button>
-                <button onclick="openTool('calculus')">📊 Calculus</button>
-                <button onclick="openTool('plotting')">📈 Plot</button>
-                <button onclick="openTool('linear')">📏 Matrix</button>
-                <button onclick="openTool('statistics')">📉 Stats</button>
-                <button onclick="openTool('numbers')">🔢 Numbers</button>
-                <button onclick="openTool('converter')">🔄 Convert</button>
-                <button onclick="openTool('geometry')">📐 Geo</button>
-                <button onclick="openTool('physics')">⚛️ Physics</button>
-                <button onclick="openTool('logic')">🧮 Logic</button>
-                <button onclick="openTool('trig')">📐 Trig</button>
-                <button onclick="openTool('chemistry')">⚗️ Chem</button>
-                <button onclick="openTool('editor')">📝 Editor</button>
-                <button onclick="openTool('finance')">💰 Finance</button>
-            </div>
         <div class="tool-header">
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Unit Circle</span>
@@ -2638,24 +2366,6 @@
 
     <!-- CHEMISTRY TOOL -->
 <div id="tool-chemistry" class="tool-view">
-            <div class="mobile-tool-nav">
-                <button onclick="closeTool()" style="font-weight:bold;">🏠</button>
-                <button onclick="openTool('calculator')">🔢 Calc</button>
-                <button onclick="openTool('algebra')">📐 Algebra</button>
-                <button onclick="openTool('calculus')">📊 Calculus</button>
-                <button onclick="openTool('plotting')">📈 Plot</button>
-                <button onclick="openTool('linear')">📏 Matrix</button>
-                <button onclick="openTool('statistics')">📉 Stats</button>
-                <button onclick="openTool('numbers')">🔢 Numbers</button>
-                <button onclick="openTool('converter')">🔄 Convert</button>
-                <button onclick="openTool('geometry')">📐 Geo</button>
-                <button onclick="openTool('physics')">⚛️ Physics</button>
-                <button onclick="openTool('logic')">🧮 Logic</button>
-                <button onclick="openTool('trig')">📐 Trig</button>
-                <button onclick="openTool('chemistry')">⚗️ Chem</button>
-                <button onclick="openTool('editor')">📝 Editor</button>
-                <button onclick="openTool('finance')">💰 Finance</button>
-            </div>
         <div class="tool-header">
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Chemistry</span>
@@ -2768,24 +2478,6 @@
 
     <!-- EDITOR APP -->
 <div id="tool-editor" class="tool-view">
-            <div class="mobile-tool-nav">
-                <button onclick="closeTool()" style="font-weight:bold;">🏠</button>
-                <button onclick="openTool('calculator')">🔢 Calc</button>
-                <button onclick="openTool('algebra')">📐 Algebra</button>
-                <button onclick="openTool('calculus')">📊 Calculus</button>
-                <button onclick="openTool('plotting')">📈 Plot</button>
-                <button onclick="openTool('linear')">📏 Matrix</button>
-                <button onclick="openTool('statistics')">📉 Stats</button>
-                <button onclick="openTool('numbers')">🔢 Numbers</button>
-                <button onclick="openTool('converter')">🔄 Convert</button>
-                <button onclick="openTool('geometry')">📐 Geo</button>
-                <button onclick="openTool('physics')">⚛️ Physics</button>
-                <button onclick="openTool('logic')">🧮 Logic</button>
-                <button onclick="openTool('trig')">📐 Trig</button>
-                <button onclick="openTool('chemistry')">⚗️ Chem</button>
-                <button onclick="openTool('editor')">📝 Editor</button>
-                <button onclick="openTool('finance')">💰 Finance</button>
-            </div>
         <div class="tool-header">
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">Script Editor</span>
@@ -8779,9 +8471,9 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             <span class="bar-icon">📈</span>
             <span>Plot</span>
         </button>
-        <button onclick="openTool('history')">
-            <span class="bar-icon">📜</span>
-            <span>History</span>
+        <button onclick="openTool('linear')">
+            <span class="bar-icon">📏</span>
+            <span>Matrix</span>
         </button>
     </div>
 
