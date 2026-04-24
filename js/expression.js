@@ -409,6 +409,17 @@ class Num extends Expr {
     substitute(varName, value) { return this; }
     toLatex() {
         if (Number.isInteger(this.value)) return this.value.toString();
+        // Scientific notation: 1e-10 → 1 \times 10^{-10}
+        const str = this.value.toExponential();
+        const match = str.match(/^([\d.]+)e([+-]?\d+)$/);
+        if (match) {
+            const mantissa = parseFloat(match[1]);
+            const exp = parseInt(match[2]);
+            if (exp === 0) return mantissa.toString();
+            const mantissaStr = Number.isInteger(mantissa) ? mantissa.toString() : mantissa.toString();
+            if (exp === 1) return `${mantissaStr} \\times 10`;
+            return `${mantissaStr} \\times 10^{${exp}}`;
+        }
         const precision = 12;
         return parseFloat(this.value.toPrecision(precision)).toString();
     }
@@ -1408,6 +1419,20 @@ class Div extends BinaryOp {
             }
         }
 
+        // Trig simplification: sin/cos → tan, 1/sin → csc, cos/sin → cot, 1/cos → sec
+        if (l instanceof Call && r instanceof Call) {
+            if (l.funcName === 'sin' && r.funcName === 'cos' && l.args[0].toString() === r.args[0].toString()) {
+                return new Call('tan', l.args).simplify();
+            }
+            if (l.funcName === 'cos' && r.funcName === 'sin' && l.args[0].toString() === r.args[0].toString()) {
+                return new Call('cot', l.args).simplify();
+            }
+        }
+        if (l instanceof Num && l.value === 1 && r instanceof Call) {
+            if (r.funcName === 'sin') return new Call('csc', r.args).simplify();
+            if (r.funcName === 'cos') return new Call('sec', r.args).simplify();
+        }
+
         return new Div(l, r);
     }
     evaluateNumeric() { return this.left.evaluateNumeric() / this.right.evaluateNumeric(); }
@@ -1832,6 +1857,12 @@ class Pow extends BinaryOp {
              const exp1 = l.right;
              const exp2 = r;
              return new Pow(base, new Mul(exp1, exp2).simplify()).simplify();
+        }
+
+        // Negative integer exponents: x^(-n) → 1/x^n
+        if (r instanceof Num && r.value < 0 && Number.isInteger(r.value)) {
+            if (r.value === -1) return new Div(new Num(1), l).simplify();
+            return new Div(new Num(1), new Pow(l, new Num(-r.value))).simplify();
         }
 
         return new Pow(l, r);
