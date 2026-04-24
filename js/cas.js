@@ -570,6 +570,38 @@ class CAS {
                         return new Call('integrate', args);
                     }
 
+                    // Check for singularities of the integrand INSIDE [lower, upper]
+                    // For poles of f(x), check where the antiderivative blows up
+                    {
+                        const lowVal = lower.evaluateNumeric();
+                        const upVal = upper.evaluateNumeric();
+                        if (!isNaN(lowVal) && !isNaN(upVal) && Number.isFinite(lowVal) && Number.isFinite(upVal)) {
+                            // Sample points inside interval to detect poles
+                            const steps = 20;
+                            const dx = (upVal - lowVal) / steps;
+                            for (let si = 1; si < steps; si++) {
+                                const xi = lowVal + si * dx;
+                                try {
+                                    const fVal = func.substitute(varNode, new Num(xi)).evaluateNumeric();
+                                    if (!isFinite(fVal) || isNaN(fVal)) {
+                                        // Singularity detected inside interval
+                                        return new Sym('NaN');
+                                    }
+                                } catch(e) {}
+                            }
+                            // Also check antiderivative limits at sample points
+                            for (let si = 1; si < steps; si++) {
+                                const xi = lowVal + si * dx;
+                                try {
+                                    const aVal = indefinite.substitute(varNode, new Num(xi)).evaluateNumeric();
+                                    if (!isFinite(aVal) || isNaN(aVal)) {
+                                        return new Sym('NaN');
+                                    }
+                                } catch(e) {}
+                            }
+                        }
+                    }
+
                     // Use limit for bounds to handle singularities (e.g. 1/sqrt(x) at 0)
                     // limit(F(x), x, upper, left) - limit(F(x), x, lower, right)
                     let valUpper = indefinite.substitute(varNode, upper);
@@ -6194,6 +6226,21 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                              if (!isNaN(denVal) && denVal !== 0) {
                                  const resultSign = (num.value > 0 ? 1 : -1) * (denVal > 0 ? 1 : -1);
                                  return (resultSign > 0) ? new Sym("Infinity") : new Mul(new Num(-1), new Sym("Infinity"));
+                             }
+                         } catch(e) {}
+                     }
+                     // Two-sided limit: check if left and right limits agree
+                     if (dir === 0) {
+                         try {
+                             const val = point.evaluateNumeric();
+                             const eps = 1e-9;
+                             const denRight = expr.right.substitute(varNode, new Num(val + eps)).evaluateNumeric();
+                             const denLeft = expr.right.substitute(varNode, new Num(val - eps)).evaluateNumeric();
+                             if (!isNaN(denRight) && denRight !== 0 && !isNaN(denLeft) && denLeft !== 0) {
+                                 const signRight = (num.value > 0 ? 1 : -1) * (denRight > 0 ? 1 : -1);
+                                 const signLeft = (num.value > 0 ? 1 : -1) * (denLeft > 0 ? 1 : -1);
+                                 if (signRight !== signLeft) return new Sym("NaN"); // undefined: left != right
+                                 return signRight > 0 ? new Sym("Infinity") : new Mul(new Num(-1), new Sym("Infinity"));
                              }
                          } catch(e) {}
                      }
