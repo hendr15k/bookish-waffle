@@ -593,6 +593,184 @@
             from { opacity: 0; transform: translateY(5px); }
             to { opacity: 1; transform: translateY(0); }
         }
+    
+        /* === MOBILE OPTIMIZATIONS === */
+        @media (max-width: 768px) {
+            /* Command input - larger touch target */
+            #command-input {
+                font-size: 16px !important; /* Prevent iOS zoom */
+                padding: 14px 12px !important;
+                min-height: 48px;
+            }
+            #submit-btn {
+                padding: 14px 20px !important;
+                font-size: 1em !important;
+                min-height: 48px;
+            }
+            /* App cards - larger touch targets */
+            .app-card {
+                min-height: 100px;
+                padding: 20px 10px;
+            }
+            .app-icon {
+                font-size: 2em;
+                margin-bottom: 10px;
+            }
+            .app-name {
+                font-size: 0.85em;
+            }
+            /* Function grid - 2 columns on mobile */
+            .function-grid {
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 10px;
+            }
+            .function-btn {
+                padding: 14px;
+                font-size: 1.2em;
+                min-height: 48px;
+            }
+            /* Action grid - single column on mobile */
+            .action-grid {
+                grid-template-columns: 1fr !important;
+            }
+            .action-btn {
+                padding: 16px;
+                font-size: 1.1em;
+                min-height: 52px;
+            }
+            /* Tool views - better spacing */
+            .tool-view {
+                padding: 15px;
+                min-height: 90vh;
+            }
+            .tool-section {
+                padding: 12px;
+                margin-bottom: 20px;
+            }
+            .tool-header {
+                margin-bottom: 20px;
+                padding-bottom: 12px;
+            }
+            .tool-title {
+                font-size: 1.2em;
+            }
+            .back-btn {
+                font-size: 1.8em;
+                padding: 8px;
+                min-width: 48px;
+                min-height: 48px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            /* Form inputs - larger touch targets */
+            .form-input {
+                padding: 14px;
+                font-size: 16px !important; /* Prevent iOS zoom */
+                min-height: 48px;
+            }
+            .form-row {
+                flex-direction: column;
+                gap: 12px;
+            }
+            /* Tool results - better readability */
+            .tool-result {
+                padding: 15px;
+                font-size: 1.1em;
+            }
+            /* History - larger text */
+            .entry {
+                padding: 12px 0;
+            }
+            .command {
+                font-size: 1em;
+            }
+            .result {
+                font-size: 1.1em;
+            }
+            /* Modals - full width on mobile */
+            .modal-content {
+                width: 95% !important;
+                max-width: none !important;
+                padding: 20px;
+                margin: 10px;
+            }
+            /* Variables panel */
+            #sidebar {
+                width: 100%;
+                padding: 10px;
+            }
+            .var-section {
+                margin-bottom: 15px;
+            }
+            .var-section h3 {
+                font-size: 1em;
+                margin-bottom: 8px;
+            }
+            .var-item {
+                padding: 8px;
+                font-size: 0.9em;
+            }
+            /* Plot canvas - full width */
+            canvas {
+                width: 100% !important;
+                height: auto !important;
+            }
+            /* Keyboard shortcuts button */
+            #shortcuts-btn {
+                display: none; /* Hide on mobile - not useful without keyboard */
+            }
+            /* Dark mode toggle - larger */
+            #dark-mode-toggle {
+                padding: 10px;
+                font-size: 1.1em;
+            }
+            /* App search */
+            #app-search {
+                padding: 12px;
+                font-size: 16px !important; /* Prevent iOS zoom */
+            }
+        }
+        
+        /* Small phones */
+        @media (max-width: 380px) {
+            .app-card {
+                min-height: 90px;
+                padding: 15px 8px;
+            }
+            .app-icon {
+                font-size: 1.8em;
+            }
+            .app-name {
+                font-size: 0.8em;
+            }
+            .function-grid {
+                grid-template-columns: repeat(2, 1fr) !important;
+            }
+            .function-btn {
+                padding: 12px;
+                font-size: 1.1em;
+            }
+        }
+        
+        /* Touch-specific improvements */
+        @media (hover: none) and (pointer: coarse) {
+            /* Larger tap targets for touch devices */
+            .app-card:hover {
+                transform: none; /* No hover effect on touch */
+            }
+            .function-btn:hover {
+                background: #e9ecef;
+            }
+            .action-btn:hover {
+                background-color: var(--primary-color);
+            }
+            /* Disable tooltips on touch */
+            [title] {
+                -webkit-touch-callout: none;
+            }
+        }
+
     </style>
 </head>
 <body>
