@@ -6904,7 +6904,23 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                             roots = [rootsRes];
                         }
 
-                        if (roots.length > 0) {
+                        // Check if any root is complex (contains 'i')
+                        const hasComplex = (node) => {
+                            if (node instanceof Sym && node.name === 'i') return true;
+                            if (node instanceof Num) return false;
+                            if (node instanceof Sym) return false;
+                            if (node instanceof Add || node instanceof Sub || node instanceof Mul || node instanceof Div) {
+                                return hasComplex(node.left) || (node.right ? hasComplex(node.right) : false);
+                            }
+                            if (node instanceof Pow) return hasComplex(node.left) || hasComplex(node.right);
+                            if (node instanceof Call) return node.args.some(a => hasComplex(a));
+                            return false;
+                        };
+
+                        if (roots.length > 0 && roots.some(r => hasComplex(r))) {
+                            // Complex roots found — keep as irreducible quadratic over ℝ
+                            factors.push(reducedPoly);
+                        } else if (roots.length > 0) {
                             // Try to produce integer factors for rational roots
                             // Factor (x - p/q) -> (qx - p)/q. Absorb /q into 'a'.
                             for(const r of roots) {

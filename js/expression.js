@@ -590,6 +590,16 @@ class Add extends BinaryOp {
             return new Num(0);
         }
 
+        // Sub(a,b) + Sub(b,c) -> Sub(a,c) — e.g. (x²-x)+(x-1) -> x²-1
+        if (l instanceof Sub && r instanceof Sub) {
+            if (l.right.toString() === r.left.toString()) return new Sub(l.left, r.right).simplify();
+            if (l.left.toString() === r.right.toString()) return new Sub(r.left, l.right).simplify();
+        }
+        // Sub(a,b) + b -> a — e.g. (x²-x)+x -> x²
+        if (l instanceof Sub && l.right.toString() === r.toString()) return l.left;
+        // a + Sub(b,a) -> b — e.g. x+(x²-x) -> x²
+        if (r instanceof Sub && r.right.toString() === l.toString()) return r.left;
+
         if (l.toString() === r.toString()) return new Mul(new Num(2), l);
 
         // Logarithmic Combination: ln(a) + ln(b) -> ln(a*b)
@@ -631,7 +641,7 @@ class Add extends BinaryOp {
     evaluateNumeric() { return this.left.evaluateNumeric() + this.right.evaluateNumeric(); }
     diff(varName) { return new Add(this.left.diff(varName), this.right.diff(varName)); }
     integrate(varName) { return new Add(this.left.integrate(varName), this.right.integrate(varName)); }
-    expand() { return new Add(this.left.expand(), this.right.expand()); }
+    expand() { return new Add(this.left.expand(), this.right.expand()).simplify(); }
     toLatex() { return `${this.left.toLatex()} + ${this.right.toLatex()}`; }
 }
 
@@ -649,6 +659,18 @@ class Sub extends BinaryOp {
         // (A-B)-A -> -B
         if (l instanceof Sub) {
             if (l.left.toString() === r.toString()) return new Mul(new Num(-1), l.right).simplify();
+        }
+        // (A+B) - (A+C) -> B - C
+        if (l instanceof Add && r instanceof Add) {
+            if (l.left.toString() === r.left.toString()) return new Sub(l.right, r.right).simplify();
+            if (l.right.toString() === r.right.toString()) return new Sub(l.left, r.left).simplify();
+            if (l.left.toString() === r.right.toString()) return new Sub(l.right, r.left).simplify();
+            if (l.right.toString() === r.left.toString()) return new Sub(l.left, r.right).simplify();
+        }
+        // (A+B) - (C+D) where B=C -> A - D
+        if (l instanceof Add && r instanceof Sub) {
+            if (l.left.toString() === r.left.toString()) return new Sub(l.right, new Mul(new Num(-1), r.right)).simplify();
+            if (l.right.toString() === r.left.toString()) return new Sub(l.left, new Mul(new Num(-1), r.right)).simplify();
         }
 
         // Vector subtraction
@@ -792,7 +814,7 @@ class Sub extends BinaryOp {
     evaluateNumeric() { return this.left.evaluateNumeric() - this.right.evaluateNumeric(); }
     diff(varName) { return new Sub(this.left.diff(varName), this.right.diff(varName)); }
     integrate(varName) { return new Sub(this.left.integrate(varName), this.right.integrate(varName)); }
-    expand() { return new Sub(this.left.expand(), this.right.expand()); }
+    expand() { return new Sub(this.left.expand(), this.right.expand()).simplify(); }
     toLatex() { return `${this.left.toLatex()} - ${this.right.toLatex()}`; }
 }
 
@@ -1026,11 +1048,11 @@ class Mul extends BinaryOp {
     expand() {
         const l = this.left.expand();
         const r = this.right.expand();
-        if (l instanceof Add) return new Add(new Mul(l.left, r).expand(), new Mul(l.right, r).expand());
-        if (l instanceof Sub) return new Sub(new Mul(l.left, r).expand(), new Mul(l.right, r).expand());
-        if (r instanceof Add) return new Add(new Mul(l, r.left).expand(), new Mul(l, r.right).expand());
-        if (r instanceof Sub) return new Sub(new Mul(l, r.left).expand(), new Mul(l, r.right).expand());
-        return new Mul(l, r);
+        if (l instanceof Add) return new Add(new Mul(l.left, r).expand(), new Mul(l.right, r).expand()).simplify();
+        if (l instanceof Sub) return new Sub(new Mul(l.left, r).expand(), new Mul(l.right, r).expand()).simplify();
+        if (r instanceof Add) return new Add(new Mul(l, r.left).expand(), new Mul(l, r.right).expand()).simplify();
+        if (r instanceof Sub) return new Sub(new Mul(l, r.left).expand(), new Mul(l, r.right).expand()).simplify();
+        return new Mul(l, r).simplify();
     }
     toLatex() {
         let lTex = this.left.toLatex();
@@ -2011,13 +2033,39 @@ class Call extends Expr {
                 const eps = 1e-10;
                 if (Math.abs(multiple - Math.round(multiple)) < eps) {
                     const k = Math.round(multiple);
-                    // k * pi/2
-                    // k % 4: 0 -> 0, 1 -> 1, 2 -> 0, 3 -> -1
                     const rem = ((k % 4) + 4) % 4;
                     if (rem === 0) return new Num(0);
                     if (rem === 1) return new Num(1);
                     if (rem === 2) return new Num(0);
                     if (rem === 3) return new Num(-1);
+                }
+                // Check if multiple of pi/6 (covers pi/6, pi/3, 2pi/3, 5pi/6)
+                const mult6 = val / (Math.PI / 6);
+                if (Math.abs(mult6 - Math.round(mult6)) < eps) {
+                    const k = Math.round(mult6);
+                    const rem = ((k % 12) + 12) % 12;
+                    // sin(k*pi/6): 0->0, 1->1/2, 2->sqrt(3)/2, 3->1, 4->sqrt(3)/2, 5->1/2, 6->0, 7->-1/2, 8->-sqrt(3)/2, 9->-1, 10->-sqrt(3)/2, 11->-1/2
+                    if (rem === 0) return new Num(0);
+                    if (rem === 1 || rem === 5) return new Div(new Num(1), new Num(2)).simplify();
+                    if (rem === 2 || rem === 4) return new Div(new Call('sqrt', [new Num(3)]), new Num(2)).simplify();
+                    if (rem === 3) return new Num(1);
+                    if (rem === 6) return new Num(0);
+                    if (rem === 7 || rem === 11) return new Div(new Num(-1), new Num(2)).simplify();
+                    if (rem === 8 || rem === 10) return new Div(new Mul(new Num(-1), new Call('sqrt', [new Num(3)])).simplify(), new Num(2)).simplify();
+                    if (rem === 9) return new Num(-1);
+                }
+                // Check if multiple of pi/4 (covers pi/4, 3pi/4, 5pi/4, 7pi/4)
+                const mult4 = val / (Math.PI / 4);
+                if (Math.abs(mult4 - Math.round(mult4)) < eps) {
+                    const k = Math.round(mult4);
+                    const rem = ((k % 8) + 8) % 8;
+                    // sin(k*pi/4): 0->0, 1->sqrt(2)/2, 2->1, 3->sqrt(2)/2, 4->0, 5->-sqrt(2)/2, 6->-1, 7->-sqrt(2)/2
+                    if (rem === 0) return new Num(0);
+                    if (rem === 1 || rem === 3) return new Div(new Call('sqrt', [new Num(2)]), new Num(2)).simplify();
+                    if (rem === 2) return new Num(1);
+                    if (rem === 4) return new Num(0);
+                    if (rem === 5 || rem === 7) return new Div(new Mul(new Num(-1), new Call('sqrt', [new Num(2)])).simplify(), new Num(2)).simplify();
+                    if (rem === 6) return new Num(-1);
                 }
             }
         }
@@ -2038,6 +2086,32 @@ class Call extends Expr {
                     if (rem === 2) return new Num(-1);
                     if (rem === 3) return new Num(0);
                 }
+                // Check if multiple of pi/6 (covers pi/6, pi/3, 2pi/3, 5pi/6)
+                const mult6 = val / (Math.PI / 6);
+                if (Math.abs(mult6 - Math.round(mult6)) < eps) {
+                    const k = Math.round(mult6);
+                    const rem = ((k % 12) + 12) % 12;
+                    // cos(k*pi/6): 0->1, 1->sqrt(3)/2, 2->1/2, 3->0, 4->-1/2, 5->-sqrt(3)/2, 6->-1, 7->-sqrt(3)/2, 8->-1/2, 9->0, 10->1/2, 11->sqrt(3)/2
+                    if (rem === 0) return new Num(1);
+                    if (rem === 1 || rem === 11) return new Div(new Call('sqrt', [new Num(3)]), new Num(2)).simplify();
+                    if (rem === 2 || rem === 10) return new Div(new Num(1), new Num(2)).simplify();
+                    if (rem === 3 || rem === 9) return new Num(0);
+                    if (rem === 4 || rem === 8) return new Div(new Num(-1), new Num(2)).simplify();
+                    if (rem === 5 || rem === 7) return new Div(new Mul(new Num(-1), new Call('sqrt', [new Num(3)])).simplify(), new Num(2)).simplify();
+                    if (rem === 6) return new Num(-1);
+                }
+                // Check if multiple of pi/4 (covers pi/4, 3pi/4, 5pi/4, 7pi/4)
+                const mult4 = val / (Math.PI / 4);
+                if (Math.abs(mult4 - Math.round(mult4)) < eps) {
+                    const k = Math.round(mult4);
+                    const rem = ((k % 8) + 8) % 8;
+                    // cos(k*pi/4): 0->1, 1->sqrt(2)/2, 2->0, 3->-sqrt(2)/2, 4->-1, 5->-sqrt(2)/2, 6->0, 7->sqrt(2)/2
+                    if (rem === 0) return new Num(1);
+                    if (rem === 1 || rem === 7) return new Div(new Call('sqrt', [new Num(2)]), new Num(2)).simplify();
+                    if (rem === 2 || rem === 6) return new Num(0);
+                    if (rem === 3 || rem === 5) return new Div(new Mul(new Num(-1), new Call('sqrt', [new Num(2)])).simplify(), new Num(2)).simplify();
+                    if (rem === 4) return new Num(-1);
+                }
             }
         }
         if (this.funcName === 'tan') {
@@ -2047,6 +2121,7 @@ class Call extends Expr {
             const val = arg.evaluateNumeric();
             if (!isNaN(val)) {
                 if (Math.abs(val) < 1e-10) return new Num(0);
+                // Check if multiple of pi/4 (existing)
                 const multiple = val / (Math.PI / 4);
                 const eps = 1e-10;
                 if (Math.abs(multiple - Math.round(multiple)) < eps) {
@@ -2060,6 +2135,19 @@ class Call extends Expr {
                     if (rem === 5) return new Num(1);
                     if (rem === 6) return new Sym("Infinity");
                     if (rem === 7) return new Num(-1);
+                }
+                // Check if multiple of pi/6 (covers pi/6, pi/3, 2pi/3, 5pi/6)
+                const mult6 = val / (Math.PI / 6);
+                if (Math.abs(mult6 - Math.round(mult6)) < eps) {
+                    const k = Math.round(mult6);
+                    const rem = ((k % 12) + 12) % 12;
+                    // tan(k*pi/6): 0->0, 1->1/sqrt(3), 2->sqrt(3), 3->Inf, 4->-sqrt(3), 5->-1/sqrt(3), 6->0, 7->1/sqrt(3), 8->sqrt(3), 9->Inf, 10->-sqrt(3), 11->-1/sqrt(3)
+                    if (rem === 0 || rem === 6) return new Num(0);
+                    if (rem === 1 || rem === 7) return new Div(new Num(1), new Call('sqrt', [new Num(3)])).simplify();
+                    if (rem === 2 || rem === 8) return new Call('sqrt', [new Num(3)]).simplify();
+                    if (rem === 3 || rem === 9) return new Sym("Infinity");
+                    if (rem === 4 || rem === 10) return new Mul(new Num(-1), new Call('sqrt', [new Num(3)])).simplify();
+                    if (rem === 5 || rem === 11) return new Div(new Num(-1), new Call('sqrt', [new Num(3)])).simplify();
                 }
             }
         }
@@ -2111,6 +2199,9 @@ class Call extends Expr {
             if (arg instanceof Num && Math.abs(arg.value - 1/Math.sqrt(3)) < 1e-9) return new Div(new Sym('pi'), new Num(6)).simplify();
             if (arg instanceof Num && Math.abs(arg.value - -Math.sqrt(3)) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(3)).simplify();
             if (arg instanceof Num && Math.abs(arg.value - -1/Math.sqrt(3)) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(6)).simplify();
+            // atan(Infinity) = pi/2, atan(-Infinity) = -pi/2
+            if (arg instanceof Sym && (arg.name === 'Infinity' || arg.name === 'infinity')) return new Div(new Sym('pi'), new Num(2)).simplify();
+            if (arg instanceof Mul && arg.left instanceof Num && arg.left.value === -1 && arg.right instanceof Sym && (arg.right.name === 'Infinity' || arg.right.name === 'infinity')) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(2)).simplify();
         }
         if (this.funcName === 'asec') {
             const arg = simpleArgs[0];

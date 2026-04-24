@@ -687,7 +687,10 @@ class Parser {
             return this.unary();
         } else if (this.currentToken.type === TOKEN_MINUS) {
             this.eat(TOKEN_MINUS);
-            return new Mul(new Num(-1), this.unary());
+            const operand = this.unary();
+            // Optimization: -Num(n) -> Num(-n) instead of Mul(-1, n)
+            if (operand instanceof Num) return new Num(-operand.value);
+            return new Mul(new Num(-1), operand);
         } else if (this.currentToken.type === TOKEN_NOT) {
             this.eat(TOKEN_NOT);
             return new Not(this.unary());
