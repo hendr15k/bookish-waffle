@@ -303,7 +303,12 @@
             cursor: pointer;
             margin-right: 15px;
             color: var(--primary-color);
-            padding: 5px;
+            padding: 10px;
+            min-width: 44px;
+            min-height: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
         .tool-title {
             font-size: 1.4em;
@@ -393,6 +398,7 @@
             cursor: pointer;
             color: var(--text-color);
             transition: background 0.1s;
+            min-height: 44px;
         }
         .function-btn:active {
             background: #dde2e6;
@@ -442,7 +448,7 @@
             color: #333;
         }
         #mode-toggle, #graphing-toggle {
-            padding: 8px 16px;
+            padding: 10px 16px;
             background: transparent;
             border: 1px solid var(--primary-color);
             color: var(--primary-color);
@@ -450,6 +456,7 @@
             cursor: pointer;
             font-weight: 600;
             margin-left: 10px;
+            min-height: 44px;
         }
         #mode-toggle:hover, #graphing-toggle:hover {
             background: rgba(0, 123, 255, 0.1);
@@ -715,6 +722,18 @@
             canvas {
                 width: 100% !important;
                 height: auto !important;
+            }
+
+            #sessions-btn,
+            #shortcuts-btn,
+            #mode-toggle,
+            #graphing-toggle {
+                min-height: 44px;
+                min-width: 44px;
+                padding: 10px 12px !important;
+            }
+            .function-btn {
+                min-height: 44px;
             }
             /* Keyboard shortcuts button */
             #shortcuts-btn {
