@@ -613,6 +613,22 @@ class Add extends BinaryOp {
 
         if (l.toString() === r.toString()) return new Mul(new Num(2), l);
 
+        // Like-term collection: 2x + 3x -> 5x, x + 2x -> 3x
+        const getCoeffBase = (expr) => {
+            if (expr instanceof Mul && expr.left instanceof Num) return { coeff: expr.left.value, base: expr.right };
+            if (expr instanceof Mul && expr.right instanceof Num) return { coeff: expr.right.value, base: expr.left };
+            return { coeff: 1, base: expr };
+        };
+        const lb = getCoeffBase(l);
+        const rb = getCoeffBase(r);
+        if (lb.base.toString() === rb.base.toString()) {
+            const newCoeff = lb.coeff + rb.coeff;
+            if (newCoeff === 0) return new Num(0);
+            if (newCoeff === 1) return lb.base;
+            if (newCoeff === -1) return new Mul(new Num(-1), lb.base).simplify();
+            return new Mul(new Num(newCoeff), lb.base).simplify();
+        }
+
         // Logarithmic Combination: ln(a) + ln(b) -> ln(a*b)
         if (l instanceof Call && r instanceof Call && l.funcName === r.funcName && (l.funcName === 'ln' || l.funcName === 'log')) {
              return new Call(l.funcName, [new Mul(l.args[0], r.args[0])]).simplify();
@@ -758,6 +774,22 @@ class Sub extends BinaryOp {
         }
 
         if (l.toString() === r.toString()) return new Num(0);
+
+        // Like-term subtraction: 5x - 3x -> 2x
+        const getCoeffBase = (expr) => {
+            if (expr instanceof Mul && expr.left instanceof Num) return { coeff: expr.left.value, base: expr.right };
+            if (expr instanceof Mul && expr.right instanceof Num) return { coeff: expr.right.value, base: expr.left };
+            return { coeff: 1, base: expr };
+        };
+        const lb = getCoeffBase(l);
+        const rb = getCoeffBase(r);
+        if (lb.base.toString() === rb.base.toString()) {
+            const newCoeff = lb.coeff - rb.coeff;
+            if (newCoeff === 0) return new Num(0);
+            if (newCoeff === 1) return lb.base;
+            if (newCoeff === -1) return new Mul(new Num(-1), lb.base).simplify();
+            return new Mul(new Num(newCoeff), lb.base).simplify();
+        }
 
         // Logarithmic Combination: ln(a) - ln(b) -> ln(a/b)
         if (l instanceof Call && r instanceof Call && l.funcName === r.funcName && (l.funcName === 'ln' || l.funcName === 'log')) {
