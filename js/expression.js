@@ -1085,6 +1085,8 @@ class Mul extends BinaryOp {
             if (this.right instanceof Add || this.right instanceof Sub) {
                 return `-\\left(${this.right.toLatex()}\\right)`;
             }
+            // Div, Mul, Pow(left=Call) — wrap in parens
+            return `-\\left(${this.right.toLatex()}\\right)`;
         }
 
         if (this.left instanceof Add || this.left instanceof Sub) lTex = `\\left(${lTex}\\right)`;
