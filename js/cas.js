@@ -1482,7 +1482,7 @@ class CAS {
                 return this._factor(args[0]);
             }
 
-            if (node.funcName === 'factorial') {
+            if (node.funcName === 'factorial' || node.funcName === 'fact') {
                  if (node.args.length !== 1) throw new Error("factorial requires 1 argument");
                  const n = args[0];
                  if (n instanceof Num && Number.isInteger(n.value) && n.value >= 0) {
@@ -3608,231 +3608,6 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         return null;
     }
 
-    _solveInequality(ineq, varNode) {
-        // Normalize to P(x) > 0 (or >=, <, <=)
-        // Move everything to Left Side: LHS - RHS
-        const expr = new Sub(ineq.left, ineq.right).simplify();
-        let type = ''; // gt, ge, lt, le
-
-        if (ineq instanceof Gt) type = 'gt';
-        else if (ineq instanceof Ge) type = 'ge';
-        else if (ineq instanceof Lt) type = 'lt';
-        else if (ineq instanceof Le) type = 'le';
-
-        // 1. Try Linear Logic: ax + b > 0
-        const poly = this._getPolyCoeffs(expr, varNode);
-        if (poly && poly.maxDeg === 1) {
-            const a = poly.coeffs[1];
-            const b = poly.coeffs[0] || new Num(0);
-
-            // Inequality: ax + b > 0  =>  ax > -b
-            const negB = new Mul(new Num(-1), b).simplify();
-
-            // We need to know the sign of 'a' to flip operator
-            const aVal = a.evaluateNumeric();
-            if (!isNaN(aVal)) {
-                const rhs = new Div(negB, a).simplify();
-                if (aVal > 0) {
-                    // Sign preserved
-                    if (type === 'gt') return new Gt(varNode, rhs);
-                    if (type === 'ge') return new Ge(varNode, rhs);
-                    if (type === 'lt') return new Lt(varNode, rhs);
-                    if (type === 'le') return new Le(varNode, rhs);
-                } else if (aVal < 0) {
-                    // Sign flipped
-                    if (type === 'gt') return new Lt(varNode, rhs);
-                    if (type === 'ge') return new Le(varNode, rhs);
-                    if (type === 'lt') return new Gt(varNode, rhs);
-                    if (type === 'le') return new Ge(varNode, rhs);
-                } else {
-                    // a = 0. b > 0?
-                    // Check logic of 0*x + b > 0 => b > 0
-                    const bVal = b.evaluateNumeric();
-                    if (!isNaN(bVal)) {
-                        let holds = false;
-                        if (type === 'gt') holds = bVal > 0;
-                        if (type === 'ge') holds = bVal >= 0;
-                        if (type === 'lt') holds = bVal < 0;
-                        if (type === 'le') holds = bVal <= 0;
-                        return holds ? new Sym('true') : new Sym('false');
-                    }
-                }
-            } else {
-                // Symbolic 'a'. We can't determine direction.
-                // Return undefined or just the simplified form?
-                // Standard CAS might return piecewise or warning.
-                // Let's return strict form ax > -b (assuming positive?) No, dangerous.
-                return new Call('solve', [ineq, varNode]);
-            }
-        }
-
-        // 2. Polynomial / Rational Logic via Roots and Poles
-        // Zeros: Roots of P(x) = 0
-        // Poles: Roots of Q(x) = 0 where expr = P/Q
-        // Critical Points = Zeros U Poles
-
-        // Find Zeros
-        const zerosRes = this._solve(expr, varNode);
-        let zeros = [];
-        if (zerosRes instanceof Call && zerosRes.funcName === 'set') {
-            zeros = zerosRes.args;
-        } else if (zerosRes instanceof Expr && !(zerosRes instanceof Call && zerosRes.funcName === 'solve')) {
-            zeros = [zerosRes];
-        }
-
-        // Find Poles (Singularities)
-        let poles = [];
-        if (expr instanceof Div) {
-            const polesRes = this._solve(expr.right, varNode);
-            if (polesRes instanceof Call && polesRes.funcName === 'set') {
-                poles = polesRes.args;
-            } else if (polesRes instanceof Expr && !(polesRes instanceof Call && polesRes.funcName === 'solve')) {
-                poles = [polesRes];
-            }
-        }
-
-        // Collect all critical points with type
-        const criticalPoints = [];
-
-        for (const r of zeros) {
-            const val = r.evaluateNumeric();
-            if (!isNaN(val)) criticalPoints.push({ val: val, node: r, type: 'zero' });
-        }
-        for (const r of poles) {
-            const val = r.evaluateNumeric();
-            if (!isNaN(val)) criticalPoints.push({ val: val, node: r, type: 'pole' });
-        }
-
-        // Sort
-        criticalPoints.sort((a, b) => a.val - b.val);
-
-        // Deduplicate
-        const uniquePoints = [];
-        if (criticalPoints.length > 0) {
-            uniquePoints.push(criticalPoints[0]);
-            for(let i=1; i<criticalPoints.length; i++) {
-                const diff = Math.abs(criticalPoints[i].val - uniquePoints[uniquePoints.length-1].val);
-                if (diff < 1e-9) {
-                    // Duplicate/Collision
-                    // Pole overrides Zero
-                    if (criticalPoints[i].type === 'pole') {
-                        uniquePoints[uniquePoints.length-1] = criticalPoints[i];
-                    }
-                } else {
-                    uniquePoints.push(criticalPoints[i]);
-                }
-            }
-        }
-
-        if (uniquePoints.length === 0) {
-            // No roots (or only complex/unknown).
-            // Test one point (0 or any)
-            const testVal = expr.substitute(varNode, new Num(0)).evaluateNumeric();
-            if (isNaN(testVal)) return new Call('solve', [ineq, varNode]);
-
-            let holds = false;
-            if (type === 'gt') holds = testVal > 0;
-            if (type === 'ge') holds = testVal >= 0;
-            if (type === 'lt') holds = testVal < 0;
-            if (type === 'le') holds = testVal <= 0;
-
-            return holds ? new Sym('true') : new Sym('false'); // Or Empty set / All reals
-        }
-
-        // Handle case where we have points but they are all poles/zeros.
-        // If the only points are poles, we still test intervals.
-        // But what if `poles` are not found because `expr` structure isn't `Div`?
-        // Fallback check for Mul(..., Pow(..., -1))
-        if (poles.length === 0 && expr instanceof Mul) {
-             const findDenom = (node) => {
-                 if (node instanceof Pow && node.right instanceof Num && node.right.value < 0) return node.left;
-                 if (node instanceof Mul) {
-                     const d1 = findDenom(node.left);
-                     if (d1) return d1;
-                     return findDenom(node.right);
-                 }
-                 return null;
-             };
-             const den = findDenom(expr);
-             if (den) {
-                 const polesRes = this._solve(den, varNode);
-                 let morePoles = [];
-                 if (polesRes instanceof Call && polesRes.funcName === 'set') {
-                     morePoles = polesRes.args;
-                 } else if (polesRes instanceof Expr && !(polesRes instanceof Call && polesRes.funcName === 'solve')) {
-                     morePoles = [polesRes];
-                 }
-                 for (const r of morePoles) {
-                     const val = r.evaluateNumeric();
-                     if (!isNaN(val)) {
-                         // Add to uniquePoints and re-sort
-                         uniquePoints.push({ val: val, node: r, type: 'pole' });
-                     }
-                 }
-                 uniquePoints.sort((a, b) => a.val - b.val);
-                 // Dedupe again? (Simplified logic: assume adding poles didn't duplicate zeros exactly, or sort handles order)
-             }
-        }
-
-        // Test Intervals
-        // Intervals: (-inf, p0), (p0, p1), ..., (pn, inf)
-        const intervals = [];
-        // (-inf, p0)
-        intervals.push({
-            check: uniquePoints[0].val - 1,
-            cond: (x) => new Lt(x, uniquePoints[0].node)
-        });
-
-        for(let i=0; i<uniquePoints.length - 1; i++) {
-            const mid = (uniquePoints[i].val + uniquePoints[i+1].val) / 2;
-            intervals.push({
-                check: mid,
-                cond: (x) => new And(new Gt(x, uniquePoints[i].node), new Lt(x, uniquePoints[i+1].node))
-            });
-        }
-
-        // (pn, inf)
-        intervals.push({
-            check: uniquePoints[uniquePoints.length - 1].val + 1,
-            cond: (x) => new Gt(x, uniquePoints[uniquePoints.length - 1].node)
-        });
-
-        // Collect valid intervals
-        const validConds = [];
-        for(const interval of intervals) {
-            const testVal = expr.substitute(varNode, new Num(interval.check)).evaluateNumeric();
-            let holds = false;
-            if (type === 'gt') holds = testVal > 0;
-            if (type === 'ge') holds = testVal >= 0;
-            if (type === 'lt') holds = testVal < 0;
-            if (type === 'le') holds = testVal <= 0;
-
-            if (holds) {
-                validConds.push(interval.cond(varNode));
-            }
-        }
-
-        // Handle Equality at roots for >= and <=
-        if (type === 'ge' || type === 'le') {
-            // Only include points that are 'zero', not 'pole'
-            for(const pt of uniquePoints) {
-                if (pt.type === 'zero') {
-                    validConds.push(new Eq(varNode, pt.node));
-                }
-            }
-        }
-
-        if (validConds.length === 0) return new Sym('false'); // No solution
-        if (validConds.length === 1) return validConds[0];
-
-        // Combine with OR
-        let res = validConds[0];
-        for(let i=1; i<validConds.length; i++) {
-            res = new Or(res, validConds[i]);
-        }
-        return res;
-    }
-
     _solveSystem(eqs, vars) {
         const n = eqs.elements.length;
         const m = vars.elements.length;
@@ -5153,127 +4928,6 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         return new Call("solve", [eq, varNode]);
     }
 
-    _solveInequality(ineq, varNode) {
-        // Normalize to expr > 0 or < 0
-        const expr = new Sub(ineq.left, ineq.right).simplify();
-
-        // Find roots of expr = 0
-        const rootsRes = this._solve(expr, varNode);
-
-        // Check if solver failed (returned symbolic call)
-        if (rootsRes instanceof Call && rootsRes.funcName === 'solve') {
-            return new Call('solve', [ineq, varNode]);
-        }
-
-        let roots = [];
-        if (rootsRes instanceof Call && rootsRes.funcName === 'set') {
-            roots = rootsRes.args;
-        } else if (rootsRes instanceof Expr) {
-            roots = [rootsRes];
-        }
-
-        // Filter roots to real numeric values
-        const realRoots = [];
-        for(const r of roots) {
-            const val = r.evaluateNumeric();
-            if (!isNaN(val)) realRoots.push({ val: val, node: r });
-        }
-
-        if (realRoots.length === 0 && roots.length > 0) {
-             // Symbolic roots only and we can't evaluate? Cannot reliably solve inequality.
-             // Return symbolic call
-             return new Call('solve', [ineq, varNode]);
-        }
-
-        // Sort
-        realRoots.sort((a, b) => a.val - b.val);
-
-        // Test Intervals
-        const intervals = [];
-        const points = [];
-
-        if (realRoots.length === 0) {
-            points.push({ val: 0, desc: 'all' }); // Test 0
-        } else {
-            // Pick safe test points avoiding roots
-            points.push({ val: realRoots[0].val - 1, desc: '(-inf, r0)' });
-            for(let i=0; i<realRoots.length - 1; i++) {
-                points.push({ val: (realRoots[i].val + realRoots[i+1].val)/2, desc: 'mid' });
-            }
-            points.push({ val: realRoots[realRoots.length-1].val + 1, desc: '(inf)' });
-        }
-
-        const validIntervals = [];
-
-        const check = (val) => {
-            try {
-                const res = expr.substitute(varNode, new Num(val)).evaluateNumeric();
-                if (isNaN(res)) return false; // Undefined
-                if (ineq instanceof Lt) return res < 0;
-                if (ineq instanceof Gt) return res > 0;
-                if (ineq instanceof Le) return res <= 0;
-                if (ineq instanceof Ge) return res >= 0;
-            } catch(e) {}
-            return false;
-        };
-
-        // Helper to check boundaries for non-strict
-        // If Le or Ge, we must include roots where expr=0.
-        // Roots are where expr=0.
-        // My logic below constructs intervals ( ) and joins them.
-        // If it's non-strict, we should output [ ] intervals.
-
-        for(let i=0; i<points.length; i++) {
-            if (check(points[i].val)) {
-                // Determine interval bounds
-                // i corresponds to interval before roots[i] (if i < roots.length)
-                // Actually my points array logic:
-                // points[0] is before roots[0]
-                // points[1] is between roots[0] and roots[1]
-                // ...
-                // points[k] is after roots[k-1] (last root)
-
-                const strict = (ineq instanceof Lt || ineq instanceof Gt);
-
-                if (realRoots.length === 0) {
-                    // All reals satisfied
-                    // Return "true"? Or (-inf, inf)
-                    // Let's return logic: varNode > -inf and varNode < inf?
-                    // Just 1 (true)
-                    return new Num(1);
-                }
-
-                let lower, upper;
-                let cond;
-
-                if (i === 0) {
-                    // x < root[0]
-                    // Strict or non-strict depends on operator
-                    cond = strict ? new Lt(varNode, realRoots[0].node) : new Le(varNode, realRoots[0].node);
-                } else if (i === points.length - 1) {
-                    // x > root[n-1]
-                    cond = strict ? new Gt(varNode, realRoots[i-1].node) : new Ge(varNode, realRoots[i-1].node);
-                } else {
-                    // root[i-1] < x < root[i]
-                    const c1 = strict ? new Gt(varNode, realRoots[i-1].node) : new Ge(varNode, realRoots[i-1].node);
-                    const c2 = strict ? new Lt(varNode, realRoots[i].node) : new Le(varNode, realRoots[i].node);
-                    cond = new And(c1, c2);
-                }
-                validIntervals.push(cond);
-            }
-        }
-
-        if (validIntervals.length === 0) return new Num(0); // False
-        if (validIntervals.length === 1) return validIntervals[0];
-
-        // Join with Or
-        let res = validIntervals[0];
-        for(let k=1; k<validIntervals.length; k++) {
-            res = new Or(res, validIntervals[k]);
-        }
-        return res;
-    }
-
     _taylor(expr, varNode, point, order) {
         // Check for singularity at point first?
         // Naive Taylor expansion: sum f^(n)(a)/n! * (x-a)^n
@@ -6144,26 +5798,78 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         }
         if (depth > 5) return new Call("limit", [expr, varNode, point]);
 
+        // Handle a^f(x) exponential limits
+        if (expr instanceof Pow && !(expr.left instanceof Num && expr.left.value === 0)) {
+            const limBase = this._limit(expr.left, varNode, point, depth + 1, dir);
+            const limExp = this._limit(expr.right, varNode, point, depth + 1, dir);
+            const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+            const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
+            const isZero = (n) => n instanceof Num && n.value === 0;
+
+            // a > 1, exponent -> -Infinity => 0
+            const baseVal = limBase.evaluateNumeric();
+            if (!isNaN(baseVal) && baseVal > 1 && isNegInf(limExp)) return new Num(0);
+            // a > 1, exponent -> Infinity => Infinity
+            if (!isNaN(baseVal) && baseVal > 1 && isInf(limExp)) return new Sym('Infinity');
+            // a > 1, exponent -> some finite value => a^val
+            if (!isNaN(baseVal) && baseVal > 0 && limExp instanceof Num) {
+                return new Num(Math.pow(baseVal, limExp.value));
+            }
+            // 0 < a < 1, exponent -> Infinity => 0
+            if (!isNaN(baseVal) && baseVal > 0 && baseVal < 1 && isInf(limExp)) return new Num(0);
+            // 0 < a < 1, exponent -> -Infinity => Infinity
+            if (!isNaN(baseVal) && baseVal > 0 && baseVal < 1 && isNegInf(limExp)) return new Sym('Infinity');
+        }
+
+        // Handle Call nodes: e^f(x), exp(f(x)) etc.
+        if (expr instanceof Call && (expr.funcName === 'exp') && expr.args.length === 1) {
+            const limArg = this._limit(expr.args[0], varNode, point, depth + 1, dir);
+            const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+            const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
+            if (isInf(limArg)) return new Sym('Infinity');
+            if (isNegInf(limArg)) return new Num(0);
+        }
+
+        // Handle log/ln limits: ln(0+) -> -Infinity
+        if (expr instanceof Call && (expr.funcName === 'ln' || expr.funcName === 'log') && expr.args.length === 1) {
+            const limArg = this._limit(expr.args[0], varNode, point, depth + 1, dir);
+            const isZero = (n) => n instanceof Num && n.value === 0;
+            const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+            if (isZero(limArg)) return new Mul(new Num(-1), new Sym('Infinity'));
+            if (isInf(limArg)) return new Sym('Infinity');
+        }
+
         // Check for Indeterminate form NaN (from 0*Inf)
         // If expr is Mul, convert to Div
         if (expr instanceof Mul) {
             const val = expr.substitute(varNode, point).simplify();
             if (val instanceof Sym && val.name === 'NaN') {
-                // 0 * Inf -> Transform to Div
-                // f * g -> f / (1/g) or g / (1/f)
-                // Prefer keeping log or simpler term in numerator
-                // Heuristic: If one is exp or trig, keep in num?
-                // Let's try 1st / (1/2nd)
-                // If right is 1/x (Div(1,x)), 1/right is x.
-                // 1/ (1/x) -> x.
-                // if expr.right is Div(1, x).
-                // den = new Div(1, Div(1, x)) -> simplifies to x.
-                // so newExpr = num / den = x / x.
+                // 0 * Inf -> Transform to Div for L'Hopital
+                // Try both: f/(1/g) and g/(1/f), pick the one that becomes a Div
+                const num1 = expr.left;
+                const den1 = new Div(new Num(1), expr.right).simplify();
+                const newExpr1 = new Div(num1, den1).simplify();
 
-                const num = expr.left;
-                const den = new Div(new Num(1), expr.right).simplify();
-                const newExpr = new Div(num, den).simplify(); // Simplify here!
-                return this._limit(newExpr, varNode, point, depth + 1, dir);
+                const num2 = expr.right;
+                const den2 = new Div(new Num(1), expr.left).simplify();
+                const newExpr2 = new Div(num2, den2).simplify();
+
+                // Pick whichever is a Div (not a Mul)
+                if (newExpr1 instanceof Div) return this._limit(newExpr1, varNode, point, depth + 1, dir);
+                if (newExpr2 instanceof Div) return this._limit(newExpr2, varNode, point, depth + 1, dir);
+
+                // If neither became a Div, force a Div form
+                // Rewrite x * f(x) as x / (1/f(x)) where 1/f(x) is computed symbolically
+                if (expr.right instanceof Pow && expr.right.right instanceof Mul && expr.right.right.left instanceof Num && expr.right.right.left.value === -1) {
+                    // x * e^(-g(x)) -> x / e^(g(x))
+                    const base = expr.right.left;
+                    const posExp = expr.right.right.right;
+                    const forcedDen = new Pow(base, posExp).simplify();
+                    const forcedExpr = new Div(expr.left, forcedDen).simplify();
+                    return this._limit(forcedExpr, varNode, point, depth + 1, dir);
+                }
+
+                return new Call('limit', [expr, varNode, point]);
             }
         }
 
@@ -15064,40 +14770,6 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         }
     }
 
-    _lineIntegral(field, vars, path, t, a, b) {
-        if (!(field instanceof Vec) || !(path instanceof Vec) || !(vars instanceof Vec)) throw new Error("field, path and vars must be vectors");
-        if (field.elements.length !== path.elements.length || field.elements.length !== vars.elements.length) throw new Error("Dimension mismatch");
-
-        // F(r(t)) . r'(t)
-        // 1. Substitute vars with path components in field
-        let F_r = new Vec(field.elements.map(comp => {
-            let res = comp;
-            for(let i=0; i<vars.elements.length; i++) {
-                res = res.substitute(vars.elements[i], path.elements[i]);
-            }
-            return res.simplify();
-        }));
-
-        // 2. Differentiate path wrt t
-        const dr_dt = new Vec(path.elements.map(comp => comp.diff(t).simplify()));
-
-        // 3. Dot product
-        let dot = new Num(0);
-        for(let i=0; i<field.elements.length; i++) {
-            dot = new Add(dot, new Mul(F_r.elements[i], dr_dt.elements[i]));
-        }
-        dot = dot.simplify();
-
-        // Try to simplify trig identities (e.g. sin^2 + cos^2)
-        dot = this._linearizeTrig(dot).simplify();
-
-        // 4. Integrate
-        if (a && b) {
-            return this.evaluate(new Call('integrate', [dot, t, a, b]));
-        }
-        return this.evaluate(new Call('integrate', [dot, t]));
-    }
-
     _eulerLagrange(L, q, dq, t) {
         // dL/dq - d/dt(dL/dq') = 0
         // returns expression: dL/dq - d/dt(dL/dq')
@@ -15130,36 +14802,6 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         const AB = new Mul(A, B).simplify();
         const BA = new Mul(B, A).simplify();
         return new Add(AB, BA).simplify();
-    }
-
-    _entropy(list) {
-        if (!(list instanceof Vec)) throw new Error("entropy requires a list");
-        // Shannon Entropy H(X) = -sum p(x) log2(p(x))
-        let sum = new Num(0);
-        for(const p of list.elements) {
-            // p * log2(p)
-            // if p=0, term is 0.
-            if (p instanceof Num && p.value === 0) continue;
-            const term = new Mul(p, new Call('log2', [p]));
-            sum = new Sub(sum, term);
-        }
-        return sum.simplify();
-    }
-
-    _klDivergence(P, Q) {
-        if (!(P instanceof Vec) || !(Q instanceof Vec)) throw new Error("Arguments must be lists");
-        if (P.elements.length !== Q.elements.length) throw new Error("Lists must be equal length");
-        // sum P(i) log2(P(i)/Q(i))
-        let sum = new Num(0);
-        for(let i=0; i<P.elements.length; i++) {
-            const p = P.elements[i];
-            const q = Q.elements[i];
-            if (p instanceof Num && p.value === 0) continue;
-            // log2(p/q)
-            const term = new Mul(p, new Call('log2', [new Div(p, q)]));
-            sum = new Add(sum, term);
-        }
-        return sum.simplify();
     }
 
     _blackScholes(S, K, T, r, sigma, type) {
@@ -15471,51 +15113,6 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         let ser = p[0];
         for (let j = 1; j < p.length; j++) ser += p[j] / ++y;
         return -tmp + Math.log(2.5066282746310005 * ser / x);
-    }
-
-    _betainc(x, a, b) {
-        if (x === 0) return 0;
-        if (x === 1) return 1;
-        const bt = Math.exp(this._gammaln(a + b) - this._gammaln(a) - this._gammaln(b) + a * Math.log(x) + b * Math.log(1 - x));
-        if (x < (a + 1) / (a + b + 2)) {
-             return bt * this._betacf(x, a, b) / a;
-        } else {
-             return 1 - bt * this._betacf(1 - x, b, a) / b;
-        }
-    }
-
-    _betacf(x, a, b) {
-        const MAXIT = 100;
-        const EPS = 3.0e-7;
-        const FPMIN = 1.0e-30;
-        let qab = a + b;
-        let qap = a + 1.0;
-        let qam = a - 1.0;
-        let c = 1.0;
-        let d = 1.0 - qab * x / qap;
-        if (Math.abs(d) < FPMIN) d = FPMIN;
-        d = 1.0 / d;
-        let h = d;
-        for (let m = 1; m <= MAXIT; m++) {
-            let m2 = 2 * m;
-            let aa = m * (b - m) * x / ((qam + m2) * (a + m2));
-            d = 1.0 + aa * d;
-            if (Math.abs(d) < FPMIN) d = FPMIN;
-            c = 1.0 + aa / c;
-            if (Math.abs(c) < FPMIN) c = FPMIN;
-            d = 1.0 / d;
-            h *= d * c;
-            aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
-            d = 1.0 + aa * d;
-            if (Math.abs(d) < FPMIN) d = FPMIN;
-            c = 1.0 + aa / c;
-            if (Math.abs(c) < FPMIN) c = FPMIN;
-            d = 1.0 / d;
-            let del = d * c;
-            h *= del;
-            if (Math.abs(del - 1.0) < EPS) break;
-        }
-        return h;
     }
 
     _xgcd(a, b) {

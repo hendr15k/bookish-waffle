@@ -965,6 +965,14 @@ class Mul extends BinaryOp {
             return new Pow(r, new Num(l.right.value + 1)).simplify();
         }
 
+        // x^n * x^m -> x^(n+m)
+        if (l instanceof Pow && r instanceof Pow && l.left.toString() === r.left.toString() && l.right instanceof Num && r.right instanceof Num) {
+            const sum = l.right.value + r.right.value;
+            if (sum === 0) return new Num(1);
+            if (sum === 1) return l.left;
+            return new Pow(l.left, new Num(sum)).simplify();
+        }
+
         // exp(a) * exp(b) -> exp(a+b)
         if (l instanceof Call && l.funcName === 'exp' && r instanceof Call && r.funcName === 'exp') {
             return new Call('exp', [new Add(l.args[0], r.args[0]).simplify()]).simplify();
@@ -1725,6 +1733,28 @@ class Pow extends BinaryOp {
         const checkInf = (n) => isInf(n) ? 1 : (isNegInf(n) ? -1 : 0);
 
         const infL = checkInf(l);
+        const infR = checkInf(r);
+
+        // Exponent is Infinity or -Infinity
+        if (infR !== 0 && l instanceof Num) {
+            if (l.value === 1) return new Num(1); // 1^inf = 1
+            if (l.value === 0) return new Num(0); // 0^inf = 0
+            if (l.value > 1) {
+                return infR === 1 ? new Sym('Infinity') : new Num(0); // a>1: a^inf=inf, a^-inf=0
+            }
+            if (l.value > 0 && l.value < 1) {
+                return infR === 1 ? new Num(0) : new Sym('Infinity'); // 0<a<1: a^inf=0, a^-inf=inf
+            }
+            if (l.value < 0) {
+                if (infR === 1) return new Sym('NaN'); // negative^inf undefined
+                return new Num(0); // negative^-inf = 0
+            }
+        }
+        // e^Infinity, e^(-Infinity)
+        if (infR !== 0 && l instanceof Sym && l.name === 'e') {
+            return infR === 1 ? new Sym('Infinity') : new Num(0);
+        }
+
         if (infL !== 0) {
             if (r instanceof Num) {
                 if (r.value === 0) return new Sym("NaN"); // Inf^0 indeterminate
@@ -1739,6 +1769,24 @@ class Pow extends BinaryOp {
                 // r < 0: 1/Inf -> 0
                 return new Num(0);
             }
+        }
+
+        // e^ln(x) -> x (exp-log cancellation)
+        if (l instanceof Sym && l.name === 'e' && r instanceof Call && r.funcName === 'ln') {
+            return r.args[0];
+        }
+        // a^log_a(x) -> x (base-log cancellation)
+        if (l instanceof Num && l.value === 10 && r instanceof Call && r.funcName === 'log') {
+            return r.args[0];
+        }
+        // 2^log2(x) -> x
+        if (l instanceof Num && l.value === 2 && r instanceof Call && r.funcName === 'log2') {
+            return r.args[0];
+        }
+
+        // (sqrt(x))^2 -> x
+        if (r instanceof Num && r.value === 2 && l instanceof Call && l.funcName === 'sqrt') {
+            return l.args[0];
         }
 
         // Simplify (-x)^even -> x^even
@@ -2070,17 +2118,14 @@ class Call extends Expr {
             if (arg instanceof Call && arg.funcName === 'sec') return arg.args[0];
             const val = arg.evaluateNumeric();
             if (!isNaN(val)) {
-                if (Math.abs(val) < 1e-9) return new Num(0);
                 if (Math.abs(val - 1) < 1e-9) return new Num(0);
                 if (Math.abs(val + 1) < 1e-9) return new Sym('pi');
                 if (Math.abs(val - 2) < 1e-9) return new Div(new Sym('pi'), new Num(3)).simplify();
                 if (Math.abs(val + 2) < 1e-9) return new Div(new Mul(new Num(2), new Sym('pi')), new Num(3)).simplify();
-                if (Math.abs(val - 0.5) < 1e-9) return new Div(new Sym('pi'), new Num(3)).simplify();
-                if (Math.abs(val + 0.5) < 1e-9) return new Div(new Mul(new Num(2), new Sym('pi')), new Num(3)).simplify();
-                if (Math.abs(val - 1/Math.sqrt(2)) < 1e-9) return new Div(new Sym('pi'), new Num(4)).simplify();
-                if (Math.abs(val + 1/Math.sqrt(2)) < 1e-9) return new Div(new Mul(new Num(7), new Sym('pi')), new Num(4)).simplify();
-                if (Math.abs(val - 1/Math.sqrt(3)) < 1e-9) return new Div(new Sym('pi'), new Num(6)).simplify();
-                if (Math.abs(val + 1/Math.sqrt(3)) < 1e-9) return new Div(new Mul(new Num(5), new Sym('pi')), new Num(6)).simplify();
+                if (Math.abs(val - Math.sqrt(2)) < 1e-9) return new Div(new Sym('pi'), new Num(4)).simplify();
+                if (Math.abs(val + Math.sqrt(2)) < 1e-9) return new Div(new Mul(new Num(3), new Sym('pi')), new Num(4)).simplify();
+                if (Math.abs(val - 2/Math.sqrt(3)) < 1e-9) return new Div(new Sym('pi'), new Num(6)).simplify();
+                if (Math.abs(val + 2/Math.sqrt(3)) < 1e-9) return new Div(new Mul(new Num(5), new Sym('pi')), new Num(6)).simplify();
             }
         }
         if (this.funcName === 'acsc') {
@@ -2089,15 +2134,14 @@ class Call extends Expr {
             if (arg instanceof Call && arg.funcName === 'csc') return arg.args[0];
             const val = arg.evaluateNumeric();
             if (!isNaN(val)) {
-                if (Math.abs(val) < 1e-9) return new Sym('pi');
                 if (Math.abs(val - 1) < 1e-9) return new Div(new Sym('pi'), new Num(2)).simplify();
                 if (Math.abs(val + 1) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(2)).simplify();
-                if (Math.abs(val - 0.5) < 1e-9) return new Div(new Sym('pi'), new Num(6)).simplify();
-                if (Math.abs(val + 0.5) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(6)).simplify();
-                if (Math.abs(val - 1/Math.sqrt(2)) < 1e-9) return new Div(new Sym('pi'), new Num(4)).simplify();
-                if (Math.abs(val + 1/Math.sqrt(2)) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(4)).simplify();
-                if (Math.abs(val - 1/Math.sqrt(3)) < 1e-9) return new Div(new Sym('pi'), new Num(3)).simplify();
-                if (Math.abs(val + 1/Math.sqrt(3)) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(3)).simplify();
+                if (Math.abs(val - 2) < 1e-9) return new Div(new Sym('pi'), new Num(6)).simplify();
+                if (Math.abs(val + 2) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(6)).simplify();
+                if (Math.abs(val - Math.sqrt(2)) < 1e-9) return new Div(new Sym('pi'), new Num(4)).simplify();
+                if (Math.abs(val + Math.sqrt(2)) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(4)).simplify();
+                if (Math.abs(val - 2/Math.sqrt(3)) < 1e-9) return new Div(new Sym('pi'), new Num(3)).simplify();
+                if (Math.abs(val + 2/Math.sqrt(3)) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(3)).simplify();
             }
         }
         if (this.funcName === 'acot') {
@@ -2159,6 +2203,12 @@ class Call extends Expr {
         if (this.funcName === 'tanh') {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 0) return new Num(0);
+        }
+        if (this.funcName === 'cbrt') {
+            const arg = simpleArgs[0];
+            if (arg instanceof Num && arg.value === 0) return new Num(0);
+            const val = arg.evaluateNumeric();
+            if (!isNaN(val)) return new Num(Math.cbrt(val));
         }
         if (this.funcName === 'sec') {
             const arg = simpleArgs[0];
@@ -2298,6 +2348,8 @@ class Call extends Expr {
 
         if (this.funcName === 'erf') {
             const arg = simpleArgs[0];
+            // Check for exact 0 BEFORE general Num handler (math_erf has FP error at 0)
+            if (arg instanceof Num && arg.value === 0) return new Num(0);
             if (arg instanceof Num) {
                 return new Num(math_erf(arg.value));
             }
@@ -2305,14 +2357,12 @@ class Call extends Expr {
                 // erf(-x) = -erf(x)
                 return new Mul(new Num(-1), new Call('erf', [new Mul(new Num(-arg.left.value), arg.right).simplify()])).simplify();
             }
-            if (arg instanceof Num && arg.value === 0) return new Num(0);
         }
 
         if (this.funcName === 'erfc') {
             const arg = simpleArgs[0];
+            if (arg instanceof Num && arg.value === 0) return new Num(1);
             if (arg instanceof Num) {
-                // erfc(0) = 1
-                if (arg.value === 0) return new Num(1);
                 return new Num(1 - math_erf(arg.value));
             }
             // erfc(-x) = 2 - erfc(x)
