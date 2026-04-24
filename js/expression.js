@@ -2118,17 +2118,14 @@ class Call extends Expr {
             if (arg instanceof Call && arg.funcName === 'sec') return arg.args[0];
             const val = arg.evaluateNumeric();
             if (!isNaN(val)) {
-                if (Math.abs(val) < 1e-9) return new Num(0);
                 if (Math.abs(val - 1) < 1e-9) return new Num(0);
                 if (Math.abs(val + 1) < 1e-9) return new Sym('pi');
                 if (Math.abs(val - 2) < 1e-9) return new Div(new Sym('pi'), new Num(3)).simplify();
                 if (Math.abs(val + 2) < 1e-9) return new Div(new Mul(new Num(2), new Sym('pi')), new Num(3)).simplify();
-                if (Math.abs(val - 0.5) < 1e-9) return new Div(new Sym('pi'), new Num(3)).simplify();
-                if (Math.abs(val + 0.5) < 1e-9) return new Div(new Mul(new Num(2), new Sym('pi')), new Num(3)).simplify();
-                if (Math.abs(val - 1/Math.sqrt(2)) < 1e-9) return new Div(new Sym('pi'), new Num(4)).simplify();
-                if (Math.abs(val + 1/Math.sqrt(2)) < 1e-9) return new Div(new Mul(new Num(7), new Sym('pi')), new Num(4)).simplify();
-                if (Math.abs(val - 1/Math.sqrt(3)) < 1e-9) return new Div(new Sym('pi'), new Num(6)).simplify();
-                if (Math.abs(val + 1/Math.sqrt(3)) < 1e-9) return new Div(new Mul(new Num(5), new Sym('pi')), new Num(6)).simplify();
+                if (Math.abs(val - Math.sqrt(2)) < 1e-9) return new Div(new Sym('pi'), new Num(4)).simplify();
+                if (Math.abs(val + Math.sqrt(2)) < 1e-9) return new Div(new Mul(new Num(3), new Sym('pi')), new Num(4)).simplify();
+                if (Math.abs(val - 2/Math.sqrt(3)) < 1e-9) return new Div(new Sym('pi'), new Num(6)).simplify();
+                if (Math.abs(val + 2/Math.sqrt(3)) < 1e-9) return new Div(new Mul(new Num(5), new Sym('pi')), new Num(6)).simplify();
             }
         }
         if (this.funcName === 'acsc') {
@@ -2137,15 +2134,14 @@ class Call extends Expr {
             if (arg instanceof Call && arg.funcName === 'csc') return arg.args[0];
             const val = arg.evaluateNumeric();
             if (!isNaN(val)) {
-                if (Math.abs(val) < 1e-9) return new Sym('pi');
                 if (Math.abs(val - 1) < 1e-9) return new Div(new Sym('pi'), new Num(2)).simplify();
                 if (Math.abs(val + 1) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(2)).simplify();
-                if (Math.abs(val - 0.5) < 1e-9) return new Div(new Sym('pi'), new Num(6)).simplify();
-                if (Math.abs(val + 0.5) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(6)).simplify();
-                if (Math.abs(val - 1/Math.sqrt(2)) < 1e-9) return new Div(new Sym('pi'), new Num(4)).simplify();
-                if (Math.abs(val + 1/Math.sqrt(2)) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(4)).simplify();
-                if (Math.abs(val - 1/Math.sqrt(3)) < 1e-9) return new Div(new Sym('pi'), new Num(3)).simplify();
-                if (Math.abs(val + 1/Math.sqrt(3)) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(3)).simplify();
+                if (Math.abs(val - 2) < 1e-9) return new Div(new Sym('pi'), new Num(6)).simplify();
+                if (Math.abs(val + 2) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(6)).simplify();
+                if (Math.abs(val - Math.sqrt(2)) < 1e-9) return new Div(new Sym('pi'), new Num(4)).simplify();
+                if (Math.abs(val + Math.sqrt(2)) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(4)).simplify();
+                if (Math.abs(val - 2/Math.sqrt(3)) < 1e-9) return new Div(new Sym('pi'), new Num(3)).simplify();
+                if (Math.abs(val + 2/Math.sqrt(3)) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(3)).simplify();
             }
         }
         if (this.funcName === 'acot') {
@@ -2352,6 +2348,8 @@ class Call extends Expr {
 
         if (this.funcName === 'erf') {
             const arg = simpleArgs[0];
+            // Check for exact 0 BEFORE general Num handler (math_erf has FP error at 0)
+            if (arg instanceof Num && arg.value === 0) return new Num(0);
             if (arg instanceof Num) {
                 return new Num(math_erf(arg.value));
             }
@@ -2359,14 +2357,12 @@ class Call extends Expr {
                 // erf(-x) = -erf(x)
                 return new Mul(new Num(-1), new Call('erf', [new Mul(new Num(-arg.left.value), arg.right).simplify()])).simplify();
             }
-            if (arg instanceof Num && arg.value === 0) return new Num(0);
         }
 
         if (this.funcName === 'erfc') {
             const arg = simpleArgs[0];
+            if (arg instanceof Num && arg.value === 0) return new Num(1);
             if (arg instanceof Num) {
-                // erfc(0) = 1
-                if (arg.value === 0) return new Num(1);
                 return new Num(1 - math_erf(arg.value));
             }
             // erfc(-x) = 2 - erfc(x)
