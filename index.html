@@ -3031,10 +3031,13 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             // Hide all tool results to clean up state
             document.querySelectorAll('.tool-result').forEach(el => el.style.display = 'none');
 
-            if (isMobileMode) {
-                document.getElementById('app-grid').style.display = 'grid';
-                document.getElementById('app-search-container').style.display = 'block';
-            }
+            const appGrid = document.getElementById('app-grid');
+            const appSearch = document.getElementById('app-search-container');
+            const appCategories = document.getElementById('app-categories');
+
+            if (appGrid) appGrid.style.display = 'grid';
+            if (appSearch) appSearch.style.display = 'block';
+            if (appCategories) appCategories.style.display = 'flex';
         };
 
         window.saveSession = function() {
