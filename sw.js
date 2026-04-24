@@ -1,4 +1,4 @@
-const CACHE_NAME = 'web-cas-v1';
+const CACHE_NAME = 'web-cas-v2';
 const APP_SHELL = [
   './',
   './index.html',
