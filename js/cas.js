@@ -2016,6 +2016,11 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 return this._bs45(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]);
             }
 
+            if (node.funcName === 'odestats') {
+                if (node.args.length !== 1) throw new Error("odestats requires 1 argument (solution vector)");
+                return this._odeStats(args[0]);
+            }
+
             if (node.funcName === 'ode_table' || node.funcName === 'odetable') {
                 if (node.args.length !== 1) throw new Error("odetable requires 1 argument (solution vector)");
                 return this._odeTable(args[0]);
@@ -10734,6 +10739,60 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             }
         }
         return new Vec(elements);
+    }
+
+    _odeStats(sol) {
+        if (!(sol instanceof Vec)) throw new Error("odestats argument must be a solution vector");
+        const elements = sol.elements;
+        if (elements.length === 0) throw new Error("odestats: empty solution vector");
+
+        const lastRow = elements[elements.length - 1];
+        if (!(lastRow instanceof Vec) || lastRow.elements.length === 0)
+            throw new Error("odestats: no metadata found (solution may not be from an adaptive solver)");
+
+        const firstCol = lastRow.elements[0];
+        if (!(firstCol instanceof Sym) || firstCol.name !== '__meta__')
+            throw new Error("odestats: last row is not metadata (solution may not be from an adaptive solver)");
+
+        // __meta__ row: ["__meta__", steps, rejected, totalEvals, finalT, ...finalY]
+        const steps = lastRow.elements[1];
+        const rejected = lastRow.elements[2];
+        const evals = lastRow.elements[3];
+        const finalT = lastRow.elements[4];
+        const finalY = lastRow.elements.slice(5);
+
+        // Average step size
+        let hAvg = new Sym('N/A');
+        if (steps instanceof Num && finalT instanceof Num && steps.value > 0) {
+            hAvg = new Num(Math.abs(finalT.value) / steps.value);
+        }
+
+        // Accepted steps
+        let accepted = new Sym('N/A');
+        if (steps instanceof Num && rejected instanceof Num) {
+            accepted = new Num(steps.value - rejected.value);
+        }
+
+        // Return Vec of [label, value] rows
+        const rows = [
+            new Vec([new Sym('steps'), steps]),
+            new Vec([new Sym('accepted'), accepted]),
+            new Vec([new Sym('rejected'), rejected]),
+            new Vec([new Sym('fEvals'), evals]),
+            new Vec([new Sym('avgStep'), hAvg]),
+            new Vec([new Sym('finalT'), finalT])
+        ];
+
+        // Append finalY values with index labels
+        if (finalY.length === 1) {
+            rows.push(new Vec([new Sym('finalY'), finalY[0]]));
+        } else {
+            finalY.forEach((v, i) => {
+                rows.push(new Vec([new Sym(`y${i}`), v]));
+            });
+        }
+
+        return new Vec(rows);
     }
 
     _fourier(expr, varNode, n, L) {

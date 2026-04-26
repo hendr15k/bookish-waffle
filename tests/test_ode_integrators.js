@@ -49,3 +49,28 @@ ok("bs45 damped oscillation", "bs45([y2, -0.2*y2 - y1], [y1, y2], t, [1, 0], 0, 
 ok("bs45 SIR model", "bs45([-beta*s*i, beta*s*i-gamma*i, gamma*i], [s, i, r], t, [0.99, 0.01, 0], 0, 10, 0.1, 1e-4, [])");
 ok("odetable works with bs45", "odetable(bs45(-0.5*y, y, t, 1, 0, 2, 0.1, 1e-6, []))");
 ok("odeplot works with bs45", "odeplot(bs45(-0.5*y, y, t, 1, 0, 2, 0.1, 1e-6, []))");
+
+// ── odestats tests ───────────────────────────────────────────────────────────
+const s1 = evalExpr("odestats(rk45(-0.5*y, y, t, 1, 0, 2, 0.1, 1e-6, []))");
+assert("odestats returns a vector", s1 instanceof sandbox.Vec);
+assert("odestats has steps field", s1.elements.some(r => r instanceof sandbox.Vec && r.elements[0] instanceof sandbox.Sym && r.elements[0].name === 'steps'));
+assert("odestats has accepted field", s1.elements.some(r => r instanceof sandbox.Vec && r.elements[0] instanceof sandbox.Sym && r.elements[0].name === 'accepted'));
+assert("odestats has rejected field", s1.elements.some(r => r instanceof sandbox.Vec && r.elements[0] instanceof sandbox.Sym && r.elements[0].name === 'rejected'));
+assert("odestats has fEvals field", s1.elements.some(r => r instanceof sandbox.Vec && r.elements[0] instanceof sandbox.Sym && r.elements[0].name === 'fEvals'));
+assert("odestats has avgStep field", s1.elements.some(r => r instanceof sandbox.Vec && r.elements[0] instanceof sandbox.Sym && r.elements[0].name === 'avgStep'));
+assert("odestats has finalT field", s1.elements.some(r => r instanceof sandbox.Vec && r.elements[0] instanceof sandbox.Sym && r.elements[0].name === 'finalT'));
+assert("odestats has finalY field", s1.elements.some(r => r instanceof sandbox.Vec && r.elements[0] instanceof sandbox.Sym && r.elements[0].name === 'finalY'));
+
+const s2 = evalExpr("odestats(bs45(-0.5*y, y, t, 1, 0, 2, 0.1, 1e-6, []))");
+assert("odestats works with bs45", s2 instanceof sandbox.Vec);
+assert("odestats bs45 has steps", s2.elements.some(r => r instanceof sandbox.Vec && r.elements[0] instanceof sandbox.Sym && r.elements[0].name === 'steps'));
+
+const s3 = evalExpr("odestats(bs45([y2, -0.2*y2 - y1], [y1, y2], t, [1, 0], 0, 10, 0.1, 1e-6, []))");
+assert("odestats system returns y0/y1 labels", s3.elements.some(r => r instanceof sandbox.Vec && r.elements[0] instanceof sandbox.Sym && r.elements[0].name === 'y0'));
+assert("odestats system returns y1 label", s3.elements.some(r => r instanceof sandbox.Vec && r.elements[0] instanceof sandbox.Sym && r.elements[0].name === 'y1'));
+
+ok("odestats works with rk45", "odestats(rk45(-0.5*y, y, t, 1, 0, 2, 0.1, 1e-6, []))");
+ok("odestats works with bs45", "odestats(bs45(-0.5*y, y, t, 1, 0, 2, 0.1, 1e-6, []))");
+ok("odestats works with system", "odestats(bs45([y2, -y1], [y1, y2], t, [0, 1], 0, 10, 0.1, 1e-6, []))");
+try { evalExpr("odestats([1,2,3])"); assert("odestats rejects non-solution", false); } catch(e) { console.log(`[PASS] odestats rejects non-solution: ${e.message}`); }
+
