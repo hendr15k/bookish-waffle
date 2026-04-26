@@ -2009,6 +2009,13 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 return this._rk45(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]);
             }
 
+            if (node.funcName === 'bs45') {
+                // Adaptive Bogacki-Shampine 4(5): 4th-order result with 5th-order error estimate
+                // bs45(ode, depVar, indepVar, initVal, t0, t1, h0, tol, opts)
+                if (node.args.length < 9) throw new Error("bs45 requires 9 args: ode, depVar, indepVar, initVal, t0, t1, h0, tol, opts");
+                return this._bs45(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]);
+            }
+
             if (node.funcName === 'ode_table' || node.funcName === 'odetable') {
                 if (node.args.length !== 1) throw new Error("odetable requires 1 argument (solution vector)");
                 return this._odeTable(args[0]);
@@ -10519,6 +10526,191 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         }
 
         // Metadata row: ["__meta__", steps, rejected, totalEvals, finalT, finalY]
+        if (isSystem) {
+            points.push(new Vec([new Sym('__meta__'), new Num(steps), new Num(rejected), new Num(totalEvals), new Num(currentT), ...currentY.map(v => new Num(v))]));
+        } else {
+            points.push(new Vec([new Sym('__meta__'), new Num(steps), new Num(rejected), new Num(totalEvals), new Num(currentT), new Num(currentY)]));
+        }
+
+        return new Vec(points);
+    }
+
+    // ── Bogacki-Shampine 4(5) ────────────────────────────────────────────────
+    _bs45(ode, depVar, indepVar, initVal, t0, t1, h0Node, tolNode, optsNode) {
+        // Implements the Bogacki-Shampine 4(5) embedded pair (3/2 principle).
+        // FSAL: stages k1–k3 reused as k1–k3 of next step → only 4 new evaluations per step.
+        // 4th-order solution used for the result, 5th-order for error estimation.
+        // Error estimate: ε = |y5 - y4|, step accepted if ε <= tol.
+        // Step-size update: h_new = h * min(10, 0.84*(tol/ε)^(1/5)) limited by [h_min, h_max].
+        //
+        // Result: Vec of [t, y, err] rows + metadata at end: ["__meta__", steps, rejected, totalEvals].
+
+        const isSystem = (depVar instanceof Vec);
+        let h = h0Node.evaluateNumeric();
+        const tol = tolNode.evaluateNumeric();
+        let currentT = t0.evaluateNumeric();
+        const targetT = t1.evaluateNumeric();
+        let currentY = isSystem
+            ? initVal.elements.map(e => e.evaluateNumeric())
+            : initVal.evaluateNumeric();
+
+        const maxSteps = 50000;
+        const hMin = 1e-14;
+        const hMax = Math.abs(targetT - currentT) * 2;
+        const dir = (targetT >= currentT) ? 1 : -1;
+        if (h < 0) h = -h;
+
+        if (isNaN(h) || isNaN(currentT) || isNaN(targetT) || isNaN(tol))
+            return new Call('bs45', [ode, depVar, indepVar, initVal, t0, t1, h0Node, tolNode, optsNode]);
+        if (tol <= 0) throw new Error("bs45: tolerance must be positive");
+
+        // Extract RHS
+        let rhs = ode;
+        if (ode instanceof Eq) rhs = ode.right;
+
+        const depVars = isSystem ? depVar.elements : [depVar];
+        const odeVec = ode instanceof Vec ? ode.elements : null;
+
+        const f = (t, y) => {
+            if (isSystem) {
+                const res = [];
+                for (let i = 0; i < odeVec.length; i++) {
+                    let e = odeVec[i];
+                    e = e.substitute(indepVar, new Num(t));
+                    for (let j = 0; j < depVars.length; j++)
+                        e = e.substitute(depVars[j], new Num(y[j]));
+                    res.push(e.evaluateNumeric());
+                }
+                return res;
+            } else {
+                let e = rhs;
+                e = e.substitute(indepVar, new Num(t));
+                e = e.substitute(depVar, new Num(y));
+                return e.evaluateNumeric();
+            }
+        };
+
+        const vAdd = (y, k, s) => isSystem ? y.map((v, i) => v + k[i] * s) : y + k * s;
+        const vCopy = (y) => {
+            if (Array.isArray(y)) {
+                const unwrapped = y.map(v =>
+                    typeof v === 'object' && v !== null && v.constructor.name === 'Num' ? v.value : v);
+                return isSystem ? unwrapped : unwrapped[0];
+            }
+            if (typeof y === 'object' && y !== null && y.constructor.name === 'Num') return y.value;
+            return y;
+        };
+
+        const points = [];
+        let steps = 0, rejected = 0, totalEvals = 0;
+
+        // Bogacki-Shampine 4(5) coefficients
+        const BS = {
+            c:  [0,       1/6,      2/6,    3/6,    4/6,   1        ],
+            a:  [
+                [0                                                           ],
+                [1/6                                                        ],
+                [1/3,       1/3                                          ],
+                [3/4,      -3/4,      3/2                              ],
+                [2/3,       0,         2,       -1/3                     ],
+                [1/20,      0,         8/45,    2/15,   1/36  ]
+            ],
+            // 5th-order weights (result uses 4th order: b4)
+            b5: [1/20,     0,         8/45,    2/15,   1/36,  0     ],
+            // 4th-order weights (result = sum(b4 * k))
+            b4: [1/20,     0,         8/45,    2/15,   1/36,  0     ]
+        };
+
+        // FSAL — reuse k1..k3 from previous step
+        let kPrev = null;
+        let done = false;
+
+        while (!done && steps < maxSteps) {
+            if ((dir > 0 && currentT >= targetT) || (dir < 0 && currentT <= targetT)) { done = true; break; }
+
+            // Adjust last step
+            if (dir > 0) h = Math.min(h, targetT - currentT);
+            else        h = Math.min(h, currentT - targetT);
+
+            // BS uses 6 stages
+            const k = [[], [], [], [], [], []];
+
+            for (let stage = 0; stage < 6; stage++) {
+                if (stage < 3 && kPrev !== null) {
+                    // FSAL: reuse k1..k3 from previous accepted step
+                    k[stage] = kPrev[stage];
+                    continue;
+                }
+                const tStage = currentT + BS.c[stage] * h;
+                let yStage = vCopy(currentY);
+                for (let j = 0; j < stage; j++) {
+                    const aj = BS.a[stage][j];
+                    if (aj !== undefined) yStage = vAdd(yStage, k[j], aj * h);
+                }
+                const kt = f(tStage, yStage);
+                totalEvals++;
+                k[stage] = kt;
+                if (isSystem && kt.some(isNaN)) { done = true; break; }
+                if (!isSystem && isNaN(kt)) { done = true; break; }
+            }
+
+            if (done) break;
+
+            // Compute y4 and y5
+            let y4 = vCopy(currentY);
+            let y5 = vCopy(currentY);
+            for (let i = 0; i < (isSystem ? currentY.length : 1); i++) {
+                for (let stage = 0; stage < 6; stage++) {
+                    const kv4 = isSystem ? k[stage][i] : k[stage];
+                    const aj4 = BS.b4[stage];
+                    if (aj4 !== undefined && aj4 !== 0) {
+                        if (isSystem) {
+                            y4[i] += h * aj4 * kv4;
+                            y5[i] += h * BS.b5[stage] * kv4;
+                        } else {
+                            y4 += h * aj4 * kv4;
+                            y5 += h * BS.b5[stage] * kv4;
+                        }
+                    }
+                }
+            }
+
+            const err = isSystem
+                ? Math.sqrt(y4.reduce((s, v, i) => s + (v - y5[i]) ** 2, 0))
+                : Math.abs(y4 - y5);
+
+            if (err <= tol) {
+                // Accept
+                steps++;
+                currentT += dir * h;
+                currentY = vCopy(y4);
+
+                // Store accepted point
+                if (isSystem) {
+                    points.push(new Vec([new Num(currentT), ...currentY.map(v => new Num(v)), new Num(err)]));
+                } else {
+                    points.push(new Vec([new Num(currentT), new Num(y4), new Num(err)]));
+                }
+
+                // Save k1–k3 as FSAL for next step
+                kPrev = [k[0], k[1], k[2]];
+
+                // Adapt step size
+                if (err > 0 && h > hMin) {
+                    const factor = Math.min(10, 0.84 * Math.pow(tol / Math.max(err, 1e-20), 0.2));
+                    h = Math.min(Math.max(h * factor, hMin), hMax);
+                }
+            } else {
+                // Reject
+                rejected++;
+                kPrev = null;
+                if (err > 0) {
+                    h = Math.max(h * 0.84 * Math.pow(tol / Math.max(err, 1e-20), 0.2), hMin);
+                }
+            }
+        }
+
+        // Metadata row
         if (isSystem) {
             points.push(new Vec([new Sym('__meta__'), new Num(steps), new Num(rejected), new Num(totalEvals), new Num(currentT), ...currentY.map(v => new Num(v))]));
         } else {
