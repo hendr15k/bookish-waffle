@@ -197,7 +197,7 @@ class Lexer {
                 if (cmd === 'to' || cmd === 'rightarrow') return new Token(TOKEN_IDENTIFIER, 'to');
 
                 if (cmd === 'pi') return new Token(TOKEN_IDENTIFIER, 'pi');
-                if (cmd === 'infty') return new Token(TOKEN_IDENTIFIER, 'infinity');
+                if (cmd === 'infty' || cmd === 'inf') return new Token(TOKEN_IDENTIFIER, 'infinity');
 
                 return new Token(TOKEN_IDENTIFIER, cmd);
             }
@@ -229,6 +229,9 @@ class Lexer {
                 if (lowerId === 'return') return new Token(TOKEN_RETURN, id);
                 if (lowerId === 'break') return new Token(TOKEN_BREAK, id);
                 if (lowerId === 'continue') return new Token(TOKEN_CONTINUE, id);
+
+                // Special constants
+                if (lowerId === 'inf' || lowerId === 'infinity') return new Token(TOKEN_IDENTIFIER, 'infinity');
 
                 return new Token(TOKEN_IDENTIFIER, id);
             }

@@ -5684,7 +5684,16 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         return new Call("integrate", [expr, varNode]);
     }
 
-    _integrateByParts(expr, varNode) {
+    _integrateByParts(expr, varNode, originalExpr = null) {
+        if (originalExpr === null) originalExpr = expr;
+        
+        // Prevent infinite recursion - limit depth
+        this._ibpDepth = (this._ibpDepth || 0) + 1;
+        if (this._ibpDepth > 8) {
+            this._ibpDepth = 0;
+            return new Call("integrate", [expr, varNode]);
+        }
+        
         let factors = [];
 
         if (expr instanceof Mul) {
@@ -5779,12 +5788,60 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             // For cyclic cases, it will expand indefinitely until max depth or stack overflow unless we catch it.
             // But for standard x*e^x, it terminates.
 
+            // Check for cyclic IBP: if vdu is proportional to expr, we have I = uv - k*I
+            // which solves to I = uv/(1+k)
+            let cyclicFactor = null;
+            const origExprStr = expr.toString();
+            const vduStr = vdu.toString();
+            if (vduStr === origExprStr) {
+                cyclicFactor = 1;
+            } else if (vduStr === new Mul(new Num(-1), expr).toString()) {
+                cyclicFactor = -1;
+            } else if (vdu.simplify() instanceof Mul && expr instanceof Mul) {
+                // Check if vdu = c * expr where c is a constant
+                const ratio = new Div(vdu, expr).simplify();
+                if (ratio instanceof Num) {
+                    cyclicFactor = ratio.value;
+                }
+            }
+
+            if (cyclicFactor !== null && Math.abs(cyclicFactor) > 0) {
+                // We have a cyclic IBP: I = uv - cyclicFactor * I
+                // Solving: I + cyclicFactor * I = uv => I * (1 + cyclicFactor) = uv => I = uv / (1 + cyclicFactor)
+                const denom = new Add(new Num(1), new Num(cyclicFactor)).simplify();
+                if (denom instanceof Num && denom.value !== 0) {
+                    return new Div(uv, denom).simplify();
+                }
+                // Special case: cyclicFactor = -1 gives denom = 0, but I = uv / 2
+                if (denom instanceof Num && denom.value === 0) {
+                    return new Div(uv, new Num(2)).simplify();
+                }
+            }
+
             const intVdu = this.evaluate(new Call("integrate", [vdu, varNode]));
 
             // Check if we made progress or just got back a Call('integrate')
             // If intVdu is exactly Call('integrate', [vdu]), then we failed to solve the sub-problem.
             // But we should still return the partial result `uv - int(vdu)` because the user might prefer that form
             // over the original integral.
+
+            // Check for cyclic case after evaluation too (intVdu might be proportional to expr)
+            // If intVdu is proportional to expr, we have I = uv - k*I, solving gives I = uv/(1+k)
+            if (!(intVdu instanceof Call && intVdu.funcName === 'integrate')) {
+                const intVduRatio = new Div(intVdu, expr).simplify();
+                if (intVduRatio instanceof Num && Math.abs(intVduRatio.value) > 0) {
+                    // I = uv - k*I where k = intVduRatio
+                    // Solving: I + k*I = uv => I = uv / (1 + k)
+                    const denom = new Add(new Num(1), intVduRatio).simplify();
+                    if (denom instanceof Num && Math.abs(denom.value) > 1e-9) {
+                        return new Div(uv, denom).simplify();
+                    }
+                    // If denom is 0 or near 0, k = -1, so I = uv/2
+                    if (denom instanceof Num && Math.abs(denom.value) < 1e-9) {
+                        return new Div(uv, new Num(2)).simplify();
+                    }
+                }
+            }
 
             return new Sub(uv, intVdu).simplify();
         }
@@ -9997,7 +10054,34 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         const num = expr.left;
         const den = expr.right;
 
-        // 2. Find roots of denominator
+        // 2. Check if denominator is a polynomial
+        const denPoly = this._getPolyCoeffs(den, varNode);
+        if (!denPoly) {
+            // Denominator is not a polynomial (e.g., e^x - 1)
+            // Partial fraction decomposition does not apply
+            return expr;
+        }
+
+        // 3. Check for irreducible quadratic (discriminant < 0)
+        // For quadratics with complex roots, don't decompose over ℂ
+        if (denPoly.maxDeg === 2) {
+            const a = denPoly.coeffs[2]; // coeff of x^2
+            const b = denPoly.coeffs[1]; // coeff of x (may be 0)
+            const c = denPoly.coeffs[0]; // constant term
+            // a*x^2 + b*x + c, handle missing b as 0
+            if (a instanceof Num && c instanceof Num) {
+                const aVal = a.value;
+                const bVal = b ? b.value : 0;
+                const cVal = c.value;
+                const disc = bVal * bVal - 4 * aVal * cVal;
+                if (disc < 0) {
+                    // Irreducible quadratic over ℝ - don't decompose
+                    return expr;
+                }
+            }
+        }
+
+        // 4. Find roots of denominator
         const rootsResult = this._solve(den, varNode);
         let uniqueRoots = [];
 
@@ -13287,15 +13371,19 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
     _integrateExpTrig(expr, varNode) {
         // exp(ax+c) * sin(bx+d) or cos
+        // Also handles Pow(e, ...) which is mathematically equivalent to exp(...)
+        const isExp = (node) => node instanceof Call && node.funcName === 'exp' ||
+                                  node instanceof Pow && node.left instanceof Sym && node.left.name === 'e';
+        
         if (expr instanceof Mul) {
             let expPart = null;
             let trigPart = null;
-            if (expr.left instanceof Call && expr.left.funcName === 'exp') { expPart = expr.left; trigPart = expr.right; }
-            else if (expr.right instanceof Call && expr.right.funcName === 'exp') { expPart = expr.right; trigPart = expr.left; }
+            if (isExp(expr.left)) { expPart = expr.left; trigPart = expr.right; }
+            else if (isExp(expr.right)) { expPart = expr.right; trigPart = expr.left; }
 
             if (expPart && trigPart instanceof Call && (trigPart.funcName === 'sin' || trigPart.funcName === 'cos')) {
                 // Check linearity of arguments
-                const expArg = expPart.args[0];
+                const expArg = expPart instanceof Call ? expPart.args[0] : expPart.right;
                 const trigArg = trigPart.args[0];
 
                 const p1 = this._getPolyCoeffs(expArg, varNode);
