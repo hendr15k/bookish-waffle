@@ -154,6 +154,29 @@ function toExpr(other) {
     throw new Error("Cannot convert to Expr: " + other);
 }
 
+function exprEquals(a, b) {
+    if (a.toString() === b.toString()) return true;
+    if (a instanceof Add && b instanceof Add) {
+        return (exprEquals(a.left, b.left) && exprEquals(a.right, b.right)) ||
+               (exprEquals(a.left, b.right) && exprEquals(a.right, b.left));
+    }
+    if (a instanceof Mul && b instanceof Mul) {
+        return (exprEquals(a.left, b.left) && exprEquals(a.right, b.right)) ||
+               (exprEquals(a.left, b.right) && exprEquals(a.right, b.left));
+    }
+    return false;
+}
+
+function extractCoeffBase(expr) {
+    if (expr instanceof Mul) {
+        if (expr.left instanceof Num) return { coeff: expr.left, base: expr.right };
+        if (expr.right instanceof Num) return { coeff: expr.right, base: expr.left };
+        if (exprEquals(expr.left, expr.right)) return { coeff: new Num(1), base: expr };
+        return null;
+    }
+    return { coeff: new Num(1), base: expr };
+}
+
 function getPolyCoeffs(expr, varNode) {
     if (!varNode) return null;
     const x = varNode;
@@ -501,7 +524,6 @@ class Add extends BinaryOp {
         const r = this.right.simplify();
 
         // Associativity: (A + B) + C -> A + (B + C)
-        // This helps combining terms like (1 - 2x) + 2x -> 1 + (-2x + 2x) -> 1
         if (l instanceof Add) {
             return new Add(l.left, new Add(l.right, r).simplify()).simplify();
         }
@@ -536,7 +558,7 @@ class Add extends BinaryOp {
             return new Num(sum);
         }
 
-        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf');
         const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
         const checkInf = (n) => isInf(n) ? 1 : (isNegInf(n) ? -1 : 0);
 
@@ -611,22 +633,66 @@ class Add extends BinaryOp {
         // a + Sub(b,a) -> b — e.g. x+(x²-x) -> x²
         if (r instanceof Sub && r.right.toString() === l.toString()) return r.left;
 
-        if (l.toString() === r.toString()) return new Mul(new Num(2), l);
+        if (exprEquals(l, r)) return new Mul(new Num(2), l);
 
-        // Like-term collection: 2x + 3x -> 5x, x + 2x -> 3x
-        const getCoeffBase = (expr) => {
-            if (expr instanceof Mul && expr.left instanceof Num) return { coeff: expr.left.value, base: expr.right };
-            if (expr instanceof Mul && expr.right instanceof Num) return { coeff: expr.right.value, base: expr.left };
-            return { coeff: 1, base: expr };
+        const lb = extractCoeffBase(l);
+        const rb = extractCoeffBase(r);
+        if (lb && rb && exprEquals(lb.base, rb.base)) {
+            const newCoeff = new Add(lb.coeff, rb.coeff).simplify();
+            if (newCoeff instanceof Num && newCoeff.value === 0) return new Num(0);
+            if (newCoeff instanceof Num && newCoeff.value === 1) return lb.base;
+            if (newCoeff instanceof Num && newCoeff.value === -1) return new Mul(new Num(-1), lb.base).simplify();
+            return new Mul(newCoeff, lb.base).simplify();
+        }
+
+        const getFactors = (expr) => {
+            if (expr instanceof Mul) return [...getFactors(expr.left), ...getFactors(expr.right)];
+            return [expr];
         };
-        const lb = getCoeffBase(l);
-        const rb = getCoeffBase(r);
-        if (lb.base.toString() === rb.base.toString()) {
-            const newCoeff = lb.coeff + rb.coeff;
-            if (newCoeff === 0) return new Num(0);
-            if (newCoeff === 1) return lb.base;
-            if (newCoeff === -1) return new Mul(new Num(-1), lb.base).simplify();
-            return new Mul(new Num(newCoeff), lb.base).simplify();
+        const findCommonFactor = (a, b) => {
+            const aFactors = getFactors(a);
+            const bFactors = getFactors(b);
+            for (const af of aFactors) {
+                for (const bf of bFactors) {
+                    if (exprEquals(af, bf)) return af;
+                }
+            }
+            return null;
+        };
+        const removeFactor = (expr, factor) => {
+            if (exprEquals(expr, factor)) return new Num(1);
+            if (expr instanceof Mul) {
+                if (exprEquals(expr.left, factor)) return expr.right;
+                if (exprEquals(expr.right, factor)) return expr.left;
+                const leftRemoved = removeFactor(expr.left, factor);
+                if (leftRemoved !== null) return new Mul(leftRemoved, expr.right).simplify();
+                const rightRemoved = removeFactor(expr.right, factor);
+                if (rightRemoved !== null) return new Mul(expr.left, rightRemoved).simplify();
+            }
+            return null;
+        };
+        const commonFactor = findCommonFactor(l, r);
+        if (commonFactor) {
+            const leftRest = removeFactor(l, commonFactor);
+            const rightRest = removeFactor(r, commonFactor);
+            if (leftRest !== null && rightRest !== null) {
+                return new Mul(commonFactor, new Add(leftRest, rightRest).simplify()).simplify();
+            }
+        }
+
+        // Sub(a,b) + Sub(c,d) -> collect like terms across Sub nodes
+        if (l instanceof Sub && r instanceof Sub) {
+            const la = l.left, lb = l.right;
+            const ra = r.left, rb = r.right;
+            // Try matching: (a-b) + (c-d) -> (a+c) - (b+d) or (a-c) - (b-d)
+            // Match positive terms: la vs ra, and negative terms: lb vs rb
+            const posMatch = exprEquals(la, ra);
+            const negMatch = exprEquals(lb, rb);
+            if (posMatch && negMatch) return new Num(0);
+            if (posMatch) return new Sub(la, new Add(lb, rb).simplify()).simplify();
+            if (negMatch) return new Sub(new Add(la, ra).simplify(), lb).simplify();
+            // (a-b) + (c-d) -> (a+c) - (b+d)
+            return new Sub(new Add(la, ra).simplify(), new Add(lb, rb).simplify()).simplify();
         }
 
         // Logarithmic Combination: ln(a) + ln(b) -> ln(a*b)
@@ -712,7 +778,7 @@ class Sub extends BinaryOp {
 
         if (l instanceof Num && r instanceof Num) return new Num(l.value - r.value);
 
-        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf');
         const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
         const checkInf = (n) => isInf(n) ? 1 : (isNegInf(n) ? -1 : 0);
 
@@ -773,22 +839,16 @@ class Sub extends BinaryOp {
             return new Add(l, newR).simplify();
         }
 
-        if (l.toString() === r.toString()) return new Num(0);
+        if (exprEquals(l, r)) return new Num(0);
 
-        // Like-term subtraction: 5x - 3x -> 2x
-        const getCoeffBase = (expr) => {
-            if (expr instanceof Mul && expr.left instanceof Num) return { coeff: expr.left.value, base: expr.right };
-            if (expr instanceof Mul && expr.right instanceof Num) return { coeff: expr.right.value, base: expr.left };
-            return { coeff: 1, base: expr };
-        };
-        const lb = getCoeffBase(l);
-        const rb = getCoeffBase(r);
-        if (lb.base.toString() === rb.base.toString()) {
-            const newCoeff = lb.coeff - rb.coeff;
-            if (newCoeff === 0) return new Num(0);
-            if (newCoeff === 1) return lb.base;
-            if (newCoeff === -1) return new Mul(new Num(-1), lb.base).simplify();
-            return new Mul(new Num(newCoeff), lb.base).simplify();
+        const lb = extractCoeffBase(l);
+        const rb = extractCoeffBase(r);
+        if (lb && rb && exprEquals(lb.base, rb.base)) {
+            const newCoeff = new Sub(lb.coeff, rb.coeff).simplify();
+            if (newCoeff instanceof Num && newCoeff.value === 0) return new Num(0);
+            if (newCoeff instanceof Num && newCoeff.value === 1) return lb.base;
+            if (newCoeff instanceof Num && newCoeff.value === -1) return new Mul(new Num(-1), lb.base).simplify();
+            return new Mul(newCoeff, lb.base).simplify();
         }
 
         // Logarithmic Combination: ln(a) - ln(b) -> ln(a/b)
@@ -957,7 +1017,7 @@ class Mul extends BinaryOp {
 
         if (l instanceof Num && r instanceof Num) return new Num(l.value * r.value);
 
-        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf');
         const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
         const checkInf = (n) => isInf(n) ? 1 : (isNegInf(n) ? -1 : 0);
 
@@ -1014,11 +1074,11 @@ class Mul extends BinaryOp {
         }
         // Distribute (-1) over Addition: -1 * (A + B) -> (-A - B)
         if (l instanceof Num && l.value === -1 && r instanceof Add) {
-            return new Sub(new Mul(new Num(-1), r.left).simplify(), r.right).simplify();
+            return new Add(new Mul(new Num(-1), r.left).simplify(), new Mul(new Num(-1), r.right).simplify()).simplify();
         }
 
         // x * x -> x^2
-        if (l.toString() === r.toString()) {
+        if (exprEquals(l, r)) {
             return new Pow(l, new Num(2));
         }
 
@@ -1147,8 +1207,8 @@ class Mul extends BinaryOp {
             return `-\\left(${this.right.toLatex()}\\right)`;
         }
 
-        if (this.left instanceof Add || this.left instanceof Sub) lTex = `\\left(${lTex}\\right)`;
-        if (this.right instanceof Add || this.right instanceof Sub) rTex = `\\left(${rTex}\\right)`;
+        if (this.left instanceof Add || this.left instanceof Sub || (op !== "" && this.left instanceof Mul)) lTex = `\\left(${lTex}\\right)`;
+        if (this.right instanceof Add || this.right instanceof Sub || (op !== "" && this.right instanceof Mul)) rTex = `\\left(${rTex}\\right)`;
         return `${lTex}${op}${rTex}`;
     }
 }
@@ -1179,7 +1239,7 @@ class Div extends BinaryOp {
             return new Div(l, r);
         }
 
-        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf');
         const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
         const checkInf = (n) => isInf(n) ? 1 : (isNegInf(n) ? -1 : 0);
 
@@ -1224,6 +1284,34 @@ class Div extends BinaryOp {
         if (l instanceof Num && l.value === 1 && r instanceof Mul && r.left instanceof Num && r.left.value === -1 && r.right instanceof Sym && r.right.name === 'i') {
             return new Sym('i');
         }
+
+        // Trigonometric Ratios: sin(x)/cos(x) -> tan(x)
+        const trigRatio = (num, den) => {
+            if (num instanceof Call && den instanceof Call) {
+                if (num.args[0].toString() !== den.args[0].toString()) return null;
+                if (num.funcName === 'sin' && den.funcName === 'cos') return new Call('tan', num.args);
+                if (num.funcName === 'cos' && den.funcName === 'sin') return new Call('cot', num.args);
+            }
+            return null;
+        };
+        if (l instanceof Call && r instanceof Call) {
+            const tResult = trigRatio(l, r);
+            if (tResult) return tResult.simplify();
+        }
+        // 1/sin(x) -> csc(x)
+        if (l instanceof Num && l.value === 1 && r instanceof Call && r.funcName === 'sin') return new Call('csc', r.args).simplify();
+        // 1/cos(x) -> sec(x)
+        if (l instanceof Num && l.value === 1 && r instanceof Call && r.funcName === 'cos') return new Call('sec', r.args).simplify();
+        // 1/tan(x) -> cot(x)
+        if (l instanceof Num && l.value === 1 && r instanceof Call && r.funcName === 'tan') return new Call('cot', r.args).simplify();
+        // sin(x)/tan(x) -> cos(x)
+        if (l instanceof Call && l.funcName === 'sin' && r instanceof Call && r.funcName === 'tan' && l.args[0].toString() === r.args[0].toString()) return new Call('cos', l.args).simplify();
+        // tan(x)/sin(x) -> cos(x)
+        if (l instanceof Call && l.funcName === 'tan' && r instanceof Call && r.funcName === 'sin' && l.args[0].toString() === r.args[0].toString()) return new Call('cos', l.args).simplify();
+        // cos(x)/tan(x) -> sin(x)
+        if (l instanceof Call && l.funcName === 'cos' && r instanceof Call && r.funcName === 'tan' && l.args[0].toString() === r.args[0].toString()) return new Call('sin', l.args).simplify();
+        // tan(x)/cos(x) -> sin(x)
+        if (l instanceof Call && l.funcName === 'tan' && r instanceof Call && r.funcName === 'cos' && l.args[0].toString() === r.args[0].toString()) return new Call('sin', l.args).simplify();
 
         // Cancellation: (a * b) / a -> b
         if (l instanceof Mul) {
@@ -1813,6 +1901,9 @@ class Pow extends BinaryOp {
         if (l instanceof Num && l.value === 1) return new Num(1); // 1^x = 1
         if (l instanceof Num && l.value === 0 && r instanceof Num && r.value > 0) return new Num(0); // 0^n = 0 for n>0
         if (l instanceof Num && r instanceof Num) return new Num(Math.pow(l.value, r.value));
+        if (r instanceof Num && Number.isInteger(r.value) && r.value < 0) {
+            return new Div(new Num(1), new Pow(l, new Num(-r.value)).simplify()).simplify();
+        }
 
         // Rational Exponents: n ^ (a/b)
         if (l instanceof Num && r instanceof Div && r.left instanceof Num && r.right instanceof Num) {
@@ -1837,7 +1928,7 @@ class Pow extends BinaryOp {
         }
 
         // Infinity Powers
-        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+        const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf');
         const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
         const checkInf = (n) => isInf(n) ? 1 : (isNegInf(n) ? -1 : 0);
 
@@ -2062,7 +2153,7 @@ class Pow extends BinaryOp {
         }
 
         let lTex = this.left.toLatex();
-        if (this.left instanceof Add || this.left instanceof Sub || this.left instanceof Mul || this.left instanceof Div || this.left instanceof Pow) lTex = `\\left(${lTex}\\right)`;
+        if (this.left instanceof Add || this.left instanceof Sub || this.left instanceof Mul || this.left instanceof Div) lTex = `\\left(${lTex}\\right)`;
         return `{${lTex}}^{${this.right.toLatex()}}`;
     }
 }
@@ -2294,7 +2385,7 @@ class Call extends Expr {
             if (arg instanceof Num && Math.abs(arg.value - -1/Math.sqrt(3)) < 1e-9) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(6)).simplify();
             // atan(Infinity) = pi/2, atan(-Infinity) = -pi/2
             if (arg instanceof Sym && (arg.name === 'Infinity' || arg.name === 'infinity')) return new Div(new Sym('pi'), new Num(2)).simplify();
-            if (arg instanceof Mul && arg.left instanceof Num && arg.left.value === -1 && arg.right instanceof Sym && (arg.right.name === 'Infinity' || arg.right.name === 'infinity')) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(2)).simplify();
+            if (arg instanceof Mul && arg.left instanceof Num && arg.left.value === -1 && arg.right instanceof Sym && (arg.right.name === 'Infinity' || arg.right.name === 'infinity' || arg.right.name === 'inf')) return new Div(new Mul(new Num(-1), new Sym('pi')), new Num(2)).simplify();
         }
         if (this.funcName === 'asec') {
             const arg = simpleArgs[0];
@@ -2479,7 +2570,7 @@ class Call extends Expr {
             if (arg instanceof Num && arg.value === 1) return new Sym('e');
             if (arg instanceof Sym && (arg.name === 'Infinity' || arg.name === 'infinity')) return new Sym('Infinity');
             // exp(-Infinity) -> 0
-            if (arg instanceof Mul && arg.left instanceof Num && arg.left.value === -1 && (arg.right.name === 'Infinity' || arg.right.name === 'infinity')) return new Num(0);
+            if (arg instanceof Mul && arg.left instanceof Num && arg.left.value === -1 && (arg.right.name === 'Infinity' || arg.right.name === 'infinity' || arg.right.name === 'inf')) return new Num(0);
             if (arg instanceof Num && arg.value === -Infinity) return new Num(0);
         }
         if (this.funcName === 'sign') {
@@ -3092,15 +3183,15 @@ class Call extends Expr {
         if (this.funcName === 'cos') return new Mul(new Mul(new Num(-1), new Call('sin', [u])), u.diff(varName));
         if (this.funcName === 'tan') return new Mul(new Div(new Num(1), new Pow(new Call('cos', [u]), new Num(2))), u.diff(varName));
 
-        if (this.funcName === 'asin') {
+        if (this.funcName === 'asin' || this.funcName === 'arcsin') {
             // 1/sqrt(1-u^2) * u'
             return new Mul(new Div(new Num(1), new Call('sqrt', [new Sub(new Num(1), new Pow(u, new Num(2)))])), u.diff(varName));
         }
-        if (this.funcName === 'acos') {
+        if (this.funcName === 'acos' || this.funcName === 'arccos') {
             // -1/sqrt(1-u^2) * u'
             return new Mul(new Div(new Num(-1), new Call('sqrt', [new Sub(new Num(1), new Pow(u, new Num(2)))])), u.diff(varName));
         }
-        if (this.funcName === 'atan') {
+        if (this.funcName === 'atan' || this.funcName === 'arctan') {
             // 1/(1+u^2) * u'
             return new Mul(new Div(new Num(1), new Add(new Num(1), new Pow(u, new Num(2)))), u.diff(varName));
         }

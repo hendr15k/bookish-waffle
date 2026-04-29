@@ -1,3 +1,17 @@
+const DEFAULT_PLOT_COLORS = [
+    '#FF6384', // red/pink
+    '#36A2EB', // blue
+    '#FFCE56', // yellow
+    '#4BC0C0', // teal
+    '#9966FF', // purple
+    '#FF9F40', // orange
+    '#7CB342', // green
+    '#EA4335'  // red
+];
+
+function getDefaultPlotColor(index) {
+    return DEFAULT_PLOT_COLORS[index % DEFAULT_PLOT_COLORS.length];
+}
 
 class CAS {
     constructor() {
@@ -326,8 +340,8 @@ class CAS {
                                     let prev = lower;
 
                                     const isInf = (n) => {
-                                        if (n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity')) return true;
-                                        if (n instanceof Mul && n.left instanceof Num && n.left.value < 0 && (n.right.name === 'Infinity' || n.right.name === 'infinity')) return true;
+                                        if (n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf')) return true;
+                                        if (n instanceof Mul && n.left instanceof Num && n.left.value < 0 && (n.right.name === 'Infinity' || n.right.name === 'infinity' || n.right.name === 'inf')) return true;
                                         // Check for Add containing Infinity (e.g. NaN + Infinity)
                                         if (n instanceof Add || n instanceof Sub) {
                                             const hasInf = (x) => isInf(x);
@@ -544,12 +558,23 @@ class CAS {
 
                     // Try strategies if direct integration failed
                     if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
-                         // 1. Substitution
-                         const subRes = this._integrateSubstitution(func, varNode);
-                         if (subRes && !(subRes instanceof Call && subRes.funcName === 'integrate')) {
-                             indefinite = subRes;
-                         } else {
-                             // 2. Parts
+                         // 1. Trig power reduction (sin^2, cos^2, etc.)
+                         const trigRed = this._trigPowerReduce(func);
+                         if (trigRed) {
+                             const intTrig = this.evaluate(trigRed.integrate(varNode));
+                             if (!(intTrig instanceof Call && intTrig.funcName === 'integrate')) {
+                                 indefinite = intTrig;
+                             }
+                         }
+                         // 2. Substitution
+                         if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
+                             const subRes = this._integrateSubstitution(func, varNode);
+                             if (subRes && !(subRes instanceof Call && subRes.funcName === 'integrate')) {
+                                 indefinite = subRes;
+                             }
+                         }
+                         // 3. Parts
+                         if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
                              const partsRes = this._integrateByParts(func, varNode);
                              if (partsRes && !(partsRes instanceof Call && partsRes.funcName === 'integrate')) {
                                  indefinite = partsRes;
@@ -607,8 +632,8 @@ class CAS {
                     let valUpper = indefinite.substitute(varNode, upper);
                     // Check if substitution failed (NaN or Infinity symbolic)
                     // Also check for evaluateNumeric issues if needed, but symbolic check covers basic cases
-                    const isBad = (n) => (n instanceof Sym && (n.name === 'NaN' || n.name === 'Infinity' || n.name === 'infinity')) ||
-                                         (n instanceof Mul && n.left instanceof Num && n.left.value === -1 && (n.right.name === 'Infinity' || n.right.name === 'infinity'));
+                    const isBad = (n) => (n instanceof Sym && (n.name === 'NaN' || n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf')) ||
+                                         (n instanceof Mul && n.left instanceof Num && n.left.value === -1 && (n.right.name === 'Infinity' || n.right.name === 'infinity' || n.right.name === 'inf'));
 
                     if (isBad(valUpper)) {
                          valUpper = this._limit(indefinite, varNode, upper, 0, -1);
@@ -620,8 +645,8 @@ class CAS {
                     }
 
                     // Explicit check for infinite limits to return clean result
-                    const isInf = (n) => (n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity')) ||
-                                         (n instanceof Mul && n.left instanceof Num && n.left.value === -1 && (n.right.name === 'Infinity' || n.right.name === 'infinity'));
+                    const isInf = (n) => (n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf')) ||
+                                         (n instanceof Mul && n.left instanceof Num && n.left.value === -1 && (n.right.name === 'Infinity' || n.right.name === 'infinity' || n.right.name === 'inf'));
                     const isNaNExpr = (n) => (n instanceof Sym && n.name === 'NaN');
 
                     if (isNaNExpr(valUpper) || isNaNExpr(valLower)) return new Sym('NaN');
@@ -675,6 +700,15 @@ class CAS {
                 }
 
                 if (res instanceof Call && res.funcName === 'integrate') {
+                     // 0. Try Trigonometric Power Reduction FIRST (sin^2, cos^2, etc.)
+                     const trigRed = this._trigPowerReduce(func);
+                     if (trigRed) {
+                         const intTrig = this.evaluate(trigRed.integrate(varNode));
+                         if (!(intTrig instanceof Call && intTrig.funcName === 'integrate')) {
+                             return intTrig;
+                         }
+                     }
+
                      // 1. Try Integration by Substitution (Logarithmic form f'/f and others)
                      const subRes = this._integrateSubstitution(func, varNode);
                      if (subRes && !(subRes instanceof Call && subRes.funcName === 'integrate')) return subRes;
@@ -694,8 +728,7 @@ class CAS {
                          }
                      }
 
-                     // 4. Try Trigonometric Reduction (Power Reduction)
-                     // e.g. sin(x)^2 -> (1-cos(2x))/2
+                     // 4. Try Trigonometric Reduction (Linearize)
                      let reduced = this._linearizeTrig(func).simplify();
 
                      // Expand to separate terms (e.g. (1-cos)(1+cos) -> 1 - cos^2)
@@ -703,11 +736,10 @@ class CAS {
 
                      if (reduced.toString() !== func.toString()) {
                          const redInt = reduced.integrate(varNode).simplify();
-                         // We rely on outer evaluation to resolve any generated integrals
                          return redInt;
                      }
 
-                     // Try Integration by Parts
+                     // 5. Try Integration by Parts again
                      const parts = this._integrateByParts(func, varNode);
                      if (parts) return parts;
                 }
@@ -746,12 +778,19 @@ class CAS {
             if (node.funcName === 'simplify') {
                 if (node.args.length !== 1) throw new Error("simplify takes exactly 1 argument");
                 let simplified = args[0].simplify();
-                // If result is a complex Add/Sub expression, try expand().simplify() to see if it reduces
-                if (simplified instanceof Add || simplified instanceof Sub) {
-                    const expanded = simplified.expand().simplify();
-                    // Heuristic: prefer shorter string length or if it becomes 0
-                    if (expanded instanceof Num && expanded.value === 0) return expanded;
-                    if (expanded.toString().length < simplified.toString().length) return expanded;
+                const maxIter = 10;
+                for (let iter = 0; iter < maxIter; iter++) {
+                    const prevStr = simplified.toString();
+                    // If result is a complex Add/Sub expression, try expand().simplify() to see if it reduces
+                    if (simplified instanceof Add || simplified instanceof Sub) {
+                        const expanded = simplified.expand().simplify();
+                        if (expanded instanceof Num && expanded.value === 0) { simplified = expanded; break; }
+                        if (expanded.toString().length <= prevStr.length) { simplified = expanded; }
+                    }
+                    // Try full simplification again
+                    const reSimplified = simplified.simplify();
+                    if (reSimplified.toString() === prevStr) break;
+                    simplified = reSimplified;
                 }
                 return simplified;
             }
@@ -874,16 +913,32 @@ class CAS {
                  const varNode = args[1];
                  let min = -10, max = 10;
                  let nstep = null;
+                 let color = null;
+                 let width = 2;
+                 let grid = true;
 
                  // Handle args
                  // args[2] could be min, args[3] max
-                 // Check for optional nstep=...
+                 // Check for optional nstep=, color=, width=, grid=
                  let posArgCount = 0;
                  for(let i=2; i<node.args.length; i++) {
                      const arg = args[i];
-                     if (arg instanceof Eq && arg.left instanceof Sym && arg.left.name === 'nstep') {
-                         const val = arg.right.evaluateNumeric();
-                         if (!isNaN(val) && val > 0) nstep = val;
+                     if (arg instanceof Eq) {
+                         const lhs = arg.left;
+                         const rhs = arg.right;
+                         if (lhs instanceof Sym) {
+                             if (lhs.name === 'nstep') {
+                                 const val = rhs.evaluateNumeric();
+                                 if (!isNaN(val) && val > 0) nstep = val;
+                             } else if (lhs.name === 'color') {
+                                 color = rhs.toString();
+                             } else if (lhs.name === 'width') {
+                                 const val = rhs.evaluateNumeric();
+                                 if (!isNaN(val) && val > 0) width = val;
+                             } else if (lhs.name === 'grid') {
+                                 grid = !(rhs instanceof Sym && rhs.name === 'false');
+                             }
+                         }
                      } else {
                          // Positional logic: 0->min, 1->max
                          const val = arg.evaluateNumeric();
@@ -895,15 +950,28 @@ class CAS {
                      }
                  }
 
+                 // Handle multiple expressions in a list: plot([sin(x), cos(x)], x)
+                 let expressions = [expr];
+                 let colors = null;
+                 if (expr instanceof Vec) {
+                     expressions = expr.elements;
+                     // Generate default colors for multiple expressions
+                     colors = expressions.map((_, i) => getDefaultPlotColor(i));
+                 }
+
                  // Return a special object that the frontend can recognize
                  return {
                      type: 'plot',
                      subtype: 'function',
-                     expr: expr,
+                     expressions: expressions,
                      var: varNode,
                      min: min,
                      max: max,
                      nstep: nstep,
+                     color: color,
+                     colors: colors,
+                     width: width,
+                     grid: grid,
                      toString: () => `Plotting ${expr} from ${min} to ${max}`,
                      toLatex: () => `\\text{Plotting } ${expr.toLatex()}`
                  };
@@ -4244,13 +4312,22 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                     };
                     collect(sol1);
                     collect(sol2);
-                    sols.sort((a, b) => {
+                    const unique = [];
+                    const seen = new Set();
+                    sols.forEach(s => {
+                        const str = s.toString();
+                        if (!seen.has(str)) {
+                            seen.add(str);
+                            unique.push(s);
+                        }
+                    });
+                    unique.sort((a, b) => {
                         const va = a.evaluateNumeric();
                         const vb = b.evaluateNumeric();
                         if (!isNaN(va) && !isNaN(vb)) return va - vb;
                         return a.toString().localeCompare(b.toString());
                     });
-                    return new Call('set', sols);
+                    return new Call('set', unique);
                 }
             }
              // B = abs(A)?
@@ -4270,13 +4347,22 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                     };
                     collect(sol1);
                     collect(sol2);
-                    sols.sort((a, b) => {
+                    const unique = [];
+                    const seen = new Set();
+                    sols.forEach(s => {
+                        const str = s.toString();
+                        if (!seen.has(str)) {
+                            seen.add(str);
+                            unique.push(s);
+                        }
+                    });
+                    unique.sort((a, b) => {
                         const va = a.evaluateNumeric();
                         const vb = b.evaluateNumeric();
                         if (!isNaN(va) && !isNaN(vb)) return va - vb;
                         return a.toString().localeCompare(b.toString());
                     });
-                    return new Call('set', sols);
+                    return new Call('set', unique);
                  }
             }
         } else {
@@ -4318,7 +4404,16 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 };
                 collect(s1);
                 collect(s2);
-                return new Call('set', sols);
+                const unique = [];
+                const seen = new Set();
+                sols.forEach(s => {
+                    const str = s.toString();
+                    if (!seen.has(str)) {
+                        seen.add(str);
+                        unique.push(s);
+                    }
+                });
+                return new Call('set', unique);
             } else if (dep1) {
                 return this._solve(expr.left, varNode);
             } else if (dep2) {
@@ -4416,14 +4511,23 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                         const sol2 = new Div(new Sub(new Mul(new Num(-1), B), sqrtDisc), new Mul(new Num(2), A));
 
                         const results = [sol1.simplify(), sol2.simplify()];
-                        results.sort((a, b) => {
+                        const unique = [];
+                        const seen = new Set();
+                        results.forEach(s => {
+                            const str = s.toString();
+                            if (!seen.has(str)) {
+                                seen.add(str);
+                                unique.push(s);
+                            }
+                        });
+                        unique.sort((a, b) => {
                             const va = a.evaluateNumeric();
                             const vb = b.evaluateNumeric();
                             if (!isNaN(va) && !isNaN(vb)) return va - vb;
                             return a.toString().localeCompare(b.toString());
                         });
 
-                        return new Call("set", results);
+                        return new Call("set", unique);
                     }
                 } else if (poly.maxDeg > 2) {
                     // Try factoring higher degree polynomials
@@ -4556,7 +4660,17 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                              const x2 = new Sub(termY2, shift).simplify();
                              const x3 = new Sub(termY3, shift).simplify();
 
-                             return new Call('set', [x1, x2, x3]);
+                             const results = [x1, x2, x3];
+                             const unique = [];
+                             const seen = new Set();
+                             results.forEach(s => {
+                                 const str = s.toString();
+                                 if (!seen.has(str)) {
+                                     seen.add(str);
+                                     unique.push(s);
+                                 }
+                             });
+                             return new Call('set', unique);
                         }
 
                         const sqrtD = new Call('sqrt', [D]);
@@ -4710,15 +4824,27 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                         // Shift back x = y - shift
                         const xSols = ySols.map(y => new Sub(y, shift).simplify());
 
+                        // Deduplicate solutions
+                        const unique = [];
+                        const seen = new Set();
+                        xSols.forEach(s => {
+                            const str = s.toString();
+                            if (!seen.has(str)) {
+                                seen.add(str);
+                                unique.push(s);
+                            }
+                        });
+
                         // Sort and Return
-                        xSols.sort((a, b) => {
+                        unique.sort((a, b) => {
                             const va = a.evaluateNumeric();
                             const vb = b.evaluateNumeric();
                             if (!isNaN(va) && !isNaN(vb)) return va - vb;
                             return a.toString().localeCompare(b.toString());
                         });
 
-                        return new Call('set', xSols);
+                        if (unique.length === 1) return unique[0];
+                        return new Call('set', unique);
                     }
                 }
             }
@@ -4951,7 +5077,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         let term = deriv.substitute(varNode, point).simplify();
 
         // Check for singularity in 0-th term
-        const isBad = (v) => (v instanceof Sym && (v.name === 'Infinity' || v.name === 'infinity' || v.name === 'NaN' || v.name === 'undefined')) ||
+        const isBad = (v) => (v instanceof Sym && (v.name === 'Infinity' || v.name === 'infinity' || v.name === 'inf' || v.name === 'NaN' || v.name === 'undefined')) ||
                              (v instanceof Mul && v.left instanceof Num && v.left.value === -1 && (v.right instanceof Sym && (v.right.name === 'Infinity' || v.right.name === 'infinity'))) ||
                              (v instanceof Num && !isFinite(v.value));
 
@@ -5006,7 +5132,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         // f(x) = sum a_n (x-point)^n, where n can be negative integer (down to -k)
         // Heuristic: Determine pole order k such that limit(f(x)*(x-point)^k) is finite.
 
-        const isBad = (v) => (v instanceof Sym && (v.name === 'Infinity' || v.name === 'infinity' || v.name === 'NaN' || v.name === 'undefined')) ||
+        const isBad = (v) => (v instanceof Sym && (v.name === 'Infinity' || v.name === 'infinity' || v.name === 'inf' || v.name === 'NaN' || v.name === 'undefined')) ||
                              (v instanceof Mul && v.left instanceof Num && v.left.value === -1 && (v.right instanceof Sym && (v.right.name === 'Infinity' || v.right.name === 'infinity'))) ||
                              (v instanceof Num && !isFinite(v.value));
 
@@ -5690,9 +5816,11 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         // Prevent infinite recursion - limit depth
         this._ibpDepth = (this._ibpDepth || 0) + 1;
         if (this._ibpDepth > 8) {
-            this._ibpDepth = 0;
+            this._ibpDepth--;
             return new Call("integrate", [expr, varNode]);
         }
+        
+        try {
         
         let factors = [];
 
@@ -5716,7 +5844,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         const typeScore = (node) => {
             if (node instanceof Call) {
                 if (['ln', 'log', 'log2'].includes(node.funcName)) return 5; // Log
-                if (['asin', 'acos', 'atan', 'asec', 'acsc', 'acot'].includes(node.funcName)) return 4; // Inverse
+                if (['asin', 'acos', 'atan', 'arcsin', 'arccos', 'arctan', 'asec', 'acsc', 'acot'].includes(node.funcName)) return 4; // Inverse
                 if (['sin', 'cos', 'tan', 'sec', 'csc', 'cot'].includes(node.funcName)) return 2; // Trig
                 if (['exp'].includes(node.funcName)) return 1; // Exp
             }
@@ -5741,9 +5869,10 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
              const s = typeScore(expr);
              if (s >= 4) {
                  candidates = [{idx: 0, node: expr, score: s}];
-             } else {
-                 return new Call("integrate", [expr, varNode]);
-             }
+              } else {
+                  return new Call("integrate", [expr, varNode]);
+              }
+
         }
 
         // Sort by score descending (Log first)
@@ -5774,19 +5903,6 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
             const uv = new Mul(u, v).simplify();
             const vdu = new Mul(v, du).simplify();
-
-            // Check if vdu is simpler than original expr?
-            // To prevent cycles, we could check string length or something, but LIATE usually guarantees progress.
-            // One edge case: e^x sin(x). Both are Trig/Exp.
-            // Score: Trig(2) > Exp(1). u=sin, dv=exp.
-            // v=exp, du=cos. vdu = exp*cos.
-            // exp*cos -> u=cos, dv=exp. v=exp, du=-sin. vdu = -exp*sin.
-            // Cycle.
-            // This implementation performs ONE step and returns "uv - integrate(vdu)".
-            // The outer 'evaluate' loop will call 'integrate' on 'vdu'.
-            // If vdu is integrable (by parts again), it proceeds.
-            // For cyclic cases, it will expand indefinitely until max depth or stack overflow unless we catch it.
-            // But for standard x*e^x, it terminates.
 
             // Check for cyclic IBP: if vdu is proportional to expr, we have I = uv - k*I
             // which solves to I = uv/(1+k)
@@ -5820,23 +5936,14 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
             const intVdu = this.evaluate(new Call("integrate", [vdu, varNode]));
 
-            // Check if we made progress or just got back a Call('integrate')
-            // If intVdu is exactly Call('integrate', [vdu]), then we failed to solve the sub-problem.
-            // But we should still return the partial result `uv - int(vdu)` because the user might prefer that form
-            // over the original integral.
-
             // Check for cyclic case after evaluation too (intVdu might be proportional to expr)
-            // If intVdu is proportional to expr, we have I = uv - k*I, solving gives I = uv/(1+k)
             if (!(intVdu instanceof Call && intVdu.funcName === 'integrate')) {
                 const intVduRatio = new Div(intVdu, expr).simplify();
                 if (intVduRatio instanceof Num && Math.abs(intVduRatio.value) > 0) {
-                    // I = uv - k*I where k = intVduRatio
-                    // Solving: I + k*I = uv => I = uv / (1 + k)
                     const denom = new Add(new Num(1), intVduRatio).simplify();
                     if (denom instanceof Num && Math.abs(denom.value) > 1e-9) {
                         return new Div(uv, denom).simplify();
                     }
-                    // If denom is 0 or near 0, k = -1, so I = uv/2
                     if (denom instanceof Num && Math.abs(denom.value) < 1e-9) {
                         return new Div(uv, new Num(2)).simplify();
                     }
@@ -5847,9 +5954,30 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         }
 
         return new Call("integrate", [expr, varNode]);
+        
+        } finally {
+            this._ibpDepth--;
+        }
     }
 
     _limit(expr, varNode, point, depth = 0, dir = 0) {
+        // Detect oscillating limits at ±∞: sin(f(x)) or cos(f(x)) as x→±∞
+        if (depth === 0) {
+            const isPointInf = (point instanceof Sym && (point.name === 'Infinity' || point.name === 'infinity' || point.name === 'inf')) ||
+                (point instanceof Mul && point.left instanceof Num && point.left.value === -1 && point.right instanceof Sym && (point.right.name === 'Infinity' || point.right.name === 'infinity' || point.right.name === 'inf'));
+            if (isPointInf) {
+                const unwrap = (e) => {
+                    if (e instanceof Call && e.args.length === 1) return e.args[0];
+                    return null;
+                };
+                const inner = unwrap(expr);
+                if (inner && this._dependsOn(inner, varNode)) {
+                    if (expr instanceof Call && (expr.funcName === 'sin' || expr.funcName === 'cos')) {
+                        return new Sym('undefined');
+                    }
+                }
+            }
+        }
         // Special check for direction sensitivity on basic functions like sign/abs at discontinuity
         if (dir !== 0) {
              const val = expr.substitute(varNode, point).simplify();
@@ -5871,7 +5999,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         if (expr instanceof Pow && !(expr.left instanceof Num && expr.left.value === 0)) {
             const limBase = this._limit(expr.left, varNode, point, depth + 1, dir);
             const limExp = this._limit(expr.right, varNode, point, depth + 1, dir);
-            const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+            const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf');
             const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
             const isZero = (n) => n instanceof Num && n.value === 0;
 
@@ -5884,6 +6012,15 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             if (!isNaN(baseVal) && baseVal > 0 && limExp instanceof Num) {
                 return new Num(Math.pow(baseVal, limExp.value));
             }
+            // Infinity^positive => Infinity
+            if (isInf(limBase) && limExp instanceof Num && limExp.value > 0) {
+                if (limExp.value === 0) return new Sym('NaN');
+                return new Sym('Infinity');
+            }
+            // Infinity^negative => 0
+            if (isInf(limBase) && limExp instanceof Num && limExp.value < 0) {
+                return new Num(0);
+            }
             // 0 < a < 1, exponent -> Infinity => 0
             if (!isNaN(baseVal) && baseVal > 0 && baseVal < 1 && isInf(limExp)) return new Num(0);
             // 0 < a < 1, exponent -> -Infinity => Infinity
@@ -5893,7 +6030,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         // Handle Call nodes: e^f(x), exp(f(x)) etc.
         if (expr instanceof Call && (expr.funcName === 'exp') && expr.args.length === 1) {
             const limArg = this._limit(expr.args[0], varNode, point, depth + 1, dir);
-            const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+            const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf');
             const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
             if (isInf(limArg)) return new Sym('Infinity');
             if (isNegInf(limArg)) return new Num(0);
@@ -5903,7 +6040,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         if (expr instanceof Call && (expr.funcName === 'ln' || expr.funcName === 'log') && expr.args.length === 1) {
             const limArg = this._limit(expr.args[0], varNode, point, depth + 1, dir);
             const isZero = (n) => n instanceof Num && n.value === 0;
-            const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+            const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf');
             if (isZero(limArg)) return new Mul(new Num(-1), new Sym('Infinity'));
             if (isInf(limArg)) return new Sym('Infinity');
         }
@@ -5913,6 +6050,18 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         if (expr instanceof Mul) {
             const val = expr.substitute(varNode, point).simplify();
             if (val instanceof Sym && val.name === 'NaN') {
+                // Special case: x * ln(x) or ln(x) * x -> rewrite as ln(x)/(1/x) and apply L'Hopital
+                const isVarLog = (left, right) =>
+                    (left instanceof Sym && left.name === varNode.name && right instanceof Call && (right.funcName === 'ln' || right.funcName === 'log')) ||
+                    (right instanceof Sym && right.name === varNode.name && left instanceof Call && (left.funcName === 'ln' || left.funcName === 'log'));
+                if (isVarLog(expr.left, expr.right)) {
+                    const lnArg = expr.left instanceof Call ? expr.left : expr.right;
+                    const num = lnArg;
+                    const den = new Div(new Num(1), varNode).simplify();
+                    const lhopitalExpr = new Div(num, den);
+                    return this._limit(lhopitalExpr, varNode, point, depth + 1, dir);
+                }
+
                 // 0 * Inf -> Transform to Div for L'Hopital
                 // Try both: f/(1/g) and g/(1/f), pick the one that becomes a Div
                 const num1 = expr.left;
@@ -5949,12 +6098,12 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             // Handle Num or zero-value Num from simplification
             const isZero = (n) => (n instanceof Num && n.value === 0);
             const isInf = (n) => {
-                if (n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity')) return true;
+                if (n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf')) return true;
                 if (n.evaluateNumeric() === Infinity) return true;
                 return false;
             };
             const isNegInf = (n) => {
-                if (n instanceof Mul && n.left instanceof Num && n.left.value === -1 && (n.right.name === 'Infinity' || n.right.name === 'infinity')) return true;
+                if (n instanceof Mul && n.left instanceof Num && n.left.value === -1 && (n.right.name === 'Infinity' || n.right.name === 'infinity' || n.right.name === 'inf')) return true;
                 if (n.evaluateNumeric() === -Infinity) return true;
                 return false;
             };
@@ -6031,7 +6180,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 const L_left = this._limit(expr.left, varNode, point, depth + 1, dir);
                 const L_right = this._limit(expr.right, varNode, point, depth + 1, dir);
 
-                const isInf = (node) => node instanceof Sym && (node.name === 'Infinity' || node.name === 'infinity');
+                const isInf = (node) => node instanceof Sym && (node.name === 'Infinity' || node.name === 'infinity' || node.name === 'inf');
                 const isNegInf = (node) => node instanceof Mul && node.left instanceof Num && node.left.value === -1 && isInf(node.right);
 
                 const leftInf = isInf(L_left) || isNegInf(L_left);
@@ -6075,7 +6224,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
                 // Check if base -> 1 and exp -> Infinity
                 const isOne = (node) => node instanceof Num && Math.abs(node.value - 1) < 1e-9;
-                const isInf = (node) => node instanceof Sym && (node.name === 'Infinity' || node.name === 'infinity');
+                const isInf = (node) => node instanceof Sym && (node.name === 'Infinity' || node.name === 'infinity' || node.name === 'inf');
 
                 if (isOne(L_base) && isInf(L_exp)) {
                     // L = exp( lim (base - 1) * exp )
@@ -6098,7 +6247,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
             // Check for directional limit at pole (Infinity or NaN)
             if (dir !== 0) {
-                const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity');
+                const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf');
                 const isUnsignedInf = (n) => isInf(n) || (n instanceof Sym && n.name === 'NaN');
 
                 // If direct substitution gave Infinity (unsigned) or NaN (pole), we check direction
@@ -13620,7 +13769,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
             for(const p of seq.elements) {
                 let res;
-                const isInf = (v) => v instanceof Sym && (v.name === 'Infinity' || v.name === 'infinity');
+                const isInf = (v) => v instanceof Sym && (v.name === 'Infinity' || v.name === 'infinity' || v.name === 'inf');
                 const isNegInf = (v) => v instanceof Mul && v.left instanceof Num && v.left.value === -1 && isInf(v.right);
 
                 if (isInf(val)) {

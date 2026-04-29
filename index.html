@@ -1577,8 +1577,24 @@
                         <input type="number" class="form-input" id="plot-max" value="10">
                     </div>
                 </div>
+                <div class="form-row">
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-color">Color</label>
+                        <input type="color" class="form-input" id="plot-color" value="#FF6384">
+                    </div>
+                     <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-width">Line Width</label>
+                        <input type="range" class="form-input" id="plot-width" min="1" max="5" step="0.5" value="2">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="plot-grid" checked>
+                        Show Grid
+                    </label>
+                </div>
                  <div class="action-grid">
-                    <button class="action-btn" onclick="runTool('plot', ['plot-expr', 'plot-var', 'plot-min', 'plot-max'])">Plot</button>
+                    <button class="action-btn" onclick="runPlot()">Plot</button>
                 </div>
             </div>
         </div>
@@ -3222,7 +3238,29 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
              loadGeminiApiKey();
         });
 
-        window.runTool = function(action, inputTokens) {
+         window.runPlot = function() {
+            const expr = document.getElementById('plot-expr').value;
+            const varName = document.getElementById('plot-var').value;
+            const min = document.getElementById('plot-min').value;
+            const max = document.getElementById('plot-max').value;
+            const color = document.getElementById('plot-color').value;
+            const width = document.getElementById('plot-width').value;
+            const grid = document.getElementById('plot-grid').checked;
+
+            if (!expr || !varName) {
+                addToHistory("Error", "Please fill in required fields", true);
+                return;
+            }
+
+            let command = `plot(${expr}, ${varName}, ${min}, ${max}`;
+            command += `, color="${color}", width=${width}, grid=${grid})`;
+
+            input.value = command;
+            evaluate();
+            history.scrollTop = history.scrollHeight;
+        };
+
+         window.runTool = function(action, inputTokens) {
             // Check if argument is an ID (element exists) or a literal string
             const args = inputTokens.map(token => {
                 const el = document.getElementById(token);

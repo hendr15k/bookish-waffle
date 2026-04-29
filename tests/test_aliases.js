@@ -70,5 +70,8 @@ assertEqual(evalExpr('nPr(5,2)').toString(), evalExpr('perm(5,2)').toString(), '
 assertEqual(evalExpr('det([[1,2],[3,4]])').toString(), '-2', 'det');
 assertEqual(evalExpr('trans([[1,2],[3,4]])').toString(), evalExpr('transpose([[1,2],[3,4]])').toString(), 'trans/transpose alias');
 assertEqual(evalExpr('eye(3)').toString(), evalExpr('identity(3)').toString(), 'eye/identity alias');
+assertEqual(evalExpr('diff(arcsin(x), x)').toString(), evalExpr('diff(asin(x), x)').toString(), 'arcsin derivative alias');
+assertEqual(evalExpr('diff(arccos(x), x)').toString(), evalExpr('diff(acos(x), x)').toString(), 'arccos derivative alias');
+assertEqual(evalExpr('diff(arctan(x), x)').toString(), evalExpr('diff(atan(x), x)').toString(), 'arctan derivative alias');
 
 console.log('All alias tests passed');

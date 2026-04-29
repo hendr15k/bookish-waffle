@@ -95,6 +95,10 @@ test("Power", "2 ^ 3", "8");
 // Algebra
 test("Variable", "x", "x");
 test("Symbolic Addition", "x + x", "(2 * x)");
+test("Like-term numeric coefficients", "2*x + 3*x", "(5 * x)");
+test("Like-term symbolic coefficients", "a*x + b*x", "(x * (a + b))");
+test("Negative exponent to reciprocal", "x^(-2)", "(1 / x^2)");
+test("Trig ratio to tan", "sin(x)/cos(x)", "tan(x)");
 test("Symbolic Mul", "x * x", "x^2");
 
 // Vectors
