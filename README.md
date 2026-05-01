@@ -38,29 +38,29 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 * **Integration**: `integrate(expr, var)` (indefinite) and `integrate(expr, var,lower,upper)` (definite)
   - By parts, substitution, partial fractions, special functions
 * **Limits**: `limit(expr, var, point)` — one-sided, infinite, trigonometric
-* **Taylor Series**: `taylor(expr, var, point, order)`
+* **Taylor / Laurent / Padé** approximations and generic series tools
 * **Sums & Products**: `sum(expr, var, start, end)`, `product(expr, var, start, end)`
-* **ODE Solver**: `ode_solver(diff(y,x) = ..., x, y, x0, y0)`
+* **ODE tools**: symbolic `desolve`, numerical `rk4`, `rk45`, ODE stats and plotting
+* **Function analysis**: extrema, stationary points, asymptotes, real-root counting
+* **Optimization**: minimize, maximize, Lagrange multipliers, Euler-Lagrange
 * **Riemann Sums** with visualization
 * **N-step numerical integration**
-* **Fourier Series**: `fourierSeries(f, var, point, order)`
-* **Laplace Transforms**: `laplace(expr, var, s)`, `invLaplace(expr, s, var)`
-* **Transfer functions**
-* **Z-Transforms**: `ztrans(expr, var, z)`
-* **Ei/Li functions** (Exponential and Logarithmic integrals)
+* **Fourier / Laplace / Z-transforms**, FFT and inverse FFT
+* **Curve tools**: arc length, surface area, curvature
 * **Special integrals**: erf, erfc, erfi, Fresnel, Airy, Gamma, Polygamma
 * **Vector calculus**: Laplacian, Jacobian, Hessian, scalar potentials, conservative-field tests
 
 ### 📊 Linear Algebra
 * Vectors & matrices: `[a, b]` or `[[a,b],[c,d]]`
-* Operations: multiply, dot product, cross product
+* Operations: multiply, dot product, cross product, angle, distance, midpoint, projection
 * `det(M)`, `inv(M)`, `trans(M)`, `eigenvalues(M)`, `eigenvectors(M)` — exact on small matrices; larger ones can take noticeably longer
 * Matrix decompositions: LU, QR, Cholesky, SVD
 * `rref(M)` (Row Reduced Echelon Form), `rank(M)`, `kernel(M)`
 * `adj(M)` (Adjugate), matrix powers: `pow(M, n)`
-* Characteristic polynomial, pseudoinverse, condition number, nullity
+* Characteristic polynomial, pseudoinverse, condition number, nullity, row/column spaces
+* Matrix generators: identity, zeros, ones, Hilbert, Toeplitz, Vandermonde, diagonal
 * Solve linear systems
-* Gram-Schmidt orthogonalization
+* Gram-Schmidt orthogonalization, Kronecker products, matrix exponential, commutators
 * Chinese Remainder Theorem: `crt()`
 * Lagrange interpolation
 * RK4 (Runge-Kutta 4th order)
@@ -69,13 +69,12 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 
 ### 📈 Statistics & Probability
 * Descriptive: `mean(list)`, `variance(list)`, `stdDev(list)`
-* Linear, polynomial, exponential regression
-* **Distributions**: Normal, Binomial, Poisson, t, F, Chi-squared
-* **Hypothesis Tests**: Z-Test, T-Test
-* **Expected values** for probability distributions
-* **Binomial distribution** visualization
+* Regression: linear, polynomial, exponential, power, logarithmic
+* **Distributions**: Normal, Binomial, Poisson, Exponential, Geometric, t, F, Chi-squared, Beta, Uniform, Hypergeometric, Gamma
+* PDF/PMF, CDF, and selected inverse-CDF / quantile tools
+* **Hypothesis Tests**: Z-Test, T-Test, 2-sample T-Test, proportion tests, chi-square test
 * Covariance, correlation, confidence intervals, entropy, ANOVA
-* Regression with constants support
+* Advanced stats: mode, geometric mean, harmonic mean, RMS, MAD, moments, skewness, kurtosis, KL divergence
 
 ### 🔢 Number Theory
 * `factor(n)`, `gcd(a, b)`, `lcm(a, b)`
@@ -84,9 +83,9 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 * Divisors, prime factors, Fibonacci, divisor sums
 * Euler's totient: `totient(n)`
 * Möbius and sigma arithmetic functions
-* `coprime(a, b)`, `is_coprime()`
-* Integer partitions: `partitions(n)`
-* Egyptian fractions: `egyptian_fraction(n)`
+* Extended GCD, Chinese remainder theorem, primitive roots
+* Legendre and Jacobi symbols, perfect/square checks, continued fractions
+* Base conversion and Roman numeral conversion
 
 ### 📉 Plotting & Visualization
 * **2D plots**: `plot(expr, var, min, max)` — with canvas rendering
@@ -105,7 +104,9 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 ### 💰 Finance
 * Time Value of Money calculations
 * NPV, IRR
-* Financial equation solvers
+* Compound interest and loan payments
+* Annuities and amortization schedules
+* Black-Scholes option pricing
 
 ### ⚡ Physics
 * Kinematics calculations
@@ -153,6 +154,7 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 * Truth table generation
 * Boolean expression simplification
 * CNF and DNF conversion
+* NAND, NOR, XNOR helpers
 * Operators: `and`, `or`, `not`, `xor`
 
 ### 🎹 Interactive Tools
