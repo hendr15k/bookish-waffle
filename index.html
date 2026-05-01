@@ -1544,6 +1544,11 @@
                     <button class="action-btn" onclick="runTool('grad', ['vcalc-expr', 'vcalc-vars'])">Gradient</button>
                     <button class="action-btn" onclick="runTool('divergence', ['vcalc-expr', 'vcalc-vars'])">Divergence</button>
                     <button class="action-btn" onclick="runTool('curl', ['vcalc-expr', 'vcalc-vars'])">Curl</button>
+                    <button class="action-btn secondary" onclick="runTool('laplacian', ['vcalc-expr', 'vcalc-vars'])">Laplacian</button>
+                    <button class="action-btn secondary" onclick="runTool('jacobian', ['vcalc-expr', 'vcalc-vars'])">Jacobian</button>
+                    <button class="action-btn secondary" onclick="runTool('hessian', ['vcalc-expr', 'vcalc-vars'])">Hessian</button>
+                    <button class="action-btn secondary" onclick="runTool('potential', ['vcalc-expr', 'vcalc-vars'])">Potential</button>
+                    <button class="action-btn secondary" onclick="runTool('conservative', ['vcalc-expr', 'vcalc-vars'])">Conservative?</button>
                 </div>
             </div>
         </div>
@@ -1954,6 +1959,10 @@
                     <button class="action-btn" onclick="runTool('rref', ['lin-adv-expr'])">RREF</button>
                     <button class="action-btn" onclick="runTool('rank', ['lin-adv-expr'])">Rank</button>
                     <button class="action-btn" onclick="runTool('kernel', ['lin-adv-expr'])">Kernel</button>
+                    <button class="action-btn secondary" onclick="runTool('charpoly', ['lin-adv-expr', 'alg-var'])">Char Poly</button>
+                    <button class="action-btn secondary" onclick="runTool('pinv', ['lin-adv-expr'])">Pseudo Inv</button>
+                    <button class="action-btn secondary" onclick="runTool('cond', ['lin-adv-expr'])">Condition #</button>
+                    <button class="action-btn secondary" onclick="runTool('nullity', ['lin-adv-expr'])">Nullity</button>
                 </div>
             </div>
         </div>
@@ -2191,6 +2200,24 @@
                 </div>
             </div>
         </div>
+
+        <div class="tool-section">
+            <h3>Advanced Number Theory</h3>
+            <div class="tool-form">
+                <div class="action-grid">
+                    <button class="action-btn secondary" onclick="runTool('nextprime', ['num-a'])">Next Prime</button>
+                    <button class="action-btn secondary" onclick="runTool('prevprime', ['num-a'])">Prev Prime</button>
+                    <button class="action-btn secondary" onclick="runTool('divisors', ['num-a'])">Divisors</button>
+                    <button class="action-btn secondary" onclick="runTool('primeFactors', ['num-a'])">Prime Factors</button>
+                    <button class="action-btn secondary" onclick="runTool('euler', ['num-a'])">Totient</button>
+                    <button class="action-btn secondary" onclick="runTool('moebius', ['num-a'])">Moebius</button>
+                    <button class="action-btn secondary" onclick="runTool('sigma', ['num-a', 'num-b'])">Sigma</button>
+                    <button class="action-btn secondary" onclick="runTool('fibonacci', ['num-a'])">Fibonacci</button>
+                    <button class="action-btn secondary" onclick="runTool('modPow', ['num-a', 'num-b', 'base-dec'])">Mod Pow</button>
+                    <button class="action-btn secondary" onclick="runTool('modInverse', ['num-a', 'num-b'])">Mod Inverse</button>
+                </div>
+            </div>
+        </div>
         <div class="tool-result"></div>
     </div>
 
@@ -2241,6 +2268,7 @@
              <button class="tab-btn active" onclick="openTab(event, 'tab-geo-2d')">2D Shapes</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-geo-3d')">3D Objects</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-geo-analytic')">Analytic</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-geo-advanced')">Advanced</button>
         </div>
 
         <div id="tab-geo-2d" class="tab-content active">
@@ -2294,6 +2322,19 @@
                     <button class="action-btn" onclick="runTool('midpoint', ['geo-p1', 'geo-p2'])">Midpoint (AB)</button>
                     <button class="action-btn secondary" onclick="runTool('lineEquation', ['geo-p1', 'geo-p2'])">Line Eq (AB)</button>
                     <button class="action-btn secondary" onclick="runTool('circleEquation', ['geo-p1', 'geo-r-analytic'])">Circle Eq (A, r)</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-geo-advanced" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="geo-p3">Point C</label>
+                    <input type="text" class="form-input" id="geo-p3" placeholder="[0, 0, 1]">
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('planeEquation', ['geo-p1', 'geo-p2', 'geo-p3'])">Plane Equation</button>
+                    <button class="action-btn secondary" onclick="runTool('distance', ['geo-p2', 'geo-p3'])">Distance (BC)</button>
                 </div>
             </div>
         </div>
@@ -2556,7 +2597,12 @@
                 <input type="text" class="form-input" id="logic-expr" placeholder="e.g. (A or B) and not C">
                 <small style="color:#666;">Use: and, or, not, xor, (, )</small>
             </div>
-            <button class="action-btn" onclick="runTruthTable()">Generate Table</button>
+            <div class="action-grid">
+                <button class="action-btn" onclick="runTruthTable()">Generate Table</button>
+                <button class="action-btn secondary" onclick="runTool('cnf', ['logic-expr'])">CNF</button>
+                <button class="action-btn secondary" onclick="runTool('dnf', ['logic-expr'])">DNF</button>
+                <button class="action-btn secondary" onclick="runTool('simplify', ['logic-expr'])">Simplify</button>
+            </div>
         </div>
         <div class="tool-result" style="overflow-x: auto; text-align: left;"></div>
     </div>

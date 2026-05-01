@@ -49,6 +49,7 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 * **Z-Transforms**: `ztrans(expr, var, z)`
 * **Ei/Li functions** (Exponential and Logarithmic integrals)
 * **Special integrals**: erf, erfc, erfi, Fresnel, Airy, Gamma, Polygamma
+* **Vector calculus**: Laplacian, Jacobian, Hessian, scalar potentials, conservative-field tests
 
 ### 📊 Linear Algebra
 * Vectors & matrices: `[a, b]` or `[[a,b],[c,d]]`
@@ -57,6 +58,7 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 * Matrix decompositions: LU, QR, Cholesky, SVD
 * `rref(M)` (Row Reduced Echelon Form), `rank(M)`, `kernel(M)`
 * `adj(M)` (Adjugate), matrix powers: `pow(M, n)`
+* Characteristic polynomial, pseudoinverse, condition number, nullity
 * Solve linear systems
 * Gram-Schmidt orthogonalization
 * Chinese Remainder Theorem: `crt()`
@@ -78,7 +80,10 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 ### 🔢 Number Theory
 * `factor(n)`, `gcd(a, b)`, `lcm(a, b)`
 * Prime factorization, primality testing
+* Next/previous primes, modular inverse, modular powers
+* Divisors, prime factors, Fibonacci, divisor sums
 * Euler's totient: `totient(n)`
+* Möbius and sigma arithmetic functions
 * `coprime(a, b)`, `is_coprime()`
 * Integer partitions: `partitions(n)`
 * Egyptian fractions: `egyptian_fraction(n)`
@@ -119,6 +124,7 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 * Circle properties
 * Distance calculations
 * **Analytic geometry** tools
+* Plane equations from three points
 
 ### 🔬 Fourier Analysis
 * **FFT** (Fast Fourier Transform)
@@ -146,6 +152,7 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 ### 🧠 Logic
 * Truth table generation
 * Boolean expression simplification
+* CNF and DNF conversion
 * Operators: `and`, `or`, `not`, `xor`
 
 ### 🎹 Interactive Tools
