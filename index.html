@@ -1291,6 +1291,7 @@
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-tangent')">Tangent</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-vector')">Vector Calc</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-calc-laplace')">Laplace</button>
+            <button class="tab-btn" onclick="openTab(event, 'tab-calc-geom')">Curve Tools</button>
         </div>
 
         <!-- Diff & Limit Tab -->
@@ -1539,6 +1540,35 @@
             </div>
         </div>
 
+        <div id="tab-calc-geom" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="curve-expr">Function</label>
+                    <input type="text" class="form-input" id="curve-expr" placeholder="e.g. x^2">
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="curve-var">Variable</label>
+                        <input type="text" class="form-input" id="curve-var" value="x">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="curve-from">From</label>
+                        <input type="text" class="form-input" id="curve-from" value="0">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="curve-to">To</label>
+                        <input type="text" class="form-input" id="curve-to" value="1">
+                    </div>
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('arcLen', ['curve-expr', 'curve-var', 'curve-from', 'curve-to'])">Arc Length</button>
+                    <button class="action-btn" onclick="runTool('surfaceArea', ['curve-expr', 'curve-var', 'curve-from', 'curve-to'])">Surface Area</button>
+                    <button class="action-btn secondary" onclick="runTool('curvature', ['curve-expr', 'curve-var'])">Curvature</button>
+                    <button class="action-btn secondary" onclick="runTool('curvature', ['curve-expr', 'curve-var', 'curve-from'])">Curvature@Point</button>
+                </div>
+            </div>
+        </div>
+
         <div id="palette-calculus"></div>
         <div class="tool-result"></div>
     </div>
@@ -1552,6 +1582,8 @@
 
         <div class="tab-header">
              <button class="tab-btn active" onclick="openTab(event, 'tab-plot-2d')">2D Function</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-plot-param')">Parametric</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-plot-polar')">Polar</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-plot-3d')">3D Plot</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-plot-implicit')">Implicit</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-plot-vector')">Vector Field</button>
@@ -1596,6 +1628,70 @@
                  <div class="action-grid">
                     <button class="action-btn" onclick="runPlot()">Plot</button>
                 </div>
+            </div>
+        </div>
+
+        <div id="tab-plot-param" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="plot-param-x">x(t)</label>
+                    <input type="text" class="form-input" id="plot-param-x" placeholder="e.g. cos(t)">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="plot-param-y">y(t)</label>
+                    <input type="text" class="form-input" id="plot-param-y" placeholder="e.g. sin(t)">
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-param-var">Parameter</label>
+                        <input type="text" class="form-input" id="plot-param-var" value="t">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-param-steps">Steps</label>
+                        <input type="number" class="form-input" id="plot-param-steps" value="400">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-param-min">Min</label>
+                        <input type="text" class="form-input" id="plot-param-min" value="0">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-param-max">Max</label>
+                        <input type="text" class="form-input" id="plot-param-max" value="2*pi">
+                    </div>
+                </div>
+                <button class="action-btn" onclick="runParametricPlot()">Plot Parametric</button>
+            </div>
+        </div>
+
+        <div id="tab-plot-polar" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="plot-polar-r">r(θ)</label>
+                    <input type="text" class="form-input" id="plot-polar-r" placeholder="e.g. 1+cos(t)">
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-polar-var">Angle Var</label>
+                        <input type="text" class="form-input" id="plot-polar-var" value="t">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-polar-steps">Steps</label>
+                        <input type="number" class="form-input" id="plot-polar-steps" value="400">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-polar-min">Min</label>
+                        <input type="text" class="form-input" id="plot-polar-min" value="0">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="plot-polar-max">Max</label>
+                        <input type="text" class="form-input" id="plot-polar-max" value="2*pi">
+                    </div>
+                </div>
+                <button class="action-btn" onclick="runPolarPlot()">Plot Polar</button>
             </div>
         </div>
 
@@ -1741,6 +1837,7 @@
              <button class="tab-btn active" onclick="openTab(event, 'tab-lin-ops')">Operations</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-lin-build')">Builder</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-lin-vec')">Vectors</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-lin-advanced')">Advanced</button>
         </div>
 
         <div id="tab-lin-ops" class="tab-content active">
@@ -1801,8 +1898,28 @@
                     <label class="form-label" for="vec-b">Vector B</label>
                     <input type="text" class="form-input" id="vec-b" placeholder="[0, 1, 0]">
                 </div>
-                <button class="action-btn" onclick="runTool('cross', ['vec-a', 'vec-b'])">Cross Product</button>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('cross', ['vec-a', 'vec-b'])">Cross Product</button>
+                    <button class="action-btn" onclick="runTool('dot', ['vec-a', 'vec-b'])">Dot Product</button>
+                    <button class="action-btn secondary" onclick="runTool('norm', ['vec-a'])">Norm A</button>
+                    <button class="action-btn secondary" onclick="runTool('projection', ['vec-a', 'vec-b'])">Proj A on B</button>
+                </div>
              </div>
+        </div>
+
+        <div id="tab-lin-advanced" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="lin-adv-expr">Matrix</label>
+                    <input type="text" class="form-input" id="lin-adv-expr" placeholder="[[1,2],[3,4]]">
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('svd', ['lin-adv-expr'])">SVD</button>
+                    <button class="action-btn" onclick="runTool('rref', ['lin-adv-expr'])">RREF</button>
+                    <button class="action-btn" onclick="runTool('rank', ['lin-adv-expr'])">Rank</button>
+                    <button class="action-btn" onclick="runTool('kernel', ['lin-adv-expr'])">Kernel</button>
+                </div>
+            </div>
         </div>
 
         <div id="palette-linear"></div>
@@ -2539,8 +2656,10 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             <!-- Content populated by JS -->
         </div>
         <div class="action-grid">
-            <button class="action-btn secondary" onclick="saveSession()">Save Variables</button>
-            <button class="action-btn secondary" onclick="loadSession()">Load Variables</button>
+            <button class="action-btn secondary" onclick="saveSession()">Export Variables</button>
+            <button class="action-btn secondary" onclick="loadSession()">Import Variables</button>
+            <button class="action-btn secondary" onclick="openSessionsManager()">Named Sessions</button>
+            <button class="action-btn secondary" onclick="saveCurrentSessionQuick()">Quick Save</button>
         </div>
         <button class="action-btn secondary" style="width: 100%; margin-top: 10px;" onclick="runTool('clear', [])">Clear All Variables</button>
         <div class="tool-result"></div>
@@ -2552,6 +2671,10 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             <button class="back-btn" onclick="closeTool()">←</button>
             <span class="tool-title">History</span>
             <button class="action-btn secondary" style="font-size: 0.8em; padding: 5px 10px; margin-left: auto;" onclick="clearHistory()">Clear</button>
+        </div>
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
+            <input type="text" id="history-search" class="form-input" placeholder="Search history..." oninput="filterHistoryEntries()">
+            <button class="action-btn secondary" style="padding:10px 14px; white-space:nowrap;" onclick="exportHistory()">Export</button>
         </div>
         <div id="app-history-content" style="overflow-y: auto; flex-grow: 1;">
             <!-- Mirrors main history -->
@@ -5724,9 +5847,26 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             setTimeout(() => t.remove(), 2500);
         };
 
-        sessionsBtn.addEventListener('click', () => {
+        window.openSessionsManager = function() {
             renderSessionsList();
             sessionsModal.style.display = 'flex';
+        };
+
+        window.saveCurrentSessionQuick = function() {
+            const name = `Session ${new Date().toLocaleString('de-DE')}`;
+            const history = document.getElementById('history');
+            const entries = Array.from(history.querySelectorAll('.entry')).map(e => e.innerHTML);
+            const inputContent = document.getElementById('command-input').value;
+            let sessions = JSON.parse(localStorage.getItem('bw_sessions') || '[]');
+            sessions.push({ name, timestamp: Date.now(), inputContent, entries });
+            if (sessions.length > 20) sessions = sessions.slice(-20);
+            localStorage.setItem('bw_sessions', JSON.stringify(sessions));
+            showToast('Session schnell gespeichert!', 'success');
+            renderSessionsList();
+        };
+
+        sessionsBtn.addEventListener('click', () => {
+            openSessionsManager();
         });
         sessionsModal.addEventListener('click', (e) => {
             if (e.target === sessionsModal) sessionsModal.style.display = 'none';
@@ -7731,6 +7871,49 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 res += (i+1) + " [" + matrix[i].join(", ") + "]\n";
             }
             document.querySelector('#tool-graph .tool-result').innerText = res;
+        };
+
+        window.runParametricPlot = function() {
+            const xExpr = document.getElementById('plot-param-x').value;
+            const yExpr = document.getElementById('plot-param-y').value;
+            const varName = document.getElementById('plot-param-var').value;
+            const min = document.getElementById('plot-param-min').value;
+            const max = document.getElementById('plot-param-max').value;
+            const steps = document.getElementById('plot-param-steps').value;
+            if (!xExpr || !yExpr || !varName || !min || !max) return;
+            input.value = `plotparam(${xExpr}, ${yExpr}, ${varName}, ${min}, ${max}, nstep=${steps})`;
+            evaluate();
+        };
+
+        window.runPolarPlot = function() {
+            const rExpr = document.getElementById('plot-polar-r').value;
+            const varName = document.getElementById('plot-polar-var').value;
+            const min = document.getElementById('plot-polar-min').value;
+            const max = document.getElementById('plot-polar-max').value;
+            const steps = document.getElementById('plot-polar-steps').value;
+            if (!rExpr || !varName || !min || !max) return;
+            input.value = `plotpolar(${rExpr}, ${varName}, ${min}, ${max}, nstep=${steps})`;
+            evaluate();
+        };
+
+        window.filterHistoryEntries = function() {
+            const query = (document.getElementById('history-search')?.value || '').toLowerCase();
+            const container = document.getElementById('app-history-content');
+            if (!container) return;
+            container.querySelectorAll('.entry').forEach(entry => {
+                entry.style.display = entry.textContent.toLowerCase().includes(query) ? '' : 'none';
+            });
+        };
+
+        window.exportHistory = function() {
+            const entries = Array.from(document.querySelectorAll('#history .entry')).map(e => e.innerText.trim()).join('\n\n');
+            const blob = new Blob([entries], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'webcas-history.txt';
+            a.click();
+            URL.revokeObjectURL(url);
         };
 
         window.runTable = function() {

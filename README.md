@@ -83,14 +83,17 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 
 ### 📉 Plotting & Visualization
 * **2D plots**: `plot(expr, var, min, max)` — with canvas rendering
+* **Curve analysis tools**: arc length, surface area, curvature
 * **Multi-plot** support
-* **Parametric plots**
+* **Parametric plots** with dedicated UI tab
+* **Polar plots** with dedicated UI tab
 * **Implicit plots**
 * **Vector fields**
 * **3D plots**: `plot3d(f, var1, var2, min1, max1, min2, max2)`
 * **Interactive plotting** with buttons
 * **Distribution plots**
 * N-step plotting with configurable rectangles
+* Plot pan/zoom and interactive inspection
 
 ### 💰 Finance
 * Time Value of Money calculations
@@ -150,6 +153,8 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 * **Keyboard shortcuts**
 * **Variable definitions** stored across calculations
 * **Command history** persisted via localStorage
+* **Named sessions** with quick save/load
+* **History search and export**
 
 ---
 
