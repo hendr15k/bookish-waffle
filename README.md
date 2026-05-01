@@ -30,6 +30,7 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 * Inequality solving: `solve(inequality, variable)`
 * Nonlinear system solver
 * Partial fractions: `partfrac(expr, var)`
+* Complete the square, coefficient extraction, polynomial degree, Sturm sequences
 * Set operations
 
 ### 📐 Calculus
@@ -53,8 +54,8 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 * Vectors & matrices: `[a, b]` or `[[a,b],[c,d]]`
 * Operations: multiply, dot product, cross product
 * `det(M)`, `inv(M)`, `trans(M)`, `eigenvalues(M)`, `eigenvectors(M)` — exact on small matrices; larger ones can take noticeably longer
-* Matrix decompositions: LU, QR, Cholesky
-* `rref(M)` (Row Reduced Echelon Form), `rank(M)`
+* Matrix decompositions: LU, QR, Cholesky, SVD
+* `rref(M)` (Row Reduced Echelon Form), `rank(M)`, `kernel(M)`
 * `adj(M)` (Adjugate), matrix powers: `pow(M, n)`
 * Solve linear systems
 * Gram-Schmidt orthogonalization
@@ -71,6 +72,7 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 * **Hypothesis Tests**: Z-Test, T-Test
 * **Expected values** for probability distributions
 * **Binomial distribution** visualization
+* Covariance, correlation, confidence intervals, entropy, ANOVA
 * Regression with constants support
 
 ### 🔢 Number Theory
@@ -155,6 +157,7 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 * **Command history** persisted via localStorage
 * **Named sessions** with quick save/load
 * **History search and export**
+* Dedicated apps for complex numbers and special functions
 
 ---
 

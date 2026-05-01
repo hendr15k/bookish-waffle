@@ -1142,6 +1142,14 @@
             <span class="app-icon" style="color: #17a2b8;">📅</span>
             <span class="app-name">Table</span>
         </div>
+        <div class="app-card" onclick="openTool('complex')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('complex')">
+            <span class="app-icon" style="color: #e83e8c;">ℂ</span>
+            <span class="app-name">Complex</span>
+        </div>
+        <div class="app-card" onclick="openTool('special')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('special')">
+            <span class="app-icon" style="color: #6f42c1;">★</span>
+            <span class="app-name">Special</span>
+        </div>
         <div class="app-card" onclick="openTool('settings')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('settings')">
             <span class="app-icon" style="color: #007bff;">⚙️</span>
             <span class="app-name">Settings</span>
@@ -1219,6 +1227,7 @@
             <button class="tab-btn active" onclick="openTab(event, 'tab-alg-basic')">Simplify & Expand</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-alg-solve')">Solve</button>
             <button class="tab-btn" onclick="openTab(event, 'tab-alg-numsolve')">Numeric Solve</button>
+            <button class="tab-btn" onclick="openTab(event, 'tab-alg-advanced')">Advanced</button>
         </div>
 
         <div id="tab-alg-basic" class="tab-content active">
@@ -1267,6 +1276,33 @@
                     </div>
                 </div>
                 <button class="action-btn" onclick="runTool('solve', ['alg-neq', 'alg-nvar', 'alg-nguess'])">Numeric Solve (Newton)</button>
+            </div>
+        </div>
+
+        <div id="tab-alg-advanced" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="alg-adv-expr">Expression</label>
+                    <input type="text" class="form-input" id="alg-adv-expr" placeholder="e.g. 1/(x^2-1)">
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="alg-adv-var">Variable</label>
+                        <input type="text" class="form-input" id="alg-adv-var" value="x">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="alg-adv-order">Order / Degree</label>
+                        <input type="number" class="form-input" id="alg-adv-order" value="4">
+                    </div>
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('partfrac', ['alg-adv-expr', 'alg-adv-var'])">Part. Fractions</button>
+                    <button class="action-btn" onclick="runTool('completeSquare', ['alg-adv-expr', 'alg-adv-var'])">Complete Square</button>
+                    <button class="action-btn secondary" onclick="runTool('coeff', ['alg-adv-expr', 'alg-adv-var', 'alg-adv-order'])">Coefficient</button>
+                    <button class="action-btn secondary" onclick="runTool('degree', ['alg-adv-expr', 'alg-adv-var'])">Degree</button>
+                    <button class="action-btn secondary" onclick="runTool('symb2poly', ['alg-adv-expr', 'alg-adv-var'])">To Coeff List</button>
+                    <button class="action-btn secondary" onclick="runTool('sturm', ['alg-adv-expr', 'alg-adv-var'])">Sturm</button>
+                </div>
             </div>
         </div>
 
@@ -1938,6 +1974,7 @@
              <button class="tab-btn" onclick="openTab(event, 'tab-stat-reg')">Regression</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-stat-dist')">Distributions</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-stat-test')">Hypothesis Test</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-stat-advanced')">Advanced</button>
         </div>
 
         <div id="tab-stat-desc" class="tab-content active">
@@ -2075,6 +2112,36 @@
                 <div class="action-grid">
                     <button class="action-btn" onclick="runTool('zTest', ['test-data', 'test-mu', 'test-sigma'])">Run Z-Test</button>
                     <button class="action-btn" onclick="runTool('tTest', ['test-data', 'test-mu'])">Run T-Test</button>
+                </div>
+            </div>
+        </div>
+        <div id="tab-stat-advanced" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="stat-adv-list-a">List A / Probabilities</label>
+                    <input type="text" class="form-input" id="stat-adv-list-a" placeholder="e.g. [1,2,3] or [0.5,0.5]">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="stat-adv-list-b">List B / Second Dataset</label>
+                    <input type="text" class="form-input" id="stat-adv-list-b" placeholder="e.g. [2,4,6]">
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="stat-level">Confidence Level</label>
+                        <input type="number" class="form-input" id="stat-level" value="0.95" step="0.01">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="stat-sigma-known">Known σ</label>
+                        <input type="number" class="form-input" id="stat-sigma-known" value="1" step="0.1">
+                    </div>
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('cov', ['stat-adv-list-a', 'stat-adv-list-b'])">Covariance</button>
+                    <button class="action-btn" onclick="runTool('corr', ['stat-adv-list-a', 'stat-adv-list-b'])">Correlation</button>
+                    <button class="action-btn secondary" onclick="runTool('zInterval', ['stat-adv-list-a', 'stat-sigma-known', 'stat-level'])">Z-Interval</button>
+                    <button class="action-btn secondary" onclick="runTool('tInterval', ['stat-adv-list-a', 'stat-level'])">T-Interval</button>
+                    <button class="action-btn secondary" onclick="runTool('entropy', ['stat-adv-list-a'])">Entropy</button>
+                    <button class="action-btn secondary" onclick="runTool('anova', ['stat-adv-list-a'])">ANOVA</button>
                 </div>
             </div>
         </div>
@@ -2646,6 +2713,68 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         <div class="tool-result"></div>
     </div>
 
+    <!-- COMPLEX NUMBERS TOOL -->
+    <div id="tool-complex" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Complex Numbers</span>
+        </div>
+        <div class="tool-form">
+            <div class="form-group">
+                <label class="form-label" for="complex-expr">Complex Expression</label>
+                <input type="text" class="form-input" id="complex-expr" placeholder="e.g. 3+4i">
+            </div>
+            <div class="action-grid">
+                <button class="action-btn" onclick="runTool('abs', ['complex-expr'])">Magnitude</button>
+                <button class="action-btn" onclick="runTool('arg', ['complex-expr'])">Argument</button>
+                <button class="action-btn secondary" onclick="runTool('real', ['complex-expr'])">Real Part</button>
+                <button class="action-btn secondary" onclick="runTool('imag', ['complex-expr'])">Imag Part</button>
+                <button class="action-btn secondary" onclick="runTool('conj', ['complex-expr'])">Conjugate</button>
+                <button class="action-btn secondary" onclick="runTool('toPolar', ['complex-expr'])">To Polar</button>
+            </div>
+        </div>
+        <div class="tool-result"></div>
+    </div>
+
+    <!-- SPECIAL FUNCTIONS TOOL -->
+    <div id="tool-special" class="tool-view">
+        <div class="tool-header">
+            <button class="back-btn" onclick="closeTool()">←</button>
+            <span class="tool-title">Special Functions</span>
+        </div>
+        <div class="tool-form">
+            <div class="form-group">
+                <label class="form-label" for="special-expr">Expression</label>
+                <input type="text" class="form-input" id="special-expr" placeholder="e.g. x or 2">
+            </div>
+            <div class="form-row">
+                <div class="form-group" style="flex:1">
+                    <label class="form-label" for="special-n">n</label>
+                    <input type="number" class="form-input" id="special-n" value="2">
+                </div>
+                <div class="form-group" style="flex:1">
+                    <label class="form-label" for="special-k">k / m</label>
+                    <input type="number" class="form-input" id="special-k" value="1">
+                </div>
+            </div>
+            <div class="action-grid">
+                <button class="action-btn" onclick="runTool('gamma', ['special-expr'])">Gamma</button>
+                <button class="action-btn" onclick="runTool('zeta', ['special-expr'])">Zeta</button>
+                <button class="action-btn secondary" onclick="runTool('lambertw', ['special-expr'])">Lambert W</button>
+                <button class="action-btn secondary" onclick="runTool('besselJ', ['special-n', 'special-expr'])">Bessel J</button>
+                <button class="action-btn secondary" onclick="runTool('legendre', ['special-n', 'special-expr'])">Legendre</button>
+                <button class="action-btn secondary" onclick="runTool('chebyshev', ['special-n', 'special-expr'])">Chebyshev</button>
+                <button class="action-btn secondary" onclick="runTool('hermite', ['special-n', 'special-expr'])">Hermite</button>
+                <button class="action-btn secondary" onclick="runTool('laguerre', ['special-n', 'special-expr'])">Laguerre</button>
+                <button class="action-btn secondary" onclick="runTool('bernoulli', ['special-n'])">Bernoulli</button>
+                <button class="action-btn secondary" onclick="runTool('harmonic', ['special-n'])">Harmonic</button>
+                <button class="action-btn secondary" onclick="runTool('catalan', ['special-n'])">Catalan</button>
+                <button class="action-btn secondary" onclick="runTool('stirling2', ['special-n', 'special-k'])">Stirling S2</button>
+            </div>
+        </div>
+        <div class="tool-result"></div>
+    </div>
+
     <!-- VARIABLES APP -->
     <div id="tool-variables" class="tool-view">
         <div class="tool-header">
@@ -2720,6 +2849,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         <div class="tab-header">
              <button class="tab-btn active" onclick="openTab(event, 'tab-poly-roots')">Roots & Factors</button>
              <button class="tab-btn" onclick="openTab(event, 'tab-poly-div')">Division</button>
+             <button class="tab-btn" onclick="openTab(event, 'tab-poly-advanced')">Advanced</button>
         </div>
 
         <div id="tab-poly-roots" class="tab-content active">
@@ -2754,6 +2884,30 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                     <button class="action-btn" onclick="runTool('quo', ['poly-num', 'poly-den'])">Quotient</button>
                     <button class="action-btn" onclick="runTool('rem', ['poly-num', 'poly-den'])">Remainder</button>
                     <button class="action-btn secondary" onclick="runTool('divisors', ['poly-num'])">Int Divisors (Num)</button>
+                </div>
+            </div>
+        </div>
+        <div id="tab-poly-advanced" class="tab-content">
+            <div class="tool-form">
+                <div class="form-group">
+                    <label class="form-label" for="poly-adv-expr">Polynomial</label>
+                    <input type="text" class="form-input" id="poly-adv-expr" placeholder="e.g. x^3+2*x+1">
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="poly-adv-var">Variable</label>
+                        <input type="text" class="form-input" id="poly-adv-var" value="x">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label" for="poly-adv-degree">Degree/Index</label>
+                        <input type="number" class="form-input" id="poly-adv-degree" value="2">
+                    </div>
+                </div>
+                <div class="action-grid">
+                    <button class="action-btn" onclick="runTool('degree', ['poly-adv-expr', 'poly-adv-var'])">Degree</button>
+                    <button class="action-btn" onclick="runTool('coeff', ['poly-adv-expr', 'poly-adv-var', 'poly-adv-degree'])">Coeff</button>
+                    <button class="action-btn secondary" onclick="runTool('symb2poly', ['poly-adv-expr', 'poly-adv-var'])">To Coeffs</button>
+                    <button class="action-btn secondary" onclick="runTool('sturm', ['poly-adv-expr', 'poly-adv-var'])">Sturm</button>
                 </div>
             </div>
         </div>
