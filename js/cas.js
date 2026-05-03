@@ -6921,6 +6921,20 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
          return new Call('lcm', [a, b]);
     }
 
+    _isSingleVar(expr) {
+        const vars = [];
+        const findVars = (node) => {
+            if (node instanceof Sym && !['pi', 'e', 'i', 'infinity'].includes(node.name)) {
+                if (!vars.some(v => v.name === node.name)) vars.push(node);
+            }
+            if (node instanceof Call) node.args.forEach(findVars);
+            if (node instanceof BinaryOp) { findVars(node.left); findVars(node.right); }
+            if (node instanceof Pow) { findVars(node.left); findVars(node.right); }
+        };
+        findVars(expr);
+        return vars.length === 1;
+    }
+
     _factor(n) {
         n = n.simplify();
 
@@ -6980,9 +6994,12 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 const B = getRoot(n.right, 2);
                 if (A && B) {
                     // (A-B)(A+B)
-                    // Recurse on factors to fully factorize (e.g. x^4 - 1 -> (x^2-1)(x^2+1) -> (x-1)(x+1)(x^2+1))
-                    const f1 = this._factor(new Sub(A, B));
-                    const f2 = this._factor(new Add(A, B));
+                    // For single-variable expressions, recurse to fully factorize (e.g. x^4-1 -> (x^2-1)(x^2+1) -> (x-1)(x+1)(x^2+1))
+                    // For multivariate expressions, just simplify (e.g. x^2-y^2 -> (x-y)(x+y))
+                    const f1Raw = new Sub(A, B).simplify();
+                    const f2Raw = new Add(A, B).simplify();
+                    const f1 = this._isSingleVar(f1Raw) ? this._factor(f1Raw) : f1Raw;
+                    const f2 = this._isSingleVar(f2Raw) ? this._factor(f2Raw) : f2Raw;
                     return new Mul(f1, f2).simplify();
                 }
 
@@ -6990,9 +7007,11 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 const A3 = getRoot(n.left, 3);
                 const B3 = getRoot(n.right, 3);
                 if (A3 && B3) {
-                    const term1 = new Sub(A3, B3);
-                    const term2 = new Add(new Add(new Pow(A3, new Num(2)), new Mul(A3, B3)), new Pow(B3, new Num(2)));
-                    return new Mul(this._factor(term1), this._factor(term2)).simplify();
+                    const term1Raw = new Sub(A3, B3).simplify();
+                    const term2Raw = new Add(new Add(new Pow(A3, new Num(2)), new Mul(A3, B3)), new Pow(B3, new Num(2))).simplify();
+                    const term1 = this._isSingleVar(term1Raw) ? this._factor(term1Raw) : term1Raw;
+                    const term2 = this._isSingleVar(term2Raw) ? this._factor(term2Raw) : term2Raw;
+                    return new Mul(term1, term2).simplify();
                 }
             }
             // Sum of Cubes: A^3 + B^3 = (A+B)(A^2 - AB + B^2)
@@ -7013,9 +7032,11 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 const A3 = getRoot(n.left, 3);
                 const B3 = getRoot(n.right, 3);
                 if (A3 && B3) {
-                    const term1 = new Add(A3, B3);
-                    const term2 = new Add(new Sub(new Pow(A3, new Num(2)), new Mul(A3, B3)), new Pow(B3, new Num(2)));
-                    return new Mul(this._factor(term1), this._factor(term2)).simplify();
+                    const term1Raw = new Add(A3, B3).simplify();
+                    const term2Raw = new Add(new Sub(new Pow(A3, new Num(2)), new Mul(A3, B3)), new Pow(B3, new Num(2))).simplify();
+                    const term1 = this._isSingleVar(term1Raw) ? this._factor(term1Raw) : term1Raw;
+                    const term2 = this._isSingleVar(term2Raw) ? this._factor(term2Raw) : term2Raw;
+                    return new Mul(term1, term2).simplify();
                 }
             }
 
@@ -7030,6 +7051,11 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 if (node instanceof Pow) { findVars(node.left); findVars(node.right); }
             };
             findVars(n);
+
+            // Handle multivariate expressions: product of distinct symbols like x*y
+            if (vars.length > 1 && !(n instanceof Add) && !(n instanceof Sub)) {
+                return n;
+            }
 
             if (vars.length === 1) {
                 const x = vars[0];
@@ -8224,7 +8250,74 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         if (a instanceof Num && b instanceof Num) {
              return new Num(Math.trunc(a.value / b.value));
         }
-        return new Call('quo', [a, b]);
+
+        const varNode = this._getPolyVar(a);
+        if (!varNode) return new Call('quo', [a, b]);
+
+        const aPoly = this._getPolyCoeffs(a, varNode);
+        const bPoly = this._getPolyCoeffs(b, varNode);
+
+        if (!aPoly || !bPoly) return new Call('quo', [a, b]);
+        if (bPoly.maxDeg === 0) return new Call('quo', [a, b]);
+
+        const aCoeffs = aPoly.coeffs;
+        const bCoeffs = bPoly.coeffs;
+        const bLead = bCoeffs[bPoly.maxDeg];
+        const bDeg = bPoly.maxDeg;
+
+        const quotientCoeffs = {};
+        let remainderCoeffs = {...aCoeffs};
+
+        for (let deg = aPoly.maxDeg; deg >= bDeg; deg--) {
+            const r = remainderCoeffs[deg];
+            if (r && !(r instanceof Num && r.value === 0)) {
+                const coeff = new Div(r, bLead).simplify();
+                if (coeff instanceof Num && coeff.value === 0) continue;
+                quotientCoeffs[deg - bDeg] = coeff;
+                for (let j = 0; j <= bDeg; j++) {
+                    const term = new Mul(coeff, bCoeffs[j] || new Num(0)).simplify();
+                    remainderCoeffs[deg - bDeg + j] = new Sub(remainderCoeffs[deg - bDeg + j] || new Num(0), term).simplify();
+                }
+            }
+        }
+
+        let quotient = null;
+        for (let deg = aPoly.maxDeg - bDeg; deg >= 0; deg--) {
+            const coeff = quotientCoeffs[deg];
+            if (coeff && !(coeff instanceof Num && coeff.value === 0)) {
+                let term;
+                if (deg === 0) {
+                    term = coeff;
+                } else if (deg === 1) {
+                    term = new Mul(coeff, varNode).simplify();
+                } else {
+                    term = new Mul(coeff, new Pow(varNode, new Num(deg))).simplify();
+                }
+                quotient = quotient ? new Add(quotient, term).simplify() : term;
+            }
+        }
+
+        if (quotient === null) return new Num(0);
+        return quotient.simplify();
+    }
+
+    _getPolyVar(expr) {
+        const findVar = (e) => {
+            if (e instanceof Sym) return e;
+            if (e instanceof Add || e instanceof Sub || e instanceof Mul) {
+                const lv = findVar(e.left);
+                if (lv) return lv;
+                return findVar(e.right);
+            }
+            if (e instanceof Pow && e.right instanceof Num) {
+                return findVar(e.left);
+            }
+            if (e instanceof Div) {
+                return findVar(e.left);
+            }
+            return null;
+        };
+        return findVar(expr);
     }
 
     _mod(a, b) {
