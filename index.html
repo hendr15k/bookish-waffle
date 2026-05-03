@@ -1285,6 +1285,10 @@
                     <label class="form-label" for="alg-adv-expr">Expression</label>
                     <input type="text" class="form-input" id="alg-adv-expr" placeholder="e.g. 1/(x^2-1)">
                 </div>
+                <div class="form-group">
+                    <label class="form-label" for="alg-adv-expr2">Expression 2 (for Resultant)</label>
+                    <input type="text" class="form-input" id="alg-adv-expr2" placeholder="e.g. x^2-1">
+                </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
                         <label class="form-label" for="alg-adv-var">Variable</label>
@@ -1305,17 +1309,17 @@
                     <button class="action-btn secondary" onclick="runTool('symb2poly', ['alg-adv-expr', 'alg-adv-var'])">To Coeff List</button>
                     <button class="action-btn secondary" onclick="runTool('sturm', ['alg-adv-expr', 'alg-adv-var'])">Sturm Seq</button>
                     <button class="action-btn secondary" onclick="runTool('numRealRoots', ['alg-adv-expr', 'alg-adv-var'])">Real Root Count</button>
-                    <button class="action-btn secondary" onclick="runTool('resultant', ['alg-adv-expr'])">Resultant</button>
-                    <button class="action-btn secondary" onclick="runTool('groebner', ['alg-adv-expr'])">Groebner Basis</button>
+                    <button class="action-btn secondary" onclick="runTool('resultant', ['alg-adv-expr', 'alg-adv-expr2', 'alg-adv-var'])">Resultant</button>
+                    <button class="action-btn secondary" onclick="runRawCommand(`groebner([${document.getElementById('alg-adv-expr').value}], [${document.getElementById('alg-adv-var').value}])`)">Groebner Basis</button>
                     <button class="action-btn secondary" onclick="runTool('discriminant', ['alg-adv-expr', 'alg-adv-var'])">Discriminant</button>
-                    <button class="action-btn secondary" onclick="runTool('poly2symb', ['alg-adv-expr'])">From Coeff List</button>
-                    <button class="action-btn secondary" onclick="runTool('lagrange', ['alg-adv-expr'])">Lagrange Interp</button>
+                    <button class="action-btn secondary" onclick="runTool('poly2symb', ['alg-adv-expr', 'alg-adv-var'])">From Coeff List</button>
+                    <button class="action-btn secondary" onclick="runRawCommand(`lagrange(${document.getElementById('opt-expr').value}, [${document.getElementById('opt-constraint').value}], ${document.getElementById('opt-vars').value})`)">Lagrange Mult.</button>
                     <button class="action-btn secondary" onclick="runTool('trigReduce', ['alg-adv-expr'])">Trig Reduce</button>
                     <button class="action-btn secondary" onclick="runTool('trigExpand', ['alg-adv-expr'])">Trig Expand</button>
                     <button class="action-btn secondary" onclick="runTool('trigSimplify', ['alg-adv-expr'])">Trig Simplify</button>
-                    <button class="action-btn secondary" onclick="runTool('series', ['alg-adv-expr', 'alg-adv-var'])">Series</button>
-                    <button class="action-btn secondary" onclick="runTool('laurent', ['alg-adv-expr', 'alg-adv-var'])">Laurent</button>
-                    <button class="action-btn secondary" onclick="runTool('pade', ['alg-adv-expr', 'alg-adv-var'])">Pade</button>
+                    <button class="action-btn secondary" onclick="runTool('series', ['alg-adv-expr', 'alg-adv-var', '0', 'alg-adv-order'])">Series</button>
+                    <button class="action-btn secondary" onclick="runTool('laurent', ['alg-adv-expr', 'alg-adv-var', '0', 'alg-adv-order'])">Laurent</button>
+                    <button class="action-btn secondary" onclick="runTool('pade', ['alg-adv-expr', 'alg-adv-var', 'alg-adv-order', 'alg-adv-order'])">Pade</button>
                 </div>
             </div>
         </div>
@@ -1420,10 +1424,14 @@
                         <input type="text" class="form-input" id="desolve-x" placeholder="x" value="x">
                     </div>
                 </div>
+                <div class="form-group">
+                    <label class="form-label" for="desolve-funcs">Functions (comma-separated list)</label>
+                    <input type="text" class="form-input" id="desolve-funcs" placeholder="e.g. [y1, y2] or y1, y2">
+                </div>
                 <div class="action-grid">
                     <button class="action-btn" onclick="runTool('desolve', ['desolve-eq', 'desolve-var'])">Solve ODE</button>
                     <button class="action-btn" onclick="runAndPlot('slopefield', ['desolve-eq', 'desolve-x', 'desolve-var'])" style="background-color: #28a745;">Plot Slope Field</button>
-                    <button class="action-btn secondary" style="grid-column: span 2;" onclick="runTool('wronskian', ['desolve-eq', 'desolve-x'])">Wronskian (use list)</button>
+                    <button class="action-btn secondary" style="grid-column: span 2;" onclick="runTool('wronskian', ['desolve-funcs', 'desolve-x'])">Wronskian</button>
                 </div>
             </div>
         </div>
@@ -1588,13 +1596,14 @@
                         <input type="text" class="form-input" id="laplace-s" value="s">
                     </div>
                 </div>
+                <div class="form-group">
+                    <label class="form-label" for="laplace-expr2">Function g(t) (for convolution)</label>
+                    <input type="text" class="form-input" id="laplace-expr2" placeholder="e.g. 1">
+                </div>
                 <div class="action-grid">
                     <button class="action-btn" onclick="runTool('laplace', ['laplace-expr', 'laplace-t', 'laplace-s'])">Transform (L)</button>
                     <button class="action-btn secondary" onclick="runTool('ilaplace', ['laplace-expr', 'laplace-s', 'laplace-t'])">Inverse (L⁻¹)</button>
-                    <button class="action-btn secondary" style="grid-column: span 2;" onclick="runTool('convolution', ['laplace-expr', 'laplace-s', 'laplace-t'])">Convolution (f * g)</button>
-                </div>
-                <div style="margin-top:5px; font-size:0.9em; color:#666;">
-                    For convolution, enter "f, g" in function field.
+                    <button class="action-btn secondary" style="grid-column: span 2;" onclick="runTool('convolution', ['laplace-expr', 'laplace-expr2', 'laplace-t'])">Convolution (f * g)</button>
                 </div>
             </div>
         </div>
@@ -1657,9 +1666,9 @@
                     </div>
                 </div>
                 <div class="action-grid">
-                    <button class="action-btn" onclick="runTool('rk4', ['ode-num-eq', 'ode-num-var', 'ode-num-ic', 'ode-num-x0', 'ode-num-x1', 'ode-num-n'])">RK4</button>
-                    <button class="action-btn" onclick="runTool('rk45', ['ode-num-eq', 'ode-num-var', 'ode-num-ic', 'ode-num-x0', 'ode-num-x1', 'ode-num-n'])">RK45</button>
-                    <button class="action-btn secondary" onclick="runTool('odestats', ['ode-num-eq', 'ode-num-var', 'ode-num-ic', 'ode-num-x0', 'ode-num-x1', 'ode-num-n'])">ODE Stats</button>
+                    <button class="action-btn" onclick="runRawCommand(`rk4(${document.getElementById('ode-num-eq').value}, ${document.getElementById('ode-num-var').value}, x, ${document.getElementById('ode-num-ic').value}, ${document.getElementById('ode-num-x0').value}, ${document.getElementById('ode-num-x1').value}, ((${document.getElementById('ode-num-x1').value})-(${document.getElementById('ode-num-x0').value}))/(${document.getElementById('ode-num-n').value}))`)">RK4</button>
+                    <button class="action-btn" onclick="runRawCommand(`rk45(${document.getElementById('ode-num-eq').value}, ${document.getElementById('ode-num-var').value}, x, ${document.getElementById('ode-num-ic').value}, ${document.getElementById('ode-num-x0').value}, ${document.getElementById('ode-num-x1').value}, ((${document.getElementById('ode-num-x1').value})-(${document.getElementById('ode-num-x0').value}))/(${document.getElementById('ode-num-n').value}), 1e-6, [])`)">RK45</button>
+                    <button class="action-btn secondary" onclick="runRawCommand(`odestats(rk45(${document.getElementById('ode-num-eq').value}, ${document.getElementById('ode-num-var').value}, x, ${document.getElementById('ode-num-ic').value}, ${document.getElementById('ode-num-x0').value}, ${document.getElementById('ode-num-x1').value}, ((${document.getElementById('ode-num-x1').value})-(${document.getElementById('ode-num-x0').value}))/(${document.getElementById('ode-num-n').value}), 1e-6, []))`)">ODE Stats</button>
                     <button class="action-btn secondary" onclick="runOdePlot()" style="background-color: #28a745;">Plot</button>
                 </div>
             </div>
@@ -1709,10 +1718,10 @@
                     <input type="text" class="form-input" id="opt-constraint" placeholder="e.g. x+y-10=0">
                 </div>
                 <div class="action-grid">
-                    <button class="action-btn" onclick="runTool('minimize', ['opt-expr', 'opt-vars'])">Minimize</button>
-                    <button class="action-btn" onclick="runTool('maximize', ['opt-expr', 'opt-vars'])">Maximize</button>
-                    <button class="action-btn secondary" onclick="runTool('lagrangeMultipliers', ['opt-expr', 'opt-vars', 'opt-constraint'])">Lagrange Mult.</button>
-                    <button class="action-btn secondary" onclick="runTool('eulerLagrange', ['opt-expr', 'opt-vars'])">Euler-Lagrange</button>
+                    <button class="action-btn" onclick="const v=document.getElementById('opt-vars').value.replace(/[\[\]]/g,'').split(',')[0];runTool('minimize',['opt-expr',v])">Minimize</button>
+                    <button class="action-btn" onclick="const v=document.getElementById('opt-vars').value.replace(/[\[\]]/g,'').split(',')[0];runTool('maximize',['opt-expr',v])">Maximize</button>
+                    <button class="action-btn secondary" onclick="runRawCommand(`lagrangeMultipliers(${document.getElementById('opt-expr').value}, [${document.getElementById('opt-constraint').value}], ${document.getElementById('opt-vars').value})`)">Lagrange Mult.</button>
+                    <button class="action-btn secondary" onclick="const vs=document.getElementById('opt-vars').value.replace(/[\[\]]/g,'').split(',');runTool('eulerLagrange',['opt-expr',vs[0]||'x',vs[1]||'t'])">Euler-Lagrange</button>
                 </div>
             </div>
         </div>
@@ -1743,9 +1752,9 @@
                     <button class="action-btn secondary" onclick="runTool('stationary_points', ['an-expr', 'an-var'])">Stationary Pts</button>
                     <button class="action-btn secondary" onclick="runTool('asymptotes', ['an-expr', 'an-var'])">Asymptotes</button>
                     <button class="action-btn secondary" onclick="runTool('numRealRoots', ['an-expr', 'an-var', 'an-a', 'an-b'])">Real Roots</button>
-                    <button class="action-btn secondary" onclick="runTool('series', ['an-expr', 'an-var'])">Series (default)</button>
-                    <button class="action-btn secondary" onclick="runTool('laurent', ['an-expr', 'an-var'])">Laurent Series</button>
-                    <button class="action-btn secondary" onclick="runTool('pade', ['an-expr', 'an-var'])">Pade Approx</button>
+                    <button class="action-btn secondary" onclick="runTool('series', ['an-expr', 'an-var', '0', '6'])">Series (default)</button>
+                    <button class="action-btn secondary" onclick="runTool('laurent', ['an-expr', 'an-var', '0', '6'])">Laurent Series</button>
+                    <button class="action-btn secondary" onclick="runTool('pade', ['an-expr', 'an-var', '2', '2'])">Pade Approx</button>
                 </div>
             </div>
         </div>
@@ -2091,7 +2100,7 @@
                     <button class="action-btn secondary" onclick="runTool('gramschmidt', ['vec-a', 'vec-b'])">Gram-Schmidt</button>
                     <button class="action-btn secondary" onclick="runTool('toSpherical', ['vec-a'])">To Spherical</button>
                     <button class="action-btn secondary" onclick="runTool('toCylindrical', ['vec-a'])">To Cylindrical</button>
-                    <button class="action-btn secondary" onclick="runTool('kroneckerDelta', ['vec-a'])">Kronecker δ</button>
+                    <button class="action-btn secondary" onclick="runTool('kroneckerDelta', ['1', '1'])">Kronecker δ</button>
                 </div>
              </div>
         </div>
@@ -2114,9 +2123,9 @@
                     <button class="action-btn secondary" onclick="runTool('colSpace', ['lin-adv-expr'])">Col Space</button>
                     <button class="action-btn secondary" onclick="runTool('rowSpace', ['lin-adv-expr'])">Row Space</button>
                     <button class="action-btn secondary" onclick="runTool('basis', ['lin-adv-expr'])">Basis</button>
-                    <button class="action-btn secondary" onclick="runTool('matrixPow', ['lin-adv-expr'])">M^n (n=2)</button>
+                    <button class="action-btn secondary" onclick="runTool('matrixPow', ['lin-adv-expr', '2'])">M^n (n=2)</button>
                     <button class="action-btn secondary" onclick="runTool('matrixExp', ['lin-adv-expr'])">Matrix Exp</button>
-                    <button class="action-btn secondary" onclick="runTool('commutator', ['lin-adv-expr'])">Commutator</button>
+                    <button class="action-btn secondary" onclick="runTool('commutator', ['lin-adv-expr', 'lin-adv-expr'])">Commutator</button>
                 </div>
                 <div class="tool-section" style="margin-top:15px;">
                     <h3>Matrix Generators</h3>
@@ -2139,10 +2148,10 @@
                         <button class="action-btn secondary" onclick="runTool('zeros', ['lin-gen-rows', 'lin-gen-cols'])">Zeros</button>
                         <button class="action-btn secondary" onclick="runTool('ones', ['lin-gen-rows', 'lin-gen-cols'])">Ones</button>
                         <button class="action-btn secondary" onclick="runTool('hilbert', ['lin-gen-rows'])">Hilbert</button>
-                        <button class="action-btn secondary" onclick="runTool('vandermonde', ['lin-gen-val'])">Vandermonde</button>
-                        <button class="action-btn secondary" onclick="runTool('toeplitz', ['lin-gen-val'])">Toeplitz</button>
-                        <button class="action-btn secondary" onclick="runTool('diag', ['lin-gen-val'])">Diagonal</button>
-                        <button class="action-btn secondary" onclick="runTool('kron', ['lin-adv-expr'])">Kronecker ⊗</button>
+                        <button class="action-btn secondary" onclick="runRawCommand(`vandermonde([1,${document.getElementById('lin-gen-val').value},${document.getElementById('lin-gen-cols').value}])`)">Vandermonde</button>
+                        <button class="action-btn secondary" onclick="runRawCommand(`toeplitz([1,${document.getElementById('lin-gen-val').value},${document.getElementById('lin-gen-cols').value}], [1,${document.getElementById('lin-gen-val').value},${document.getElementById('lin-gen-cols').value}])`)">Toeplitz</button>
+                        <button class="action-btn secondary" onclick="runRawCommand(`diag([${document.getElementById('lin-gen-val').value},${document.getElementById('lin-gen-val').value},${document.getElementById('lin-gen-val').value}])`)">Diagonal</button>
+                        <button class="action-btn secondary" onclick="runRawCommand(`kron(${document.getElementById('lin-adv-expr').value}, ${document.getElementById('lin-adv-expr').value})`)">Kronecker ⊗</button>
                     </div>
                 </div>
             </div>
@@ -2372,8 +2381,12 @@
         <div id="tab-stat-advanced" class="tab-content">
             <div class="tool-form">
                 <div class="form-group">
-                    <label class="form-label" for="stat-adv-list-a">List A / Probabilities</label>
+                    <label class="form-label" for="stat-adv-list-a">List A / Observed Values</label>
                     <input type="text" class="form-input" id="stat-adv-list-a" placeholder="e.g. [1,2,3] or [0.5,0.5]">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="stat-adv-expected">Expected Values (Chi-Sq)</label>
+                    <input type="text" class="form-input" id="stat-adv-expected" placeholder="e.g. [1.5,2.5,2.5] (must match length of List A)">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="stat-adv-list-b">List B / Second Dataset</label>
@@ -2405,8 +2418,8 @@
                     <button class="action-btn secondary" onclick="runTool('kurtosis', ['stat-adv-list-a'])">Kurtosis</button>
                     <button class="action-btn secondary" onclick="runTool('moment', ['stat-adv-list-a'])">Moment (r=2)</button>
                     <button class="action-btn secondary" onclick="runTool('kl_divergence', ['stat-adv-list-a', 'stat-adv-list-b'])">KL Divergence</button>
-                    <button class="action-btn secondary" onclick="runTool('chiSquareTest', ['stat-adv-list-a'])">Chi-Sq Goodness</button>
-                    <button class="action-btn secondary" onclick="runTool('propTest', ['stat-adv-list-a', 'stat-adv-list-b'])">Prop Z-Test</button>
+                    <button class="action-btn secondary" onclick="runTool('chiSquareTest', ['stat-adv-list-a', 'stat-adv-expected'])">Chi-Sq Goodness</button>
+                    <button class="action-btn secondary" onclick="const a=document.getElementById('stat-adv-list-a').value,b=document.getElementById('stat-adv-list-b').value;runRawCommand(`propTest2(${parseFloat(a)},${parseFloat(b.split(',')[0])},${parseFloat(b.split(',')[1])},${parseFloat(b.split(',')[2])})`)">2-Prop Z-Test</button>
                     <button class="action-btn secondary" onclick="runTool('tTest2', ['stat-adv-list-a', 'stat-adv-list-b'])">2-Sample T-Test</button>
                 </div>
             </div>
@@ -2721,8 +2734,8 @@
                      <input type="number" class="form-input" id="annuity-n" placeholder="e.g. 20">
                  </div>
                  <div class="action-grid">
-                     <button class="action-btn" onclick="runTool('annuity', ['annuity-pmt', 'annuity-r', 'annuity-n'])">PV of Annuity</button>
-                     <button class="action-btn secondary" onclick="runTool('annuity', ['annuity-pmt', 'annuity-r', 'annuity-n', '2'])">FV of Annuity</button>
+                    <button class="action-btn" onclick="runRawCommand(`annuity(${document.getElementById('annuity-r').value}/100, ${document.getElementById('annuity-n').value}, ${document.getElementById('annuity-pmt').value})`)">PV of Annuity</button>
+                    <button class="action-btn secondary" onclick="runRawCommand(`annuity(${document.getElementById('annuity-r').value}/100, ${document.getElementById('annuity-n').value}, ${document.getElementById('annuity-pmt').value})`)">FV of Annuity</button>
                  </div>
               </div>
          </div>
@@ -2742,8 +2755,8 @@
                      <input type="number" class="form-input" id="amort-t" placeholder="e.g. 30">
                  </div>
                  <div class="action-grid">
-                     <button class="action-btn" onclick="runTool('amortization', ['amort-p', 'amort-r', 'amort-t'])">Full Schedule</button>
-                     <button class="action-btn secondary" onclick="runTool('amortization', ['amort-p', 'amort-r', 'amort-t', '1'])">Year 1 Only</button>
+                     <button class="action-btn" onclick="runRawCommand(`amortization(${document.getElementById('amort-r').value}/100/12, ${document.getElementById('amort-t').value}*12, ${document.getElementById('amort-p').value})`)">Full Schedule</button>
+                     <button class="action-btn secondary" onclick="runRawCommand(`amortization(${document.getElementById('amort-r').value}/100/12, ${document.getElementById('amort-t').value}*12, ${document.getElementById('amort-p').value})`)">Year 1 Only</button>
                  </div>
               </div>
          </div>
@@ -7822,7 +7835,12 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                 chisquare: `invChiSquare(${p}, ${document.getElementById('stat-chi-k').value})`,
                 studentt: `invT(${p}, ${document.getElementById('stat-t-df').value})`
             };
-            runRawCommand(map[type] || 'Q(quantile not available for this distribution in UI)');
+            const cmd = map[type];
+            if (!cmd) {
+                addToHistory('Quantile', 'Quantile not available for this distribution in UI', true);
+                return;
+            }
+            runRawCommand(cmd);
         };
 
         window.runRawCommand = function(cmd) {
@@ -7840,11 +7858,13 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
 
         window.runOdePlot = function() {
             const eq = document.getElementById('ode-num-eq').value;
+            const dep = document.getElementById('ode-num-var').value;
+            const ic = document.getElementById('ode-num-ic').value;
             const x0 = document.getElementById('ode-num-x0').value;
             const x1 = document.getElementById('ode-num-x1').value;
             const n = document.getElementById('ode-num-n').value;
             if (!eq) return;
-            runRawCommand(`odeplot(${JSON.stringify(eq)}, ${x0}, ${x1}, ${n})`);
+            runRawCommand(`odeplot(rk4(${eq}, ${dep}, x, ${ic}, ${x0}, ${x1}, ((${x1})-(${x0}))/(${n})))`);
         };
 
         // Finance Logic
@@ -7856,24 +7876,25 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                  const t = parseFloat(document.getElementById('fin-t').value);
                  const n = parseFloat(document.getElementById('fin-n').value);
 
-                 if(isNaN(P) || isNaN(r) || isNaN(t)) return;
+                 if (isNaN(P) || isNaN(r) || isNaN(t) || isNaN(n)) return;
 
-                 const A = P * Math.pow((1 + r/n), n*t);
+                 const A = P * Math.pow((1 + r / n), n * t);
                  result = `Future Value (A) = ${A.toFixed(2)}`;
              }
              if (type === 'loan') {
                  const P = parseFloat(document.getElementById('loan-p').value);
-                 const r = parseFloat(document.getElementById('loan-r').value) / 100 / 12; // Monthly rate
+                 const annualRate = parseFloat(document.getElementById('loan-r').value);
                  const t = parseFloat(document.getElementById('loan-t').value);
+                 const r = annualRate / 100 / 12; // Monthly rate
                  const n = t * 12; // Total months
 
-                 if(isNaN(P) || isNaN(r) || isNaN(t)) return;
+                 if (isNaN(P) || isNaN(annualRate) || isNaN(t)) return;
 
                  if (r === 0) {
                      const M = P / n;
                      result = `Monthly Payment = ${M.toFixed(2)}`;
                  } else {
-                     const M = P * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+                     const M = P * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1);
                      result = `Monthly Payment = ${M.toFixed(2)}`;
                  }
              }
@@ -7881,14 +7902,10 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                  const flowsStr = document.getElementById('fin-flows').value;
                  const rateStr = document.getElementById('fin-rate').value;
 
-                 // Construct command
-                 // Parse flows string "100, 200" -> "[100, 200]"
-                 // Or better, let user enter brackets?
-                 // Let's wrap in brackets if not present.
                  let vecStr = flowsStr.trim();
                  if (!vecStr.startsWith('[')) vecStr = `[${vecStr}]`;
 
-                 const rVal = parseFloat(rateStr) / 100; // decimal
+                 const rVal = parseFloat(rateStr) / 100;
 
                  let cmd = "";
                  if (type === 'npv') {
@@ -7904,7 +7921,6 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                      const t = p.parse();
                      const res = cas.evaluate(t);
 
-                     // Format result
                      if (type === 'npv') result = `NPV = ${res.evaluateNumeric().toFixed(2)}`;
                      else {
                          const val = res.evaluateNumeric();
@@ -7925,7 +7941,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
                  resBox.innerText = result;
                  resBox.style.display = 'block';
              }
-        };
+         };
 
         // Logic Truth Table
         window.runTruthTable = function() {
