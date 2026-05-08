@@ -18,7 +18,7 @@
     "jsdom": "^29.1.0"
   },
   "dependencies": {
-    "@capacitor/android": "^8.3.1",
+    "@capacitor/android": "^8.3.3",
     "@capacitor/cli": "^8.3.1",
     "@capacitor/core": "^8.3.1"
   },
