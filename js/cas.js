@@ -6961,7 +6961,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 counts[v] = (counts[v] || 0) + 1;
             }
 
-            let exprs = [];
+            const exprs = [];
             for(const base in counts) {
                 const p = counts[base];
                 if (p === 1) exprs.push(new Num(parseInt(base)));
@@ -6970,7 +6970,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
             if (exprs.length === 1) return exprs[0];
 
-            return new Call('factored', exprs); // Use a custom wrapper to display it
+            return new Call('factored', exprs);
         }
 
         // Polynomial Factorization
@@ -7125,7 +7125,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                     }
 
                     // 4. Higher Order Factorization (Rational Root Theorem)
-                    if (p.maxDeg > 2) {
+                    if (p.maxDeg >= 2) {
                          const ratRes = this._factorRational(p.coeffs, p.maxDeg, x);
                          if (ratRes.found) {
                              factors.push(...ratRes.factors);
@@ -7220,22 +7220,32 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                          }
                     }
 
-                    // 6. Combine factors
+                    // 6. Combine factors (group identical factors into powers)
                     if (factors.length === 0) return new Num(1);
-                    let result = factors[0];
-                    for(let i=1; i<factors.length; i++) {
-                        result = new Mul(result, factors[i]); // Don't simplify fully to avoid expanding back?
-                        // If I use Mul constructor, it simplifies by default in this system?
-                        // The .simplify() method is called inside evaluate().
-                        // If I return a raw tree, evaluate() calls simplify().
-                        // Mul.simplify() might distribute.
-                        // We need a 'factored' wrapper or ensure Mul doesn't expand.
-                        // In this code, simplify() does expand sometimes.
-                        // Let's return Call('factored', factors) if we want to preserve structure?
-                        // Or just rely on Mul not expanding unless .expand() is called.
-                        // Mul.simplify usually just merges numbers and canonicalizes. It does NOT expand (a+b)(c+d).
+
+                    const factorCounts = {};
+                    const factorList = [];
+                    for (const f of factors) {
+                        const key = f.toString();
+                        if (factorCounts[key] === undefined) {
+                            factorCounts[key] = { expr: f, count: 0 };
+                            factorList.push(factorCounts[key]);
+                        }
+                        factorCounts[key].count++;
                     }
-                    return result; // returning Mul tree.
+
+                    const combinedFactors = factorList.map(fc => {
+                        if (fc.count === 1) return fc.expr;
+                        return new Pow(fc.expr, new Num(fc.count)).simplify();
+                    });
+
+                    if (combinedFactors.length === 1) return combinedFactors[0];
+
+                    let result = combinedFactors[0];
+                    for(let i=1; i<combinedFactors.length; i++) {
+                        result = new Mul(result, combinedFactors[i]);
+                    }
+                    return result;
                 }
             }
         } catch (e) {
@@ -10182,11 +10192,9 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         const foundFactors = [];
         let foundAny = false;
 
-        // Try to find roots until degree <= 2 or no more rational roots
-        // Safety loop
-        for (let iter = 0; iter < maxDeg; iter++) {
-            if (currentMaxDeg <= 2) break;
-
+        // Try to find roots until degree < 2 or no more rational roots
+        // Safety loop - continue while degree >= 2 to factor quadratics too
+        for (let iter = 0; currentMaxDeg >= 2 && iter < maxDeg; iter++) {
             const a0 = currentCoeffs[0] || new Num(0);
             const an = currentCoeffs[currentMaxDeg] || new Num(0);
 
