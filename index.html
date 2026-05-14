@@ -552,6 +552,9 @@
             background: #121212;
             border-right-color: #333;
         }
+        body.dark-mode .tool-header {
+            border-bottom-color: #333;
+        }
         body.dark-mode #graphing-add-btn {
             background: #1e1e1e;
             border-top-color: #333;
@@ -3803,6 +3806,10 @@ if (mode === 'desktop') {
         };
 
         window.openTool = function(toolName) {
+            // Hide all other tool views first
+            document.querySelectorAll('.tool-view').forEach(tv => {
+                tv.style.display = 'none';
+            });
             document.getElementById('app-grid').style.display = 'none';
             document.getElementById('app-search-container').style.display = 'none';
             const appCategories = document.getElementById('app-categories');
