@@ -1337,6 +1337,34 @@ class Div extends BinaryOp {
             if (l.right.toString() === r.right.toString()) return new Div(l.left, r.left).simplify();
         }
 
+        // Difference of squares: (x^2 - y^2) / (x - y) = x + y
+        // and (x^2 - y^2) / (x + y) = x - y
+        if (l instanceof Sub && l.left instanceof Pow && l.right instanceof Pow &&
+            l.left.right instanceof Num && l.left.right.value === 2 &&
+            l.right.right instanceof Num && l.right.right.value === 2) {
+            const x2 = l.left.left, y2 = l.right.left;
+            // Denominator is (x - y): result is x + y
+            if (r instanceof Sub && r.left instanceof Sym && r.right instanceof Sym &&
+                r.left.toString() === x2.toString() && r.right.toString() === y2.toString()) {
+                return new Add(x2, y2).simplify();
+            }
+            // Denominator is (y - x): result is -(x + y) = y - x
+            if (r instanceof Sub && r.left instanceof Sym && r.right instanceof Sym &&
+                r.left.toString() === y2.toString() && r.right.toString() === x2.toString()) {
+                return new Sub(y2, x2).simplify();
+            }
+            // Denominator is (x + y): result is x - y
+            if (r instanceof Add && r.left instanceof Sym && r.right instanceof Sym &&
+                r.left.toString() === x2.toString() && r.right.toString() === y2.toString()) {
+                return new Sub(x2, y2).simplify();
+            }
+            // Denominator is (y + x): same as (x + y), result is x - y
+            if (r instanceof Add && r.left instanceof Sym && r.right instanceof Sym &&
+                r.left.toString() === y2.toString() && r.right.toString() === x2.toString()) {
+                return new Sub(x2, y2).simplify();
+            }
+        }
+
         // Div of Divs: (a/b) / (c/d) -> (a*d) / (b*c)
         if (l instanceof Div && r instanceof Div) {
             return new Div(new Mul(l.left, r.right).simplify(), new Mul(l.right, r.left).simplify()).simplify();
