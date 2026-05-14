@@ -640,6 +640,9 @@
             .action-grid {
                 grid-template-columns: 1fr !important;
             }
+            .action-btn[style*="grid-column"] {
+                grid-column: 1 / -1 !important;
+            }
             .action-btn {
                 padding: 16px;
                 font-size: 1.1em;
@@ -880,6 +883,36 @@
             }
         }
         
+        /* Graphing mode responsive on mobile */
+        @media (max-width: 768px) {
+            #graphing-mode {
+                flex-direction: column !important;
+                height: auto !important;
+                min-height: 100vh;
+            }
+            #graphing-sidebar {
+                width: 100% !important;
+                max-height: 40vh;
+                border-right: none !important;
+                border-bottom: 1px solid var(--border-color);
+            }
+            #graphing-main {
+                min-height: 50vh;
+            }
+            /* Tool results scrollable on mobile */
+            .tool-result {
+                max-width: 100%;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                word-break: break-word;
+                overflow-wrap: break-word;
+            }
+            /* Tool views scroll properly with bottom bar */
+            .tool-view {
+                padding-bottom: 80px;
+            }
+        }
+        
         /* Safe area insets for notched phones */
         @supports (padding: max(0px)) {
             @media (max-width: 768px) {
@@ -1012,9 +1045,9 @@
     </style>
 </head>
 <body>
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 8px; position: relative; z-index: 100;">
         <h1 style="margin: 0; font-size: 1.5em;">Web CAS</h1>
-        <div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
             <button id="shortcuts-btn" title="Keyboard Shortcuts" style="padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px; cursor: pointer; font-weight: 600; margin-right: 6px; font-size: 1em;">?</button>
             <button id="sessions-btn" title="Sessions" style="padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px; cursor: pointer; font-weight: 600; margin-right: 6px; font-size: 1em;">📁</button>
             <button id="graphing-toggle">Graphing Mode</button>
@@ -3648,17 +3681,23 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
 
              closeTool(); // Close any open tools
 
-             if (mode === 'desktop') {
-                 mainContent.style.display = 'block';
-                 if (sidebar) sidebar.style.display = 'block';
-                 document.getElementById('input-area').style.display = 'flex';
-                 document.getElementById('history').style.display = 'block';
-             } else if (mode === 'app') {
-                 isMobileMode = true;
-                 document.body.classList.add('mobile-mode');
-                 appGrid.style.display = 'grid';
-                 appSearch.style.display = 'block';
-                 modeToggle.textContent = 'Desktop Mode';
+if (mode === 'desktop') {
+                  mainContent.style.display = 'block';
+                  if (sidebar) sidebar.style.display = 'block';
+                  document.getElementById('input-area').style.display = 'flex';
+                  document.getElementById('history').style.display = 'block';
+              } else if (mode === 'app') {
+                  isMobileMode = true;
+                  document.body.classList.add('mobile-mode');
+                  appGrid.style.display = 'grid';
+                  appSearch.style.display = 'block';
+                  const appCategories = document.getElementById('app-categories');
+                  if (appCategories) appCategories.style.display = 'flex';
+                  modeToggle.textContent = 'Desktop Mode';
+                  // Reset bottom bar active state to Home
+                  document.querySelectorAll('.mobile-bottom-bar button').forEach(btn => {
+                      btn.classList.toggle('active', btn.dataset.tool === 'home');
+                  });
              } else if (mode === 'graphing') {
                  isGraphingMode = true;
                  graphingMode.style.display = 'flex';
@@ -3728,8 +3767,15 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         window.openTool = function(toolName) {
             document.getElementById('app-grid').style.display = 'none';
             document.getElementById('app-search-container').style.display = 'none';
+            const appCategories = document.getElementById('app-categories');
+            if (appCategories) appCategories.style.display = 'none';
             const tool = document.getElementById('tool-' + toolName);
             tool.style.display = 'block';
+
+            // Update mobile bottom bar active state
+            document.querySelectorAll('.mobile-bottom-bar button').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tool === toolName);
+            });
 
             // Auto-focus logic: set lastFocusedInput to the first input of the tool
             const firstInput = tool.querySelector('input');
@@ -3769,6 +3815,11 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             document.querySelectorAll('.tool-view').forEach(el => el.style.display = 'none');
             // Hide all tool results to clean up state
             document.querySelectorAll('.tool-result').forEach(el => el.style.display = 'none');
+
+            // Reset mobile bottom bar active state to Home
+            document.querySelectorAll('.mobile-bottom-bar button').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tool === 'home');
+            });
 
             const appGrid = document.getElementById('app-grid');
             const appSearch = document.getElementById('app-search-container');
@@ -9390,23 +9441,23 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
 
     <!-- Mobile Bottom Toolbar -->
     <div class="mobile-bottom-bar">
-        <button onclick="closeTool()" class="active">
+        <button onclick="closeTool()" data-tool="home" class="active">
             <span class="bar-icon">🏠</span>
             <span>Home</span>
         </button>
-        <button onclick="openTool('calculator')">
+        <button onclick="openTool('calculator')" data-tool="calculator">
             <span class="bar-icon">🔢</span>
             <span>Calc</span>
         </button>
-        <button onclick="openTool('algebra')">
+        <button onclick="openTool('algebra')" data-tool="algebra">
             <span class="bar-icon">📐</span>
             <span>Algebra</span>
         </button>
-        <button onclick="openTool('plotting')">
+        <button onclick="openTool('plotting')" data-tool="plotting">
             <span class="bar-icon">📈</span>
             <span>Plot</span>
         </button>
-        <button onclick="openTool('linear')">
+        <button onclick="openTool('linear')" data-tool="linear">
             <span class="bar-icon">📏</span>
             <span>Matrix</span>
         </button>
