@@ -39,6 +39,7 @@ const TOKEN_LATEX_SUM = 'LATEX_SUM';
 const TOKEN_LATEX_PROD = 'LATEX_PROD';
 const TOKEN_LATEX_INT = 'LATEX_INT';
 const TOKEN_LATEX_LIMIT = 'LATEX_LIMIT';
+const TOKEN_STRING = 'STRING';
 
 // Control Flow Tokens
 const TOKEN_IF = 'IF';
@@ -235,6 +236,25 @@ class Lexer {
 
                 return new Token(TOKEN_IDENTIFIER, id);
             }
+            if (this.currentChar === '"') {
+                this.advance();
+                let str = '';
+                while (this.currentChar !== null && this.currentChar !== '"') {
+                    if (this.currentChar === '\\') {
+                        this.advance();
+                        if (this.currentChar === 'n') { str += '\n'; this.advance(); continue; }
+                        if (this.currentChar === 't') { str += '\t'; this.advance(); continue; }
+                        if (this.currentChar === '"') { str += '"'; this.advance(); continue; }
+                        str += this.currentChar;
+                        this.advance();
+                        continue;
+                    }
+                    str += this.currentChar;
+                    this.advance();
+                }
+                if (this.currentChar === '"') this.advance();
+                return new Token(TOKEN_STRING, str);
+            }
             if (this.currentChar === ':') {
                 if (this.peek() === '=') {
                     this.advance();
@@ -380,9 +400,12 @@ class Parser {
         return node;
     }
 
-    atom() {
+     atom() {
         const token = this.currentToken;
-        if (token.type === TOKEN_NUMBER) {
+        if (token.type === TOKEN_STRING) {
+            this.eat(TOKEN_STRING);
+            return new Str(token.value);
+        } else if (token.type === TOKEN_NUMBER) {
             this.eat(TOKEN_NUMBER);
             return new Num(token.value);
         } else if (token.type === TOKEN_IDENTIFIER) {

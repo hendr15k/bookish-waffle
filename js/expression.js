@@ -449,6 +449,21 @@ class Num extends Expr {
     equals(other) { return other instanceof Num && this.value === other.value; }
 }
 
+class Str extends Expr {
+    constructor(value) {
+        super();
+        this.value = value;
+    }
+    toString() { return `"${this.value}"`; }
+    simplify() { return this; }
+    evaluateNumeric() { return this.value; }
+    diff(varName) { return new Num(0); }
+    integrate(varName) { return new Mul(this, varName); }
+    substitute(varName, value) { return this; }
+    toLatex() { return `"${this.value}"`; }
+    equals(other) { return other instanceof Str && this.value === other.value; }
+}
+
 class Sym extends Expr {
     constructor(name) {
         super();

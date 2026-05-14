@@ -912,7 +912,7 @@
             }
             /* Tool views scroll properly with bottom bar */
             .tool-view {
-                padding-bottom: 80px;
+                padding-bottom: 200px;
             }
         }
         
@@ -955,6 +955,11 @@
 
     
         /* Mobile bottom toolbar */
+        /* Hide bottom bar in graphing mode */
+        body.graphing-mode .mobile-bottom-bar {
+            display: none !important;
+        }
+
         .mobile-bottom-bar {
             display: none;
             position: fixed;
@@ -3708,8 +3713,9 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
              const sidebar = document.getElementById('sidebar');
 
              // Reset states
-             document.body.classList.remove('mobile-mode');
-             mainContent.style.display = 'none';
+              document.body.classList.remove('mobile-mode');
+              document.body.classList.remove('graphing-mode');
+              mainContent.style.display = 'none';
              appGrid.style.display = 'none';
              appSearch.style.display = 'none';
              graphingMode.style.display = 'none';
@@ -3740,8 +3746,9 @@ if (mode === 'desktop') {
                       btn.classList.toggle('active', btn.dataset.tool === 'home');
                   });
              } else if (mode === 'graphing') {
-                 isGraphingMode = true;
-                 graphingMode.style.display = 'flex';
+                  isGraphingMode = true;
+                  document.body.classList.add('graphing-mode');
+                  graphingMode.style.display = 'flex';
                  graphingToggle.textContent = 'Close Graphing';
                  // Initialize canvas size
                  resizeGraphingCanvas();
