@@ -57,16 +57,22 @@ const s = int1.toString();
 assert(s.includes("ln") || s.includes("atanh"), "Integration result contains ln or atanh");
 
 // 4. Integrate 1/(x^2+1) -> atan(x)
-// This is handled by standard integrate table (via table lookups if implemented, or partfrac with complex roots?)
-// My partfrac currently supports real roots from _solve. x^2+1 has no real roots.
-// _solve returns complex?
-// My _solve logic handles quadratics with discriminant < 0 if it supports sqrt(-1).
-// Let's see.
 const expr3 = new Div(new Num(1), new Add(new Pow(x, new Num(2)), new Num(1)));
 const int3 = cas.evaluate(new Call('integrate', [expr3, x]));
 console.log("integrate(1/(x^2+1)) -> " + int3.toString());
-// Currently CAS.js integrate doesn't have table for atan.
-// partfrac might fail or return complex.
-// If it fails, integrate returns Call.
+
+// 5. Integrate x^2/(x^2+1) -> x - atan(x)
+// Regression test: polynomial division in partfrac was causing infinite recursion
+// when quotient is 0 and remainder degree >= denominator degree.
+const expr4 = new Div(new Pow(x, new Num(2)), new Add(new Pow(x, new Num(2)), new Num(1)));
+const int4 = cas.evaluate(new Call('integrate', [expr4, x]));
+console.log("integrate(x^2/(x^2+1)) -> " + int4.toString());
+assert(!int4.toString().includes("integrate("), "integrate(x^2/(x^2+1)) should not return unevaluated");
+assert(int4.toString().includes("atan"), "integrate(x^2/(x^2+1)) result should contain atan");
+
+// 6. partfrac(x^2/(x^2+1), x) should give 1 - 1/(x^2+1)
+const pf4 = cas.evaluate(new Call('partfrac', [expr4, x]));
+console.log("partfrac(x^2/(x^2+1)) -> " + pf4.toString());
+assert(pf4.toString().includes("1") && pf4.toString().includes("x^2 + 1"), "partfrac(x^2/(x^2+1)) should return a proper decomposition");
 
 console.log("--- End Tests ---");

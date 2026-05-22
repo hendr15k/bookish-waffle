@@ -10322,13 +10322,17 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             if (remExpr instanceof Num && remExpr.value === 0) {
                 return divRes.simplify();
             }
-            // Recursively decompose the remainder fraction
-            const remResult = this._partfrac(new Div(remExpr, den), varNode).simplify();
-            // Add the polynomial part
-            if (divRes instanceof Num && divRes.value === 0) {
-                return remResult;
-            } else {
-                return new Add(divRes, remResult).simplify();
+            if (divRes instanceof Call) {
+                return expr;
+            }
+            const remPoly = this._getPolyCoeffs(remExpr, varNode);
+            if (remPoly && remPoly.maxDeg < denPoly.maxDeg) {
+                const remResult = this._partfrac(new Div(remExpr, den), varNode).simplify();
+                if (divRes instanceof Num && divRes.value === 0) {
+                    return remResult;
+                } else {
+                    return new Add(divRes, remResult).simplify();
+                }
             }
         }
 

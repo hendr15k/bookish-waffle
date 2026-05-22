@@ -648,8 +648,6 @@ class Add extends BinaryOp {
         // a + Sub(b,a) -> b — e.g. x+(x²-x) -> x²
         if (r instanceof Sub && r.right.toString() === l.toString()) return r.left;
 
-        if (exprEquals(l, r)) return new Mul(new Num(2), l);
-
         const lb = extractCoeffBase(l);
         const rb = extractCoeffBase(r);
         if (lb && rb && exprEquals(lb.base, rb.base)) {
@@ -659,6 +657,8 @@ class Add extends BinaryOp {
             if (newCoeff instanceof Num && newCoeff.value === -1) return new Mul(new Num(-1), lb.base).simplify();
             return new Mul(newCoeff, lb.base).simplify();
         }
+
+        if (exprEquals(l, r)) return new Mul(new Num(2), l);
 
         const getFactors = (expr) => {
             if (expr instanceof Mul) return [...getFactors(expr.left), ...getFactors(expr.right)];
@@ -759,65 +759,39 @@ class Sub extends BinaryOp {
         const l = this.left.simplify();
         const r = this.right.simplify();
 
-        const getAddTerms = (expr, terms = []) => {
-            if (expr instanceof Add) {
-                getAddTerms(expr.left, terms);
-                getAddTerms(expr.right, terms);
-            } else {
-                terms.push(expr);
+        // Helper: check if two expressions are equal (with commutativity for Add/Mul)
+        const exprEquals = (a, b) => {
+            if (a.toString() === b.toString()) return true;
+            if (a instanceof Add && b instanceof Add) {
+                return (a.left.toString() === b.left.toString() && a.right.toString() === b.right.toString()) ||
+                       (a.left.toString() === b.right.toString() && a.right.toString() === b.left.toString());
             }
-            return terms;
+            return false;
         };
 
-        const findMatchingTerm = (term, termList, skipIndices = []) => {
-            for (let i = 0; i < termList.length; i++) {
-                if (skipIndices.includes(i)) continue;
-                if (term.toString() === termList[i].toString()) return i;
-            }
-            return -1;
-        };
-
-        const buildAddFromTerms = (terms) => {
-            if (terms.length === 0) return new Num(0);
-            if (terms.length === 1) return terms[0];
-            let result = terms[0];
-            for (let i = 1; i < terms.length; i++) {
-                result = new Add(result, terms[i]).simplify();
-            }
-            return result;
-        };
-
-        // Cancellation: (A+B)-A -> B, (A+B)-B -> A
+        // Cancellation: (A+B)-A -> B, (A+B)-B -> A, (A+B)-(B+A) -> 0
         if (l instanceof Add) {
-            if (l.left.toString() === r.toString()) return l.right;
-            if (l.right.toString() === r.toString()) return l.left;
+            if (exprEquals(l.left, r)) return l.right;
+            if (exprEquals(l.right, r)) return l.left;
         }
         // (A-B)-A -> -B
         if (l instanceof Sub) {
             if (l.left.toString() === r.toString()) return new Mul(new Num(-1), l.right).simplify();
         }
-        // Nested Add cancellation: (a+b+...+c) - (d+e+...) -> cancel common terms
+        // (A+B) - (A+C) -> B - C, (A+B) - (C+A) -> B - C, (A+B) - (B+A) -> 0
         if (l instanceof Add && r instanceof Add) {
-            const lTerms = getAddTerms(l);
-            const rTerms = getAddTerms(r);
-            const matchedR = [];
-
-            for (let i = 0; i < lTerms.length; i++) {
-                const idx = findMatchingTerm(lTerms[i], rTerms, matchedR);
-                if (idx !== -1) {
-                    matchedR.push(idx);
-                }
+            const lLr = l.left.toString(), lR = l.right.toString();
+            const rL = r.left.toString(), rR = r.right.toString();
+            // Both terms match commutatively: (A+B)-(A+B) -> 0
+            if ((lLr === rL && lR === rR) || (lLr === rR && lR === rL)) return new Num(0);
+            // One term matches
+            if (lLr === rL || lLr === rR) {
+                const otherR = (lLr === rL) ? r.right : r.left;
+                return new Sub(l.right, otherR).simplify();
             }
-
-            if (matchedR.length > 0) {
-                const remainingL = lTerms.filter((_, i) => !matchedR.includes(i));
-                const remainingR = rTerms.filter((_, i) => !matchedR.includes(i));
-
-                const leftResult = buildAddFromTerms(remainingL);
-                const rightResult = buildAddFromTerms(remainingR);
-
-                if (rightResult instanceof Num && rightResult.value === 0) return leftResult;
-                return new Sub(leftResult, rightResult).simplify();
+            if (lR === rL || lR === rR) {
+                const otherR = (lR === rL) ? r.right : r.left;
+                return new Sub(l.left, otherR).simplify();
             }
         }
         // (A+B) - (C+D) where B=C -> A - D
@@ -852,6 +826,11 @@ class Sub extends BinaryOp {
             if (infL === 0 && infR !== 0) return new Mul(new Num(-1), r).simplify();
             // Inf - Inf
             return new Sym("NaN");
+        }
+
+        // Distribute subtraction over addition: A - (B + C) -> (A - B) - C
+        if (!(l instanceof Add) && r instanceof Add) {
+            return new Sub(new Sub(l, r.left).simplify(), r.right).simplify();
         }
 
         if (l instanceof Num && l.value === 0) return new Mul(new Num(-1), r).simplify();
@@ -1146,7 +1125,6 @@ class Mul extends BinaryOp {
         if (r instanceof Pow && r.left.toString() === l.toString() && r.right instanceof Num) {
             return new Pow(l, new Num(r.right.value + 1)).simplify();
         }
-        // x^n * x -> x^(n+1)  (symmetric case, Pow on left)
         if (l instanceof Pow && l.left.toString() === r.toString() && l.right instanceof Num) {
             return new Pow(r, new Num(l.right.value + 1)).simplify();
         }
@@ -1168,9 +1146,6 @@ class Mul extends BinaryOp {
                 const inner = getMulParts(expr.right);
                 if (!inner) return null;
                 return { coeff: expr.left.value * inner.coeff, base: inner.base, exp: inner.exp };
-            }
-            if (expr instanceof Mul && expr.left instanceof Num && expr.right instanceof Pow && expr.right.right instanceof Num) {
-                return { coeff: expr.left.value, base: expr.right.left, exp: expr.right.right.value };
             }
             if (expr instanceof Sym) {
                 return { coeff: 1, base: expr, exp: 1 };
@@ -1430,6 +1405,34 @@ class Div extends BinaryOp {
             if (r instanceof Add && r.left instanceof Sym && r.right instanceof Sym &&
                 r.left.toString() === y2.toString() && r.right.toString() === x2.toString()) {
                 return new Sub(x2, y2).simplify();
+            }
+        }
+
+        // Multivariate polynomial GCD: (x^n - y^n) / (x - y) = x^(n-1) + x^(n-2)*y + ... + y^(n-1)
+        if (l instanceof Sub && l.left instanceof Pow && l.right instanceof Pow &&
+            l.left.right instanceof Num && l.right.right instanceof Num &&
+            l.left.right.value === l.right.right.value) {
+            const n = l.left.right.value;
+            const x = l.left.left, y = l.right.left;
+
+            if (r instanceof Sub && r.left instanceof Sym && r.right instanceof Sym &&
+                r.left.toString() === x.toString() && r.right.toString() === y.toString()) {
+                let result = new Num(0);
+                for (let i = n - 1; i >= 0; i--) {
+                    const term = new Mul(new Pow(x, new Num(i)), new Pow(y, new Num(n - 1 - i))).simplify();
+                    result = new Add(result, term).simplify();
+                }
+                return result;
+            }
+
+            if (r instanceof Sub && r.left instanceof Sym && r.right instanceof Sym &&
+                r.left.toString() === y.toString() && r.right.toString() === x.toString()) {
+                let result = new Num(0);
+                for (let i = n - 1; i >= 0; i--) {
+                    const term = new Mul(new Pow(x, new Num(i)), new Pow(y, new Num(n - 1 - i))).simplify();
+                    result = new Add(result, term).simplify();
+                }
+                return new Mul(new Num(-1), result).simplify();
             }
         }
 

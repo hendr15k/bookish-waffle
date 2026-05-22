@@ -126,3 +126,10 @@ checkDirectLatex("Implicit Mul Vars", impMul2, "x y");
 checkDirectLatex("Scientific notation", new Num(1e-10), "\\times 10^{-10}");
 checkDirectLatex("Negated fraction", new Mul(new Num(-1), new sandbox.Div(new Sym("a"), new Sym("b"))), "-\\frac{a}{b}");
 
+// Nested Mul - right operand Mul should be wrapped in parens (HEN-42)
+const nestedMul = new Mul(new Sym("a"), new Mul(new Sym("b"), new Sym("c")));
+checkDirectLatex("Nested Mul right", nestedMul, "\\left(b c\\right)");
+
+const nestedMulLeft = new Mul(new Mul(new Sym("a"), new Sym("b")), new Sym("c"));
+checkDirectLatex("Nested Mul left", nestedMulLeft, "\\left(a b\\right)");
+
