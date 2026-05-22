@@ -107,7 +107,7 @@ test("Cross Product", "cross([1, 0, 0], [0, 1, 0])", "[0, 0, 1]");
 
 // 2. Calculus
 test("Diff sin(x)", "diff(sin(x), x)", "cos(x)");
-test("Diff cos(x)", "diff(cos(x), x)", "(-1 * sin(x))");
+test("Diff cos(x)", "diff(cos(x), x)", "(0 - sin(x))");
 test("Diff exp(x)", "diff(exp(x), x)", "exp(x)");
 test("Diff ln(x)", "diff(ln(x), x)", "(1 / x)");
 test("Diff x^2", "diff(x^2, x)", "(2 * x)");
@@ -122,7 +122,7 @@ test("Integrate constant", "integrate(5, x)", "(5 * x)");
 // 3. Complex Numbers
 test("i^1", "i^1", "i");
 test("i^2", "i^2", "-1");
-test("i^3", "i^3", "(-1 * i)");
+test("i^3", "i^3", "(0 - i)");
 test("i^4", "i^4", "1");
 test("sqrt(-1)", "sqrt(-1)", "i");
 // Update expected: commuted 2 * i

@@ -493,9 +493,9 @@ class Str extends Expr {
     }
     toString() { return `"${this.value}"`; }
     simplify() { return this; }
-    evaluateNumeric() { return this.value; }
+    evaluateNumeric() { return NaN; }
     diff(varName) { return new Num(0); }
-    integrate(varName) { return new Mul(this, varName); }
+    integrate(varName) { throw new Error("Cannot integrate string"); }
     substitute(varName, value) { return this; }
     toLatex() { return `"${this.value}"`; }
     equals(other) { return other instanceof Str && this.value === other.value; }
@@ -732,6 +732,29 @@ class Add extends BinaryOp {
             }
         }
 
+        // Sub(0, x) + Sub(0, y) -> 0 - (x + y)
+        // Also handles nested Add: Sub(0, Add(a,b)) + Sub(0, c) -> 0 - ((a + b) + c)
+        if (l instanceof Sub && l.left instanceof Num && l.left.value === 0 &&
+            r instanceof Sub && r.left instanceof Num && r.left.value === 0) {
+            const flattenAdd = (expr, terms) => {
+                if (expr instanceof Add) {
+                    flattenAdd(expr.left, terms);
+                    flattenAdd(expr.right, terms);
+                } else {
+                    terms.push(expr);
+                }
+            };
+            const leftTerms = [], rightTerms = [];
+            flattenAdd(l.right, leftTerms);
+            flattenAdd(r.right, rightTerms);
+            const allTerms = [...leftTerms, ...rightTerms];
+            let result = allTerms[0];
+            for (let i = 1; i < allTerms.length; i++) {
+                result = new Add(result, allTerms[i]);
+            }
+            return new Sub(new Num(0), result).simplify();
+        }
+
         // Sub(a,b) + Sub(c,d) -> collect like terms across Sub nodes
         if (l instanceof Sub && r instanceof Sub) {
             const la = l.left, lb = l.right;
@@ -866,16 +889,31 @@ class Sub extends BinaryOp {
         }
 
         // Distribute subtraction over addition: A - (B + C) -> (A - B) - C
-        if (!(l instanceof Add) && r instanceof Add) {
+        if (!(l instanceof Add) && r instanceof Add && !(l instanceof Num && l.value === 0)) {
             return new Sub(new Sub(l, r.left).simplify(), r.right).simplify();
         }
 
-        // Negate Add via subtraction: 0 - (A + B) -> (0 - A) + (0 - B)
-        if (l instanceof Num && l.value === 0 && r instanceof Add) {
-            return new Add(new Sub(l, r.left), new Sub(l, r.right));
+        if (l instanceof Num && l.value === 0) {
+            if (r instanceof Sub && r.left instanceof Num && r.left.value === 0) return r.right;
+            if (r instanceof Add) {
+                const flattenAdd = (expr, terms) => {
+                    if (expr instanceof Add) {
+                        flattenAdd(expr.left, terms);
+                        flattenAdd(expr.right, terms);
+                    } else {
+                        terms.push(expr);
+                    }
+                };
+                const terms = [];
+                flattenAdd(r, terms);
+                let result = terms[0];
+                for (let i = 1; i < terms.length; i++) {
+                    result = new Add(result, terms[i]);
+                }
+                return new Sub(new Num(0), result);
+            }
+            return new Sub(new Num(0), r);
         }
-
-        if (l instanceof Num && l.value === 0) return new Mul(new Num(-1), r).simplify();
 
         // Symbolic Fraction subtraction
         // Combine if same denominator: A/C - B/C -> (A-B)/C
@@ -1149,13 +1187,37 @@ class Mul extends BinaryOp {
             return new Mul(r, l).simplify();
         }
 
+        // -1 * x -> -x (negation), avoid recursion
+        if (l instanceof Num && l.value === -1 && !(r instanceof Num)) {
+            if (r instanceof Sub && r.left instanceof Num && r.left.value === 0) {
+                return r.right;
+            }
+            return new Sub(new Num(0), r);
+        }
+
         // Distribute (-1) over Subtraction: -1 * (A - B) -> B - A
         if (l instanceof Num && l.value === -1 && r instanceof Sub) {
             return new Sub(r.right, r.left).simplify();
         }
-        // Distribute (-1) over Addition: -1 * (A + B) -> (-A - B)
+        // Distribute (-1) over Addition: -1 * (A + B + C) -> (-A - B - C)
+        // Handles nested Add structures like -1 * (A + (B + C))
         if (l instanceof Num && l.value === -1 && r instanceof Add) {
-            return new Add(new Sub(new Num(0), r.left), new Sub(new Num(0), r.right)).simplify();
+            const flattenAdd = (expr, terms) => {
+                if (expr instanceof Add) {
+                    flattenAdd(expr.left, terms);
+                    flattenAdd(expr.right, terms);
+                } else {
+                    terms.push(expr);
+                }
+            };
+            const terms = [];
+            flattenAdd(r, terms);
+            const negTerms = terms.map(t => new Mul(new Num(-1), t).simplify());
+            let result = negTerms[0];
+            for (let i = 1; i < negTerms.length; i++) {
+                result = new Add(result, negTerms[i]).simplify();
+            }
+            return result;
         }
 
         // x * x -> x^2
@@ -2787,10 +2849,8 @@ class Call extends Expr {
             }
             // erfc(-x) = 2 - erfc(x)
             if (arg instanceof Mul && arg.left instanceof Num && arg.left.value < 0) {
-                 // erfc(-x) = 2 - erfc(x)
                  return new Sub(new Num(2), new Call('erfc', [new Mul(new Num(-arg.left.value), arg.right).simplify()])).simplify();
             }
-            if (arg instanceof Num && arg.value === 0) return new Num(1);
         }
 
         if (this.funcName === 'erfi') {
@@ -4345,7 +4405,6 @@ class Lt extends BinaryOp {
     evaluateNumeric() { return (this.left.evaluateNumeric() < this.right.evaluateNumeric()) ? 1 : 0; }
     diff(varName) { return new Num(0); }
     toLatex() { return `${this.left.toLatex()} < ${this.right.toLatex()}`; }
-    diff(varName) { return new Num(0); } // Treat as constant for differentiation safety
 }
 
 class Gt extends BinaryOp {
@@ -4361,7 +4420,6 @@ class Gt extends BinaryOp {
     evaluateNumeric() { return (this.left.evaluateNumeric() > this.right.evaluateNumeric()) ? 1 : 0; }
     diff(varName) { return new Num(0); }
     toLatex() { return `${this.left.toLatex()} > ${this.right.toLatex()}`; }
-    diff(varName) { return new Num(0); }
 }
 
 class Le extends BinaryOp {
@@ -4377,7 +4435,6 @@ class Le extends BinaryOp {
     evaluateNumeric() { return (this.left.evaluateNumeric() <= this.right.evaluateNumeric()) ? 1 : 0; }
     diff(varName) { return new Num(0); }
     toLatex() { return `${this.left.toLatex()} \\leq ${this.right.toLatex()}`; }
-    diff(varName) { return new Num(0); }
 }
 
 class Ge extends BinaryOp {
@@ -4393,7 +4450,6 @@ class Ge extends BinaryOp {
     evaluateNumeric() { return (this.left.evaluateNumeric() >= this.right.evaluateNumeric()) ? 1 : 0; }
     diff(varName) { return new Num(0); }
     toLatex() { return `${this.left.toLatex()} \\geq ${this.right.toLatex()}`; }
-    diff(varName) { return new Num(0); }
 }
 
 class At extends Expr {
@@ -5101,7 +5157,7 @@ class Xnor extends BinaryOp {
     const exports = {
         Expr, Num, Sym, BinaryOp, Add, Sub, Mul, Div, Pow, Call, Assignment, Eq, Vec, FunctionDef, Block, toExpr,
         And, Or, Xor, Implies, Iff, Nand, Nor, Xnor, Not, Mod, Neq, Lt, Gt, Le, Ge, At, BooleanEq,
-        If, While, For, Return, Break, Continue
+        If, While, For, Return, Break, Continue, Str
     };
     if (typeof globalThis !== 'undefined') {
         Object.assign(globalThis, exports);

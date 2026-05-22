@@ -207,6 +207,9 @@ class Chemistry {
     }
 
     static calculateMolarMass(formula) {
+        if (typeof formula !== 'string' || formula.trim().length === 0) {
+            throw new Error("Invalid formula");
+        }
         const counts = this.parseMolecule(formula);
         let totalMass = 0;
         for (const el in counts) {

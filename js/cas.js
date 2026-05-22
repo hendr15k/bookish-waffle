@@ -12149,6 +12149,24 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         // Scale
         const integers = vec.map((v, i) => Math.round(v * globalLcm));
 
+        // Format a compound node to chemical notation string (no * operator)
+        const fmtCompound = (node) => {
+            if (node instanceof Mul && node.right instanceof Num) {
+                const base = node.left.toString();
+                const num = node.right.value;
+                // If base ends with ')', insert subscript before last ')': Ca(OH) -> Ca(OH)2
+                if (/\)$/.test(base)) {
+                    return base.replace(/(.*)\)$/, '$1)' + num);
+                }
+                // Otherwise just concatenate: H2O * 2 -> H2O2
+                return base + num;
+            }
+            if (node instanceof Mul && node.left instanceof Num) {
+                return node.left.value + node.right.toString().replace(/\)$/, '');
+            }
+            return node.toString();
+        };
+
         // Format result string
         let lhsStr = "";
         let rhsStr = "";
@@ -12158,14 +12176,14 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             const coef = integers[idx++];
             if (coef !== 0) {
                 if (lhsStr) lhsStr += " + ";
-                lhsStr += (coef === 1 ? "" : coef + " ") + lhsNodes[i].toString();
+                lhsStr += (coef === 1 ? "" : coef) + fmtCompound(lhsNodes[i]);
             }
         }
         for(let i=0; i<rhsNodes.length; i++) {
             const coef = integers[idx++];
             if (coef !== 0) {
                 if (rhsStr) rhsStr += " + ";
-                rhsStr += (coef === 1 ? "" : coef + " ") + rhsNodes[i].toString();
+                rhsStr += (coef === 1 ? "" : coef) + fmtCompound(rhsNodes[i]);
             }
         }
 
