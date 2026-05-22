@@ -759,6 +759,34 @@ class Sub extends BinaryOp {
         const l = this.left.simplify();
         const r = this.right.simplify();
 
+        const getAddTerms = (expr, terms = []) => {
+            if (expr instanceof Add) {
+                getAddTerms(expr.left, terms);
+                getAddTerms(expr.right, terms);
+            } else {
+                terms.push(expr);
+            }
+            return terms;
+        };
+
+        const findMatchingTerm = (term, termList, skipIndices = []) => {
+            for (let i = 0; i < termList.length; i++) {
+                if (skipIndices.includes(i)) continue;
+                if (term.toString() === termList[i].toString()) return i;
+            }
+            return -1;
+        };
+
+        const buildAddFromTerms = (terms) => {
+            if (terms.length === 0) return new Num(0);
+            if (terms.length === 1) return terms[0];
+            let result = terms[0];
+            for (let i = 1; i < terms.length; i++) {
+                result = new Add(result, terms[i]).simplify();
+            }
+            return result;
+        };
+
         // Cancellation: (A+B)-A -> B, (A+B)-B -> A
         if (l instanceof Add) {
             if (l.left.toString() === r.toString()) return l.right;
@@ -768,12 +796,29 @@ class Sub extends BinaryOp {
         if (l instanceof Sub) {
             if (l.left.toString() === r.toString()) return new Mul(new Num(-1), l.right).simplify();
         }
-        // (A+B) - (A+C) -> B - C
+        // Nested Add cancellation: (a+b+...+c) - (d+e+...) -> cancel common terms
         if (l instanceof Add && r instanceof Add) {
-            if (l.left.toString() === r.left.toString()) return new Sub(l.right, r.right).simplify();
-            if (l.right.toString() === r.right.toString()) return new Sub(l.left, r.left).simplify();
-            if (l.left.toString() === r.right.toString()) return new Sub(l.right, r.left).simplify();
-            if (l.right.toString() === r.left.toString()) return new Sub(l.left, r.right).simplify();
+            const lTerms = getAddTerms(l);
+            const rTerms = getAddTerms(r);
+            const matchedR = [];
+
+            for (let i = 0; i < lTerms.length; i++) {
+                const idx = findMatchingTerm(lTerms[i], rTerms, matchedR);
+                if (idx !== -1) {
+                    matchedR.push(idx);
+                }
+            }
+
+            if (matchedR.length > 0) {
+                const remainingL = lTerms.filter((_, i) => !matchedR.includes(i));
+                const remainingR = rTerms.filter((_, i) => !matchedR.includes(i));
+
+                const leftResult = buildAddFromTerms(remainingL);
+                const rightResult = buildAddFromTerms(remainingR);
+
+                if (rightResult instanceof Num && rightResult.value === 0) return leftResult;
+                return new Sub(leftResult, rightResult).simplify();
+            }
         }
         // (A+B) - (C+D) where B=C -> A - D
         if (l instanceof Add && r instanceof Sub) {
@@ -1101,6 +1146,7 @@ class Mul extends BinaryOp {
         if (r instanceof Pow && r.left.toString() === l.toString() && r.right instanceof Num) {
             return new Pow(l, new Num(r.right.value + 1)).simplify();
         }
+        // x^n * x -> x^(n+1)  (symmetric case, Pow on left)
         if (l instanceof Pow && l.left.toString() === r.toString() && l.right instanceof Num) {
             return new Pow(r, new Num(l.right.value + 1)).simplify();
         }
@@ -1122,6 +1168,9 @@ class Mul extends BinaryOp {
                 const inner = getMulParts(expr.right);
                 if (!inner) return null;
                 return { coeff: expr.left.value * inner.coeff, base: inner.base, exp: inner.exp };
+            }
+            if (expr instanceof Mul && expr.left instanceof Num && expr.right instanceof Pow && expr.right.right instanceof Num) {
+                return { coeff: expr.left.value, base: expr.right.left, exp: expr.right.right.value };
             }
             if (expr instanceof Sym) {
                 return { coeff: 1, base: expr, exp: 1 };
