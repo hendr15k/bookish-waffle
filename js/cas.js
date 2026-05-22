@@ -772,7 +772,7 @@ class CAS {
 
             if (node.funcName === 'expand') {
                 if (node.args.length !== 1) throw new Error("expand takes exactly 1 argument");
-                return args[0].expand();
+                return args[0].expand().simplify();
             }
 
             if (node.funcName === 'simplify') {

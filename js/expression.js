@@ -154,15 +154,52 @@ function toExpr(other) {
     throw new Error("Cannot convert to Expr: " + other);
 }
 
+function getMulOperands(expr) {
+    const result = [];
+    const stack = [expr];
+    while (stack.length > 0) {
+        const current = stack.pop();
+        if (current instanceof Mul) {
+            stack.push(current.left, current.right);
+        } else {
+            result.push(current);
+        }
+    }
+    return result;
+}
+
 function exprEquals(a, b) {
+    const visited = new Set();
+    return exprEqualsInner(a, b, visited);
+}
+
+function exprEqualsInner(a, b, visited) {
+    const key = a.toString() + '|' + b.toString();
+    if (visited.has(key)) return true;
+    visited.add(key);
+
     if (a.toString() === b.toString()) return true;
     if (a instanceof Add && b instanceof Add) {
-        return (exprEquals(a.left, b.left) && exprEquals(a.right, b.right)) ||
-               (exprEquals(a.left, b.right) && exprEquals(a.right, b.left));
+        return (exprEqualsInner(a.left, b.left, visited) && exprEqualsInner(a.right, b.right, visited)) ||
+               (exprEqualsInner(a.left, b.right, visited) && exprEqualsInner(a.right, b.left, visited));
     }
     if (a instanceof Mul && b instanceof Mul) {
-        return (exprEquals(a.left, b.left) && exprEquals(a.right, b.right)) ||
-               (exprEquals(a.left, b.right) && exprEquals(a.right, b.left));
+        const opsA = getMulOperands(a);
+        const opsB = getMulOperands(b);
+        if (opsA.length !== opsB.length) return false;
+        const usedB = new Array(opsB.length).fill(false);
+        for (const opA of opsA) {
+            let found = false;
+            for (let i = 0; i < opsB.length; i++) {
+                if (!usedB[i] && exprEqualsInner(opA, opsB[i], visited)) {
+                    usedB[i] = true;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return false;
+        }
+        return true;
     }
     return false;
 }
@@ -628,8 +665,8 @@ class Add extends BinaryOp {
         if (r instanceof Num && r.value < 0) return new Sub(l, new Num(-r.value)).simplify();
         if (l instanceof Num && l.value < 0) return new Sub(r, new Num(-l.value)).simplify(); // (-a) + b -> b - a
 
-        // x + (-y) -> x - y
-        if (r instanceof Mul && r.left instanceof Num && r.left.value === -1) {
+        // x + (-y) -> x - y (but only when y is not an Add, to preserve distribution)
+        if (r instanceof Mul && r.left instanceof Num && r.left.value === -1 && !(r.right instanceof Add)) {
             return new Sub(l, r.right).simplify();
         }
 
@@ -771,8 +808,8 @@ class Sub extends BinaryOp {
 
         // Cancellation: (A+B)-A -> B, (A+B)-B -> A, (A+B)-(B+A) -> 0
         if (l instanceof Add) {
-            if (strEquals(l.left, r)) return l.right;
-            if (strEquals(l.right, r)) return l.left;
+            if (exprEquals(l.left, r)) return l.right;
+            if (exprEquals(l.right, r)) return l.left;
         }
         // (A-B)-A -> -B
         if (l instanceof Sub) {
