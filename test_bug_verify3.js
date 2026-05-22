@@ -14,7 +14,9 @@ function buildPoly() {
   const x4 = new Pow(x, new Num(4));
   const x5 = new Pow(x, new Num(5));
   // x^5 - x^4 + x^3 - x^2 + x - 1
-  return new Sub(new Sub(new Sub(new Sub(x5, x4), x3), x2), new Add(x, new Num(-1)));
+  // Nest: Sub(x^5, Add(x^4, Sub(x^3, Add(x^2, Sub(x, Num(1))))))
+  // = x^5 - x^4 + x^3 - x^2 - x + 1
+  return new Sub(x5, new Add(x4, new Sub(x3, new Add(x2, new Sub(x, new Num(1))))));
 }
 
 console.log('\n== SOLVE: quintic that triggers quartic handler ==');
