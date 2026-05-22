@@ -1,0 +1,35 @@
+name: Auto Commit
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+
+jobs:
+  auto-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for changes
+        id: check
+        run: |
+          git config --local user.email "noreply@paperclip.ing"
+          git config --local user.name "Paperclip Auto-Commit"
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git add -A
+          git diff --cached --stat
+          commit_msg="Auto-commit: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          git commit -m "$commit_msg" -m "Co-Authored-By: Paperclip <noreply@paperclip.ing>"
+          git push
