@@ -771,8 +771,8 @@ class Sub extends BinaryOp {
 
         // Cancellation: (A+B)-A -> B, (A+B)-B -> A, (A+B)-(B+A) -> 0
         if (l instanceof Add) {
-            if (exprEquals(l.left, r)) return l.right;
-            if (exprEquals(l.right, r)) return l.left;
+            if (strEquals(l.left, r)) return l.right;
+            if (strEquals(l.right, r)) return l.left;
         }
         // (A-B)-A -> -B
         if (l instanceof Sub) {
