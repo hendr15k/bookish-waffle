@@ -3256,7 +3256,6 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         // Decomposes via partial fractions: 1/((k+a)*(k+b)) = (1/(b-a)) * (1/(k+a) - 1/(k+b))
         // Telescopes to: (c/(b-a)) * (1/(start+a) - 1/(end+a+d)) where d = b-a
         if (expr instanceof Div && expr.left instanceof Num && expr.left.value !== 0) {
-            console.log('TELESCOPING CHECK: expr=' + expr.toString());
             try {
                 const coeff = expr.left.value;
                 const denom = expr.right.simplify();
@@ -3309,9 +3308,9 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                         if (a !== null && b !== null && a !== b) {
                             const diff = b - a;
                             // sum(c/((k+a)*(k+b)), k, 1, n) = c/(b-a) * sum(1/(k+a) - 1/(k+b), k, 1, n)
-                            // Telescopes to: c/(b-a) * (1/(1+a) - 1/(n+b))
+                            // Telescopes to: c/(b-a) * (1/(1+a) - 1/(end+b))
                             const firstTerm = new Div(new Num(1), new Num(1 + a)).simplify();
-                            const lastTerm = new Div(new Num(1), new Add(n, new Num(b))).simplify();
+                            const lastTerm = new Div(new Num(1), new Add(end, new Num(b))).simplify();
                             const coeffTerm = new Div(new Num(coeff), new Num(diff)).simplify();
                             return new Mul(coeffTerm, new Sub(firstTerm, lastTerm)).simplify();
                         }

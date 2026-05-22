@@ -76,19 +76,21 @@ cas.evaluate(new Call('series', [
 ### BUG #4 — `_sumSymbolic` doesn't handle `Div` expressions
 **Location:** `cas.js`, `_sumSymbolic()` (~line 3209)
 **Description:** `_sumSymbolic` has handlers for `Add`, `Sub`, and `Mul` but not `Div`. When the summand is a fraction like `a/k`, the expression isn't recognized as needing special handling and the geometric series ratio detection also fails.
+**Status: FIXED** — Added Div handler to factor out constant numerators (e.g. `sum(a/k, k, 1, n)` → `a * sum(1/k, k, 1, n)`) and constant denominators.
 **Test case:**
 ```js
 // sum(a/k, k, 1, n) returns unevaluated
 cas.evaluate(new Call('sum', [
   new Div(new Sym('a'), new Sym('k')), new Sym('k'), new Num(1), new Sym('n')
 ]));
-// Got: sum((a / k), k, 1, n)  (unevaluated)
-// Expected: a * H_n (harmonic number), or at least a * psi(n+1) - a * psi(1)
+// Was: sum((a / k), k, 1, n)  (unevaluated)
+// Now: a * sum((1 / k), k, 1, n)  (constant factored out)
 ```
 
 ### BUG #5 — `_sumSymbolic` doesn't simplify telescoping series
 **Location:** `cas.js`, `_sumSymbolic()` (~line 3209)
 **Description:** `sum(1/(k*(k+1)), k, 1, n)` is a telescoping series that simplifies to `n/(n+1)`. The current code doesn't recognize this pattern.
+**Status: FIXED** — Added telescoping series detection via quadratic factorization and partial fractions. Handles `sum(c/((k+a)*(k+b)), k, 1, n)` by decomposing to `(c/(b-a)) * (1/(1+a) - 1/(n+b))`.
 **Test case:**
 ```js
 // sum(1/(k*(k+1)), k, 1, n) = n/(n+1)
@@ -96,8 +98,8 @@ cas.evaluate(new Call('sum', [
   new Div(new Num(1), new Mul(new Sym('k'), new Add(new Sym('k'), new Num(1)))),
   new Sym('k'), new Num(1), new Sym('n')
 ]));
-// Got: sum((1 / (k^2 + k)), k, 1, n)  (unevaluated)
-// Expected: n/(n+1)
+// Was: sum((1 / (k^2 + k)), k, 1, n)  (unevaluated)
+// Now: (1 - (1 / (n + 1)))  which equals n/(n+1)
 ```
 
 ### BUG #6 — `_integrate` doesn't handle `piecewise` expressions symbolically
@@ -120,8 +122,8 @@ Note: The definite integral `integrate(piecewise(x<0, 0, x^2), x, -1, 1)` correc
 | 1 | 🔴 Critical | `_solve` | Crashes with TypeError on quintic/specific quartic polynomials; incomplete roots for degree ≥5 | **FIXED** — filter added + Durand-Kerner returns complex roots |
 | 2 | 🔴 Critical | `_solve` | `abs(x) = -3` gives extraneous solutions | **FIXED** — returns empty set when RHS < 0 |
 | 3 | 🟡 Moderate | `_laurent` | `series(sqrt(1+x), x, -1, 3)` returns 0 instead of Laurent series | **FIXED** — branch-point detection returns leading singular term `sqrt(1+x)` |
-| 4 | 🟢 Minor | `_sumSymbolic` | `Div` summand not recognized | UNFIXED |
-| 5 | 🟢 Minor | `_sumSymbolic` | Telescoping series not simplified | UNFIXED |
+| 4 | 🟢 Minor | `_sumSymbolic` | `Div` summand not recognized | **FIXED** — Div handler factors out constant numerators and denominators |
+| 5 | 🟢 Minor | `_sumSymbolic` | Telescoping series not simplified | **FIXED** — Telescoping series via quadratic factorization and partial fractions |
 | 6 | 🟢 Minor | integrate | `piecewise` indefinite integral not handled | UNFIXED |
 
 ---
