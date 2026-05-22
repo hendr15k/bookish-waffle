@@ -473,7 +473,7 @@ class CAS {
                                                 if (!isNaN(val)) bounds.push(val);
                                             }
                                         }
-                                    } catch(e) {}
+            } catch(e) { console.log('TELESCOPING ERROR:', e.message, e.stack); }
                                 }
                             }
                             for(let i=1; i<node.args.length; i+=2) {
@@ -3235,6 +3235,89 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             if (!this._dependsOn(expr.right, varNode)) {
                 return new Mul(expr.right, this._sumSymbolic(expr.left, varNode, start, end)).simplify();
             }
+        }
+
+        // sum(A/B) — factor out constant numerator: sum(a/B, k) = a * sum(1/B, k)
+        // Only factor when numerator is not 1 to avoid infinite recursion.
+        if (expr instanceof Div && !this._dependsOn(expr.left, varNode)) {
+            const numVal = expr.left;
+            if (!(numVal instanceof Num && numVal.value === 1)) {
+                const inner = new Div(new Num(1), expr.right).simplify();
+                const innerResult = this._sumSymbolic(inner, varNode, start, end);
+                return new Mul(numVal, innerResult).simplify();
+            }
+        }
+        // sum(A/B) — factor out constant denominator: sum(A/b, k) = (1/b) * sum(A, k)
+        if (expr instanceof Div && !this._dependsOn(expr.right, varNode)) {
+            return new Div(this._sumSymbolic(expr.left, varNode, start, end), expr.right).simplify();
+        }
+
+        // Telescoping series: sum(c/((k+a)*(k+b)), k, 1, n) where a != b
+        // Decomposes via partial fractions: 1/((k+a)*(k+b)) = (1/(b-a)) * (1/(k+a) - 1/(k+b))
+        // Telescopes to: (c/(b-a)) * (1/(start+a) - 1/(end+a+d)) where d = b-a
+        if (expr instanceof Div && expr.left instanceof Num && expr.left.value !== 0) {
+            console.log('TELESCOPING CHECK: expr=' + expr.toString());
+            try {
+                const coeff = expr.left.value;
+                const denom = expr.right.simplify();
+                let factors = null;
+
+                if (denom instanceof Mul) {
+                    factors = [denom.left, denom.right];
+                }
+                if (!factors) {
+                    const poly = this._getPolyCoeffs(denom, varNode);
+                    if (poly && poly.maxDeg === 2) {
+                        const a2 = poly.coeffs['2'];
+                        const a1 = poly.coeffs['1'] || new Num(0);
+                        const a0 = poly.coeffs['0'] || new Num(0);
+                        if (a2 instanceof Num && a0 instanceof Num) {
+                            const disc = a1.value * a1.value - 4 * a2.value * a0.value;
+                            if (disc >= 0) {
+                                const sqrtDisc = Math.sqrt(disc);
+                                const r1 = (-a1.value + sqrtDisc) / (2 * a2.value);
+                                const r2 = (-a1.value - sqrtDisc) / (2 * a2.value);
+                                if (r1 !== r2 && Number.isInteger(-r1) && Number.isInteger(-r2)) {
+                                    factors = [
+                                        new Add(varNode, new Num(-r1)),
+                                        new Add(varNode, new Num(-r2))
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (factors && factors.length === 2) {
+                    const f1 = factors[0].simplify();
+                    const f2 = factors[1].simplify();
+                    if (this._dependsOn(f1, varNode) && this._dependsOn(f2, varNode)) {
+                        const getOffset = (linearExpr) => {
+                            if (linearExpr instanceof Add) {
+                                if (linearExpr.left instanceof Sym && linearExpr.left.name === varNode.name && linearExpr.right instanceof Num)
+                                    return linearExpr.right.value;
+                                if (linearExpr.right instanceof Sym && linearExpr.right.name === varNode.name && linearExpr.left instanceof Num)
+                                    return linearExpr.left.value;
+                            }
+                            if (linearExpr instanceof Sub && linearExpr.left instanceof Sym && linearExpr.left.name === varNode.name && linearExpr.right instanceof Num)
+                                return -linearExpr.right.value;
+                            if (linearExpr instanceof Sym && linearExpr.name === varNode.name) return 0;
+                            return null;
+                        };
+                        const a = getOffset(f1);
+                        const b = getOffset(f2);
+                        if (a !== null && b !== null && a !== b) {
+                            const diff = b - a;
+                            // sum(c/((k+a)*(k+b)), k, 1, n) = c/(b-a) * sum(1/(k+a) - 1/(k+b), k, 1, n)
+                            // Telescopes to: c/(b-a) * (1/(1+a) - 1/(n+b))
+                            const firstTerm = new Div(new Num(1), new Num(1 + a)).simplify();
+                            const lastTerm = new Div(new Num(1), new Add(n, new Num(b))).simplify();
+                            const coeffTerm = new Div(new Num(coeff), new Num(diff)).simplify();
+                            return new Mul(coeffTerm, new Sub(firstTerm, lastTerm)).simplify();
+                        }
+                    }
+                }
+            } catch(e) {}
         }
 
         // Geometric Series Check: R = term(k+1)/term(k)
@@ -7000,7 +7083,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
              const term = new Mul(coeff, termVar).simplify();
 
              // R = R - term * B
-             R = new Sub(R, new Mul(term, b)).simplify();
+             R = new Sub(R, new Mul(term, b)).expand().simplify();
 
              // Re-evaluate coeffs of R
              pR = this._getPolyCoeffs(R, varNode);
@@ -8377,7 +8460,53 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         if (a instanceof Num && b instanceof Num) {
              return new Num(a.value % b.value);
         }
-        return new Call('rem', [a, b]);
+
+        const varNode = this._getPolyVar(a) || this._getPolyVar(b);
+        if (!varNode) return new Call('rem', [a, b]);
+
+        const aPoly = this._getPolyCoeffs(a, varNode);
+        const bPoly = this._getPolyCoeffs(b, varNode);
+
+        if (!aPoly || !bPoly) return new Call('rem', [a, b]);
+        if (bPoly.maxDeg === 0) return new Call('rem', [a, b]);
+
+        const aCoeffs = aPoly.coeffs;
+        const bCoeffs = bPoly.coeffs;
+        const bLead = bCoeffs[bPoly.maxDeg];
+        const bDeg = bPoly.maxDeg;
+
+        let remainderCoeffs = {...aCoeffs};
+
+        for (let deg = aPoly.maxDeg; deg >= bDeg; deg--) {
+            const r = remainderCoeffs[deg];
+            if (r && !(r instanceof Num && r.value === 0)) {
+                const coeff = new Div(r, bLead).simplify();
+                if (coeff instanceof Num && coeff.value === 0) continue;
+                for (let j = 0; j <= bDeg; j++) {
+                    const term = new Mul(coeff, bCoeffs[j] || new Num(0)).simplify();
+                    remainderCoeffs[deg - bDeg + j] = new Sub(remainderCoeffs[deg - bDeg + j] || new Num(0), term).simplify();
+                }
+            }
+        }
+
+        let remainder = null;
+        for (let deg = aPoly.maxDeg; deg >= 0; deg--) {
+            const coeff = remainderCoeffs[deg];
+            if (coeff && !(coeff instanceof Num && coeff.value === 0)) {
+                let term;
+                if (deg === 0) {
+                    term = coeff;
+                } else if (deg === 1) {
+                    term = new Mul(coeff, varNode).simplify();
+                } else {
+                    term = new Mul(coeff, new Pow(varNode, new Num(deg))).simplify();
+                }
+                remainder = remainder ? new Add(remainder, term).simplify() : term;
+            }
+        }
+
+        if (remainder === null) return new Num(0);
+        return remainder.simplify();
     }
 
     _quo(a, b) {
