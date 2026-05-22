@@ -20,9 +20,9 @@
     "playwright": "^1.60.0"
   },
   "dependencies": {
-    "@capacitor/android": "^8.3.1",
+    "@capacitor/android": "^8.3.4",
     "@capacitor/cli": "^8.3.4",
-    "@capacitor/core": "^8.3.1"
+    "@capacitor/core": "^8.3.4"
   },
   "keywords": [
     "CAS",
@@ -35,3 +35,4 @@
   ],
   "license": "MIT"
 }
+
