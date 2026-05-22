@@ -418,6 +418,12 @@ class Num extends Expr {
         this.value = value;
     }
     toString() {
+        if (this.value < 0) {
+            if (Number.isInteger(this.value)) return `(0${this.value})`;
+            const precision = 12;
+            const absStr = parseFloat(Math.abs(this.value).toPrecision(precision)).toString();
+            return `(0.0-${absStr})`;
+        }
         if (Number.isInteger(this.value)) return this.value.toString();
         const precision = 12;
         return parseFloat(this.value.toPrecision(precision)).toString();
