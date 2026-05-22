@@ -149,8 +149,8 @@ expandCmd("x*(x+1)*(x-1)") // Got: ((x^3 - x^2) + (x^2 - x)) — not simplified
 
 ---
 
-### BUG #11 — _factor: repeated factors not combined into powers
-**Location:** `cas.js`, `_factor()` final assembly (~line 6950-6970)
+### BUG #11 — _factor: repeated factors not combined into powers [🟢 Fixed]
+**Location:** `cas.js`, `_factor()` final assembly (~line 7444-7469)
 **Description:** After finding all factors, `_factor` multiplies them together as a flat `Mul` chain. Identical factors like `(x+1) * (x+1)` are not combined into `(x+1)^2`.
 **Correct behavior:**
 - `factor(2*x^2+4*x+2)` → `2 * (x+1)^2`
@@ -162,6 +162,7 @@ factorCmd("3*x^2+6*x+3")   // Got: ((3 * (x + 1)) * (x + 1))
 ```
 **Root cause:** The assembly loop at the end of `_factor` just does `result = new Mul(result, factors[i])` without grouping identical factors.
 **Severity:** 🟡 — Factorization output quality
+**Status:** Fixed in commit `acb0d80` — combining logic groups identical factors via `toString()` keys and creates `Pow` nodes for duplicates.
 
 ---
 
