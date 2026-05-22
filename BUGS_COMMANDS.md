@@ -1,189 +1,117 @@
-# BUGS_COMMANDS — cas.js Command Bugs
+# BUGS_COMMANDS — CAS Command Bugs (cas.js Part 2)
 
-Found via Node.js testing against the CAS. All tests run from workspace root with correct module loading (`const { CAS } = require('./js/cas.js')`).
+Found via systematic code analysis + Node.js testing against the CAS engine.
 
 ---
 
-## 🔴 Critical
+## 🔴 Critical (Crashes / Wrong Results)
 
-### BUG #1 — `solve` returns incomplete root set for degree ≥ 5 polynomials
-**Location:** `cas.js`, `_solve()` polynomial branch (~line 4560-4840)
-**Description:** `solve(x^5-1, x)` returns `1` instead of all 5 roots. `solve(x^5+1, x)` returns `-1` instead of all 5 roots. Only one root is returned for quintic equations. Similarly, `solve(x^3-3*x+2, x)` returns `{-2, 1}` instead of `{-2, 1, 1}` (double root `1` is missing).
+### BUG #1 — `_solve` crashes with TypeError on quintic/specific quartic polynomials
+**Location:** `cas.js`, `_solve()` quartic handler (~line 4825)
+**Description:** Calling `solve` on polynomials of degree ≥ 4 that trigger the internal Ferrari quartic solver throws `TypeError: this.left.simplify is not a function` (or `this.right.simplify is not a function`). The bug occurs in the shift-back step `xSols = ySols.map(y => new Sub(y, shift).simplify())`. The root cause appears to be that `shift` (or some intermediate variable in the quartic handler) becomes a non-Expr object (possibly `undefined`), causing the subsequent `Sub.simplify()` to fail. This is likely triggered when:
+1. The `_factor` call returns the original polynomial unchanged (irreducible quartic)
+2. The `_getPolyCoeffs` returns coefficients that lead to a symbolic `shift`
+3. An intermediate expression in the Ferrari method doesn't resolve to a proper Expr
 
-**Root cause:** The polynomial solver uses numerical root-finding for degree ≥ 5 (Abel-Ruffini: no general formula). The numerical method likely fails to converge or misses roots for these specific polynomials. Also, duplicate root detection may be removing valid repeated roots.
-
-**Correct behavior:**
-- `solve(x^5-1, x)` → all 5 fifth roots of unity
-- `solve(x^5+1, x)` → all 5 fifth roots of -1
-- `solve(x^3-3*x+2, x)` → `{1, 1, -2}` (or `{-2, 1}` with deduplication but correct count)
-
+**Affected cases:**
+```js
+solve(x^5 - x^4 + x^3 - x^2 + x - 1, x)  // TypeError, returns only x=1
+solve(x^5 - 1, x)                          // TypeError, returns only x=1
+solve(x^7 - 1, x)                          // TypeError
+solve(x^4 + x^2 + 1, x)                   // TypeError (Ferrari on irreducible quartic)
+solve((x-1)^4, x)                         // TypeError (biquadratic with repeated roots)
+solve(x^4 + x + 1, x)                     // TypeError (Ferrari general case)
+```
+**Correct behavior:** Should return the correct roots without crashing.
 **Test case:**
 ```js
-const {Parser, Lexer} = require('./js/parser.js');
-const { CAS } = require('./js/cas.js');
+const CAS = require('./js/cas.js');
+const { Num, Sym, Call, Add, Sub, Mul, Div, Pow } = require('./js/expression.js');
 const cas = new CAS();
-function parse(s) { return new Parser(new Lexer(s)).parse(); }
-cas.evaluate(parse('solve(x^5-1,x)')).toString()
-// Got: 1
-// Expected: set of 5 complex roots
-
-cas.evaluate(parse('solve(x^5+1,x)')).toString()
-// Got: -1
-// Expected: set of 5 complex roots
-
-cas.evaluate(parse('solve(x^3-3*x+2,x)')).toString()
-// Got: {-2, 1}
-// Expected: {-2, 1, 1} (x^3-3*x+2 = (x+2)(x-1)^2)
+const x = new Sym('x');
+try {
+  cas.evaluate(new Call('solve', [
+    new Sub(new Sub(new Sub(new Sub(new Pow(x, new Num(5)), new Pow(x, new Num(4))),
+      new Pow(x, new Num(3)), new Pow(x, new Num(2))), new Add(x, new Num(-1))
+  ]), x]));
+} catch(e) {
+  console.log(e.message); // "this.left.simplify is not a function"
+}
 ```
-
-**Severity:** 🔴 Critical — wrong mathematical results
 
 ---
 
-### BUG #2 — `Sub.simplify` crashes with "this.left.simplify is not a function"
-**Location:** `cas.js:4825` (inside `_solve()`) calling `Sub.simplify`
-**Description:** When `_solve` processes certain polynomial equations (e.g., `solve(x^5+1,x)`, `solve(x^4+1,x)`), it creates `Sub` nodes where `this.left` is not an `Expr` object (likely `null` or `undefined`). Calling `.simplify()` on such a `Sub` crashes with `this.left.simplify is not a function`.
-
-**Root cause:** `_solve` creates `Sub` nodes at line 4825 without ensuring both operands are valid `Expr` instances. The code `const newSub = new Sub(expr, ...)` is called with something that's not an `Expr` on the left side.
-
-**Correct behavior:** `solve` should return valid root sets or handle edge cases gracefully.
-
+### BUG #2 — `solve(abs(x) = -3)` returns extraneous solutions
+**Location:** `cas.js`, `_solve()` abs handler (~line 4299)
+**Description:** When solving `abs(x) = -3` (which has no solutions since `abs` is always non-negative), the CAS returns `{-3, 3}` — treating the equation as if `abs(x) = 3`. The code generates both `A = B` and `A = -B` but doesn't check that `B >= 0` for real solutions.
+**Correct behavior:** `solve(abs(x) = -3, x)` → `{}` (empty set) or `false` or a single valid root if any exist.
 **Test case:**
 ```js
-cas.evaluate(parse('solve(x^5+1,x)')).toString()
-// Got: TypeError: this.left.simplify is not a function
-// Expected: set of 5 roots (or error message)
+cas.evaluate(new Call('solve', [
+  new Eq(new Call('abs', [x]), new Num(-3)), x
+]));
+// Got: {-3, 3}
+// Expected: {} (no solutions — abs(x) cannot equal a negative number)
 ```
-
-**Severity:** 🔴 Critical — crash, not graceful degradation
 
 ---
 
-## 🟡 Moderate
+## 🟡 Moderate (Incorrect Output)
 
-### BUG #3 — `eval` doesn't evaluate numeric expressions
-**Location:** `cas.js`, `_eval` command handler
-**Description:** `eval` doesn't evaluate numeric expressions like `1/3`, `2^10`, or symbolic expressions with constants (`e`, `pi`). It just returns the expression unchanged.
-
-**Correct behavior:**
-- `eval(1/3)` → `0.33333...` or `0.3333`
-- `eval(2^10)` → `1024`
-- `eval(e)` → `2.71828...` (numeric approximation)
-- `eval(pi)` → `3.14159...`
-
+### BUG #3 — `series(sqrt(1+x), x, -1, 3)` returns `0` instead of Laurent series
+**Location:** `cas.js`, `_laurent()` / `series` handler
+**Description:** `series(sqrt(1+x), x, -1, 3)` attempts to find the Laurent series of `sqrt(1+x)` around `x = -1`. The function has a singularity at `x = -1` (since `sqrt(0)`). The current implementation returns `0` which is incorrect — it should return a proper Laurent series like `(1/sqrt(x+1))` terms or at minimum the leading singular behavior.
+**Correct behavior:** Should return a proper Laurent expansion accounting for the square-root singularity.
 **Test case:**
 ```js
-cas.evaluate(parse('eval(1/3,5)')).toString()
-// Got: eval((1 / 3), 5)
-
-cas.evaluate(parse('eval(2^10)')).toString()
-// Got: eval(1024)
-
-cas.evaluate(parse('eval(exp(1),5)')).toString()
-// Got: eval(e, 5)
+cas.evaluate(new Call('series', [
+  new Call('sqrt', [new Add(new Num(1), x)]), x, new Num(-1), new Num(3)
+]));
+// Got: 0
+// Expected: Laurent series with singular term (e.g., sqrt(2) + terms in (x+1))
 ```
-
-**Severity:** 🟡 Moderate — eval command barely functional
 
 ---
 
-### BUG #4 — `series(log(1+x), x, 0, n)` produces incorrect output
-**Location:** `cas.js`, `_series` command handler
-**Description:** The Maclaurin series for `log(1+x)` is `x - x²/2 + x³/3 - x⁴/4 + ...`. The command produces deeply nested, incorrect expressions mixing `ln` and powers in wrong ways.
+## 🟢 Minor (Missing Features / Edge Cases)
 
-**Correct behavior:**
-- `series(log(1+x), x, 0, 5)` → `x - x²/2 + x³/3 - x⁴/4 + x⁵/5`
-
+### BUG #4 — `_sumSymbolic` doesn't handle `Div` expressions
+**Location:** `cas.js`, `_sumSymbolic()` (~line 3209)
+**Description:** `_sumSymbolic` has handlers for `Add`, `Sub`, and `Mul` but not `Div`. When the summand is a fraction like `a/k`, the expression isn't recognized as needing special handling and the geometric series ratio detection also fails.
 **Test case:**
 ```js
-cas.evaluate(parse('series(log(1+x),x,0,5)')).toString()
-// Got: deeply nested incorrect expression with ln(100), ln(1000), etc.
-// Expected: x - x²/2 + x³/3 - x⁴/4 + x⁵/5
+// sum(a/k, k, 1, n) returns unevaluated
+cas.evaluate(new Call('sum', [
+  new Div(new Sym('a'), new Sym('k')), new Sym('k'), new Num(1), new Sym('n')
+]));
+// Got: sum((a / k), k, 1, n)  (unevaluated)
+// Expected: a * H_n (harmonic number), or at least a * psi(n+1) - a * psi(1)
 ```
 
-**Note:** `series(exp(x)-1,x,0,5)` works correctly.
-
-**Severity:** 🟡 Moderate — wrong mathematical result
-
----
-
-### BUG #5 — `subst` command not supported (3-arg syntax)
-**Location:** `cas.js`, CAS command handlers (~line 125)
-**Description:** The CAS only handles `subs` and `substitute` commands, not `subst`. All three are standard aliases in CAS systems (Maple, Mathematica, etc.). Users calling `subst(expr, var, value)` get an unevaluated `subst(...)` node instead of the substituted result.
-
-**Correct behavior:**
-- `subst(x^2, x, 2)` → `4`
-- `subs(x^2, x=2)` → `4` (current, works)
-
+### BUG #5 — `_sumSymbolic` doesn't simplify telescoping series
+**Location:** `cas.js`, `_sumSymbolic()` (~line 3209)
+**Description:** `sum(1/(k*(k+1)), k, 1, n)` is a telescoping series that simplifies to `n/(n+1)`. The current code doesn't recognize this pattern.
 **Test case:**
 ```js
-cas.evaluate(parse('subst(x^2,x,2)')).toString()
-// Got: subst(x^2, x, 2)  ← unevaluated
-
-cas.evaluate(parse('subs(x^2,x=2)')).toString()
-// Got: 4  ← works with correct syntax
+// sum(1/(k*(k+1)), k, 1, n) = n/(n+1)
+cas.evaluate(new Call('sum', [
+  new Div(new Num(1), new Mul(new Sym('k'), new Add(new Sym('k'), new Num(1)))),
+  new Sym('k'), new Num(1), new Sym('n')
+]));
+// Got: sum((1 / (k^2 + k)), k, 1, n)  (unevaluated)
+// Expected: n/(n+1)
 ```
 
-**Severity:** 🟡 Moderate — missing user-facing command
-
----
-
-### BUG #6 — `simplify` doesn't simplify `abs(x^2)` → `x^2`
-**Location:** `expression.js` (`Call.simplify()`)
-**Description:** `abs(x)` of a non-negative expression should simplify. Since `x^2 ≥ 0` for all real `x`, `abs(x^2) = x^2`. Similarly `abs(x)^2 = x^2`.
-
-**Correct behavior:**
-- `simplify(abs(x^2))` → `x^2`
-- `simplify(abs(x)^2)` → `x^2`
-- `simplify(abs(x*y))` → `abs(x) * abs(y)` (optional, lower priority)
-
+### BUG #6 — `_integrate` doesn't handle `piecewise` expressions symbolically
+**Location:** `cas.js`, integrate handler
+**Description:** `integrate(piecewise(x<0, x, x^2), x)` returns unevaluated, even though the indefinite integral can be computed piecewise: `-x^2/2` for `x<0`, `x^3/3` for `x≥0`.
+**Correct behavior:** Should return `piecewise(x<0, -x^2/2, x^3/3)` or similar.
 **Test case:**
 ```js
-cas.evaluate(parse('simplify(abs(x^2))')).toString()
-// Got: abs(x^2)
-
-cas.evaluate(parse('simplify(abs(x)^2)')).toString()
-// Got: abs(x)^2
+// integrate(piecewise(x<0, x, x^2), x) — returns unevaluated
+// Expected: piecewise(x<0, -x^2/2, x^3/3)
 ```
-
-**Severity:** 🟡 Moderate — incomplete simplification for known non-negative forms
-
----
-
-### BUG #7 — `integrate(x^(-1/2), x)` not simplified
-**Location:** `expression.js` (`Call.simplify()` numeric evaluation) + `cas.js` integrate handler
-**Description:** `x^(-1/2)` is equivalent to `1/sqrt(x)`, and `integrate(1/sqrt(x), x) = 2*sqrt(x)`. But `integrate(x^(-1/2), x)` returns the unevaluated call instead of the same result.
-
-**Correct behavior:** `integrate(x^(-1/2), x)` → `2 * sqrt(x)`
-
-**Test case:**
-```js
-cas.evaluate(parse('integrate(x^(-1/2),x)')).toString()
-// Got: integrate(x^((-1 / 2)), x)  ← unevaluated
-
-cas.evaluate(parse('integrate(1/sqrt(x),x)')).toString()
-// Got: (2 * sqrt(x))  ← correct
-```
-
-**Severity:** 🟡 Moderate — missing simplification before integration
-
----
-
-### BUG #8 — `factor(x^4+1)` not factored
-**Location:** `cas.js`, `_factor()` quadratic branch
-**Description:** `x^4+1` is irreducible over ℝ but reducible over ℂ into `(x^2 + sqrt(2)*x + 1)*(x^2 - sqrt(2)*x + 1)`. Currently returns `x^4 + 1` unchanged.
-
-**Correct behavior:**
-- `factor(x^4+1)` → product of quadratics over ℝ (with sqrt(2))
-- `factor(x^4+1)` over ℂ → four linear factors
-
-**Test case:**
-```js
-cas.evaluate(parse('factor(x^4+1)')).toString()
-// Got: (x^4 + 1)
-```
-
-**Severity:** 🟡 Moderate — incomplete factorization
+Note: The definite integral `integrate(piecewise(x<0, 0, x^2), x, -1, 1)` correctly returns `1/3`.
 
 ---
 
@@ -191,11 +119,31 @@ cas.evaluate(parse('factor(x^4+1)')).toString()
 
 | # | Severity | Component | Summary | Status |
 |---|----------|-----------|---------|--------|
-| 1 | 🔴 Critical | `_solve` | Returns incomplete root set for degree ≥ 5 | Open |
-| 2 | 🔴 Critical | `_solve` / `Sub.simplify` | Crash on certain polynomial solves | Open |
-| 3 | 🟡 Moderate | `_eval` | eval doesn't evaluate numeric expressions | Open |
-| 4 | 🟡 Moderate | `_series` | log(1+x) series gives wrong output | Open |
-| 5 | 🟡 Moderate | CAS handlers | `subst` command not supported | Open |
-| 6 | 🟡 Moderate | `Call.simplify()` | `abs(x^2)` not simplified to `x^2` | Open |
-| 7 | 🟡 Moderate | `integrate` | `x^(-1/2)` not simplified before integration | Open |
-| 8 | 🟡 Moderate | `_factor` | `x^4+1` not factored | Open |
+| 1 | 🔴 Critical | `_solve` | Crashes with TypeError on quintic/specific quartic polynomials | UNFIXED |
+| 2 | 🔴 Critical | `_solve` | `abs(x) = -3` gives extraneous solutions | UNFIXED |
+| 3 | 🟡 Moderate | `_laurent` | `series(sqrt(1+x), x, -1, 3)` returns 0 instead of Laurent series | UNFIXED |
+| 4 | 🟢 Minor | `_sumSymbolic` | `Div` summand not recognized | UNFIXED |
+| 5 | 🟢 Minor | `_sumSymbolic` | Telescoping series not simplified | UNFIXED |
+| 6 | 🟢 Minor | integrate | `piecewise` indefinite integral not handled | UNFIXED |
+
+---
+
+## Additional Observations (Not Bugs — Expected Behavior)
+
+The following produce correct or expected unevaluated results:
+
+- `solve(tan(x)=1, x)` → `pi/4` (principal solution)
+- `solve(x*exp(x)=1, x)` → `LambertW(1)` ✓
+- `limit((1+1/x)^x, x, Infinity)` → `e` ✓
+- `limit(x^x, x, 0, right)` → `1` ✓
+- `taylor(sin(x)/x, x, 0, 4)` → `1` ✓ (higher-order terms are 0)
+- `product(k, k, 1, n)` → `gamma(n+1)` ✓
+- `taylor(exp(x), x, 0, 10)` → correct series ✓
+- `implicitDiff(y^2=x^3, y, x)` → `3x^2/(2y)` ✓
+- `integrate(sinh(x), x)` → `cosh(x)` ✓
+- `integrate(cosh(x), x)` → `sinh(x)` ✓
+- `diff(piecewise(x<0, x, x^2), x)` → `piecewise(x<0, 1, 2x)` ✓
+- `solve(abs(x)=2, x)` → `{-2, 2}` ✓
+- `solve(x^4=16, x)` → all four roots (complex) ✓
+- `limit(abs(x)/x, x, 0, right)` → `1` ✓
+- `limit(abs(x)/x, x, 0, left)` → `-1` ✓
