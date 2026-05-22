@@ -133,3 +133,9 @@ checkDirectLatex("Nested Mul right", nestedMul, "\\left(b c\\right)");
 const nestedMulLeft = new Mul(new Mul(new Sym("a"), new Sym("b")), new Sym("c"));
 checkDirectLatex("Nested Mul left", nestedMulLeft, "\\left(a b\\right)");
 
+// HEN-37: both operands Mul — each should be wrapped in \left(...\right)
+const nestedMulBoth = new Mul(new Mul(new Sym("a"), new Sym("b")), new Mul(new Sym("c"), new Sym("d")));
+checkDirectLatex("Nested Mul both", nestedMulBoth, "\\left(a b\\right)");
+checkDirectLatex("Nested Mul both", nestedMulBoth, "\\cdot");
+checkDirectLatex("Nested Mul both", nestedMulBoth, "\\left(c d\\right)");
+
