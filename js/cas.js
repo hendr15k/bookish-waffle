@@ -60,7 +60,7 @@ class CAS {
         // }
 
         let evaluated = this._recursiveEval(exprTree);
-        if (evaluated && typeof evaluated.simplify === 'function') {
+        if (evaluated && typeof evaluated.simplify === 'function' && !evaluated._alreadySimplified) {
             evaluated = evaluated.simplify();
         }
 
@@ -772,7 +772,11 @@ class CAS {
 
             if (node.funcName === 'expand') {
                 if (node.args.length !== 1) throw new Error("expand takes exactly 1 argument");
-                return args[0].expand().simplify();
+                const result = args[0].expand();
+                if (result && typeof result.simplify === 'function') {
+                    result._alreadySimplified = true;
+                }
+                return result;
             }
 
             if (node.funcName === 'simplify') {
@@ -4299,7 +4303,12 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             if (eq.left instanceof Call && eq.left.funcName === 'abs') {
                 const A = eq.left.args[0];
                 const B = eq.right;
-                if (!this._dependsOn(B, varNode)) { // B should be constant w.r.t var (or at least handle splitting)
+                if (!this._dependsOn(B, varNode)) {
+                    // abs(x) >= 0 for all real x, so B must be >= 0 for real solutions
+                    const bVal = B.evaluateNumeric();
+                    if (!isNaN(bVal) && bVal < 0) {
+                        return new Call('set', []);
+                    }
                     const eq1 = new Eq(A, B);
                     const eq2 = new Eq(A, new Mul(new Num(-1), B));
                     const sol1 = this._solve(eq1, varNode);
@@ -4821,8 +4830,34 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                             }
                         }
 
+                        // If Ferrari failed (ySols empty), try numerical companion-matrix method
+                        if (ySols.length === 0 && poly.maxDeg === 4) {
+                            const numRoots = this._solvePolynomialNumerically(poly.coeffs, varNode, 4);
+                            if (numRoots && numRoots.length > 0) {
+                                const unique = [];
+                                const seen = new Set();
+                                numRoots.forEach(s => {
+                                    const str = s.toString();
+                                    if (!seen.has(str)) {
+                                        seen.add(str);
+                                        unique.push(s);
+                                    }
+                                });
+                                unique.sort((a, b) => {
+                                    const va = a.evaluateNumeric();
+                                    const vb = b.evaluateNumeric();
+                                    if (!isNaN(va) && !isNaN(vb)) return va - vb;
+                                    return a.toString().localeCompare(b.toString());
+                                });
+                                if (unique.length === 1) return unique[0];
+                                return new Call('set', unique);
+                            }
+                        }
+
                         // Shift back x = y - shift
-                        const xSols = ySols.map(y => new Sub(y, shift).simplify());
+                        const xSols = ySols
+                            .filter(y => y !== undefined && y !== null && y instanceof Expr)
+                            .map(y => new Sub(y, shift).simplify());
 
                         // Deduplicate solutions
                         const unique = [];
@@ -4847,6 +4882,33 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                         return new Call('set', unique);
                     }
                 }
+            }
+
+            // Degree >= 5: Abel-Ruffini — no general symbolic formula.
+            // Use numerical companion-matrix + Durand-Kerner.
+            if (poly.maxDeg >= 5) {
+                const numRoots = this._solvePolynomialNumerically(poly.coeffs, varNode, poly.maxDeg);
+                if (numRoots && numRoots.length > 0) {
+                    const unique = [];
+                    const seen = new Set();
+                    numRoots.forEach(s => {
+                        const str = s.toString();
+                        if (!seen.has(str)) {
+                            seen.add(str);
+                            unique.push(s);
+                        }
+                    });
+                    unique.sort((a, b) => {
+                        const va = a.evaluateNumeric();
+                        const vb = b.evaluateNumeric();
+                        if (!isNaN(va) && !isNaN(vb)) return va - vb;
+                        return a.toString().localeCompare(b.toString());
+                    });
+                    if (unique.length === 1) return unique[0];
+                    return new Call('set', unique);
+                }
+                // Numerical method also failed; return empty set.
+                return new Call('set', []);
             }
 
             // Attempt linear solve a*x + b = 0 via differentiation if poly extraction failed (e.g. non-polynomial terms that simplify)
@@ -8835,16 +8897,87 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             }
 
             if (maxDelta < 1e-12) {
-                // Extract real parts (for real symmetric matrices eigenvalues are real)
                 return roots.map(r => {
-                    if (Math.abs(r.im) < 1e-6) return Math.round(r.re * 1e8) / 1e8;
-                    // Complex eigenvalue (non-symmetric matrix)
-                    return Math.round(r.re * 1e8) / 1e8;
+                    const re = Math.round(r.re * 1e8) / 1e8;
+                    if (Math.abs(r.im) < 1e-6) return re;
+                    const im = Math.round(r.im * 1e8) / 1e8;
+                    return { re, im };
                 });
             }
         }
 
         return null; // Did not converge
+    }
+
+    _solvePolynomialNumerically(coeffs, varNode, maxDeg) {
+        // coeffs: object {0: c0, 1: c1, ..., maxDeg: cmaxDeg}
+        // Uses companion matrix + Durand-Kerner for degree >= 5
+        // Returns array of Expr roots or null if failed
+        try {
+            const n = maxDeg;
+            // Normalize to monic: x^n + a_{n-1}*x^{n-1} + ... + a_0 = 0
+            const leadCoeff = coeffs[n];
+            if (!leadCoeff || !(leadCoeff instanceof Num)) return null;
+            if (leadCoeff.value === 0) return null;
+
+            const monicCoeffs = [];
+            for (let i = 0; i < n; i++) {
+                const c = coeffs[i];
+                if (!c) {
+                    monicCoeffs.push(0);
+                } else {
+                    const val = c.evaluateNumeric();
+                    if (isNaN(val)) return null;
+                    monicCoeffs.push(val / leadCoeff.value);
+                }
+            }
+
+            // Companion matrix of x^n + a_{n-1}*x^{n-1} + ... + a_0 = 0
+            // Structure: subdiagonal 1s, last row = [-a_0, -a_1, ..., -a_{n-1}]
+            const rows = [];
+            for (let i = 0; i < n; i++) {
+                const row = [];
+                for (let j = 0; j < n; j++) {
+                    if (j === n - 1) {
+                        row.push(new Num(-monicCoeffs[i]));
+                    } else if (j === i - 1) {
+                        row.push(new Num(1));
+                    } else {
+                        row.push(new Num(0));
+                    }
+                }
+                rows.push(new Vec(row));
+            }
+            const companion = new Vec(rows);
+
+            // Use companion matrix + charpolyNumerical + durandKerner
+            const polyCoeffs = this._charpolyNumerical(companion);
+            if (!polyCoeffs) return null;
+
+            const numRoots = this._durandKerner(polyCoeffs, n);
+            if (!numRoots || numRoots.length !== n) return null;
+
+            const results = [];
+            for (const r of numRoots) {
+                if (typeof r === 'number') {
+                    if (isNaN(r)) continue;
+                    results.push(new Num(Math.round(r * 1e8) / 1e8));
+                } else if (r && typeof r.re === 'number' && typeof r.im === 'number') {
+                    const re = Math.round(r.re * 1e8) / 1e8;
+                    const im = Math.round(r.im * 1e8) / 1e8;
+                    if (Math.abs(im) < 1e-8) {
+                        results.push(new Num(re));
+                    } else {
+                        results.push(new Add(new Num(re), new Mul(new Sym('i'), new Num(im))).simplify());
+                    }
+                }
+            }
+
+            if (results.length === 0) return null;
+            return results;
+        } catch (e) {
+            return null;
+        }
     }
 
     _numericalEigenvalues(poly, varNode, n) {
