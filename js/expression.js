@@ -870,6 +870,11 @@ class Sub extends BinaryOp {
             return new Sub(new Sub(l, r.left).simplify(), r.right).simplify();
         }
 
+        // Negate Add via subtraction: 0 - (A + B) -> (0 - A) + (0 - B)
+        if (l instanceof Num && l.value === 0 && r instanceof Add) {
+            return new Add(new Sub(l, r.left), new Sub(l, r.right));
+        }
+
         if (l instanceof Num && l.value === 0) return new Mul(new Num(-1), r).simplify();
 
         // Symbolic Fraction subtraction
@@ -1150,7 +1155,7 @@ class Mul extends BinaryOp {
         }
         // Distribute (-1) over Addition: -1 * (A + B) -> (-A - B)
         if (l instanceof Num && l.value === -1 && r instanceof Add) {
-            return new Add(new Mul(new Num(-1), r.left).simplify(), new Mul(new Num(-1), r.right).simplify()).simplify();
+            return new Add(new Sub(new Num(0), r.left), new Sub(new Num(0), r.right)).simplify();
         }
 
         // x * x -> x^2
