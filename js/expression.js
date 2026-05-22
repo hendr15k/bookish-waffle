@@ -214,6 +214,65 @@ function extractCoeffBase(expr) {
     return { coeff: new Num(1), base: expr };
 }
 
+function flattenAddSub(expr) {
+    const terms = [];
+    const walk = (node, sign) => {
+        if (node instanceof Add) {
+            walk(node.left, sign);
+            walk(node.right, sign);
+        } else if (node instanceof Sub) {
+            walk(node.left, sign);
+            walk(node.right, -sign);
+        } else if (node instanceof Mul && node.left instanceof Num) {
+            terms.push({ coeff: node.left.value * sign, base: node.right });
+        } else if (node instanceof Mul && node.right instanceof Num) {
+            terms.push({ coeff: node.right.value * sign, base: node.left });
+        } else if (node instanceof Num) {
+            terms.push({ coeff: node.value * sign, base: null });
+        } else {
+            terms.push({ coeff: 1 * sign, base: node });
+        }
+    };
+    walk(expr, 1);
+    return terms;
+}
+
+function buildFromTerms(terms) {
+    const combined = {};
+    for (const t of terms) {
+        const key = t.base ? t.base.toString() : '__const__';
+        if (!combined[key]) combined[key] = { coeff: 0, base: t.base };
+        combined[key].coeff += t.coeff;
+    }
+    let result = null;
+    for (const key of Object.keys(combined)) {
+        const { coeff, base } = combined[key];
+        if (coeff === 0) continue;
+        let term;
+        if (base === null) {
+            term = new Num(coeff);
+        } else if (Math.abs(coeff) === 1) {
+            term = base;
+        } else {
+            term = new Mul(new Num(coeff), base);
+        }
+        if (result === null) {
+            result = term;
+        } else if (coeff < 0) {
+            const absTerm = (base === null) ? new Num(-coeff) : (Math.abs(coeff) === 1 ? base : new Mul(new Num(-coeff), base));
+            result = new Sub(result, absTerm);
+        } else {
+            result = new Add(result, term);
+        }
+    }
+    return result || new Num(0);
+}
+
+function flattenCombine(expr) {
+    const terms = flattenAddSub(expr);
+    return buildFromTerms(terms);
+}
+
 function getPolyCoeffs(expr, varNode) {
     if (!varNode) return null;
     const x = varNode;
@@ -1336,22 +1395,22 @@ class Mul extends BinaryOp {
         const l = this.left.expand();
         const r = this.right.expand();
         if (l instanceof Add) {
-            const result = new Add(new Mul(l.left, r).expand(), new Mul(l.right, r).expand());
+            const result = flattenCombine(new Add(new Mul(l.left, r).expand(), new Mul(l.right, r).expand()).simplify()).simplify();
             result._expandedForm = true;
             return result;
         }
         if (l instanceof Sub) {
-            const result = new Sub(new Mul(l.left, r).expand(), new Mul(l.right, r).expand());
+            const result = flattenCombine(new Sub(new Mul(l.left, r).expand(), new Mul(l.right, r).expand()).simplify()).simplify();
             result._expandedForm = true;
             return result;
         }
         if (r instanceof Add) {
-            const result = new Add(new Mul(l, r.left).expand(), new Mul(l, r.right).expand());
+            const result = flattenCombine(new Add(new Mul(l, r.left).expand(), new Mul(l, r.right).expand()).simplify()).simplify();
             result._expandedForm = true;
             return result;
         }
         if (r instanceof Sub) {
-            const result = new Sub(new Mul(l, r.left).expand(), new Mul(l, r.right).expand());
+            const result = flattenCombine(new Sub(new Mul(l, r.left).expand(), new Mul(l, r.right).expand()).simplify()).simplify();
             result._expandedForm = true;
             return result;
         }
