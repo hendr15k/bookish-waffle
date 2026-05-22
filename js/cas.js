@@ -5287,14 +5287,22 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             // gSeries=0 means g's Taylor expansion at 'point' is identically 0.
             // This happens for branch points (e.g. (x-a)^(3/2)) where all
             // derivatives at the point are 0 or ∞.
-            // The leading term = limit(g/(x-a)^(k-1)) * (x-a)^(1-k).
-            const denomPow = new Sub(new Num(1), new Num(k));
-            const denom = new Pow(x_minus_a, denomPow).simplify();
-            const ratio = new Div(g, denom).simplify();
-            const leadingCoeff = cas._limit(ratio, varNode, point);
-            if (!isBad(leadingCoeff)) {
-                const branchFactor = new Pow(x_minus_a, denomPow).simplify();
-                return new Mul(leadingCoeff, branchFactor).simplify();
+            // For branch points like sqrt(x-a), f^2/(x-a) simplifies to a nonzero
+            // constant (specifically 1). Use this to detect and return the leading
+            // singular term f.
+            const fSquared = new Mul(expr, expr).simplify();
+            const ratio = new Div(fSquared, x_minus_a).simplify();
+            const ratioAtPoint = ratio.substitute(varNode, point).simplify();
+            const isConstantNonZero = (e) => {
+                if (e instanceof Num) return e.value !== 0;
+                if (e instanceof Sym) {
+                    const n = parseFloat(e.name);
+                    return !isNaN(n) && n !== 0;
+                }
+                return false;
+            };
+            if (isConstantNonZero(ratioAtPoint)) {
+                return expr.simplify();
             }
         }
 

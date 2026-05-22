@@ -58,15 +58,15 @@ cas.evaluate(new Call('solve', [
 
 ### BUG #3 — `series(sqrt(1+x), x, -1, 3)` returns `0` instead of Laurent series
 **Location:** `cas.js`, `_laurent()` / `series` handler
-**Description:** `series(sqrt(1+x), x, -1, 3)` attempts to find the Laurent series of `sqrt(1+x)` around `x = -1`. The function has a singularity at `x = -1` (since `sqrt(0)`). The current implementation returns `0` which is incorrect — it should return a proper Laurent series like `(1/sqrt(x+1))` terms or at minimum the leading singular behavior.
-**Correct behavior:** Should return a proper Laurent expansion accounting for the square-root singularity.
+**Description:** `series(sqrt(1+x), x, -1, 3)` attempts to find the Laurent series of `sqrt(1+x)` around `x = -1`. The function has a branch-point singularity at `x = -1` (since `sqrt(0)`). The `_laurent` method detects the pole order `k=1` correctly but `_taylor` on `g = sqrt(1+x)*(x+1) = (x+1)^(3/2)` returns `0` because all derivatives at the branch point are `0` or `Infinity`. Dividing `0/(x+1) = 0`.
+**Status: FIXED** — Added branch-point detection in `_laurent`: when `gSeries` is `0` at the base point, check if `f^2/(x-a)` simplifies to a nonzero constant. If so, `f` contains a `sqrt(x-a)` factor and is returned as the leading singular term.
 **Test case:**
 ```js
 cas.evaluate(new Call('series', [
   new Call('sqrt', [new Add(new Num(1), x)]), x, new Num(-1), new Num(3)
 ]));
-// Got: 0
-// Expected: Laurent series with singular term (e.g., sqrt(2) + terms in (x+1))
+// Got: sqrt(1+x) — leading singular term (FIXED)
+// Previously: 0
 ```
 
 ---
@@ -119,7 +119,7 @@ Note: The definite integral `integrate(piecewise(x<0, 0, x^2), x, -1, 1)` correc
 |---|----------|-----------|---------|--------|
 | 1 | 🔴 Critical | `_solve` | Crashes with TypeError on quintic/specific quartic polynomials; incomplete roots for degree ≥5 | **FIXED** — filter added + Durand-Kerner returns complex roots |
 | 2 | 🔴 Critical | `_solve` | `abs(x) = -3` gives extraneous solutions | **FIXED** — returns empty set when RHS < 0 |
-| 3 | 🟡 Moderate | `_laurent` | `series(sqrt(1+x), x, -1, 3)` returns 0 instead of Laurent series | UNFIXED |
+| 3 | 🟡 Moderate | `_laurent` | `series(sqrt(1+x), x, -1, 3)` returns 0 instead of Laurent series | **FIXED** — branch-point detection returns leading singular term `sqrt(1+x)` |
 | 4 | 🟢 Minor | `_sumSymbolic` | `Div` summand not recognized | UNFIXED |
 | 5 | 🟢 Minor | `_sumSymbolic` | Telescoping series not simplified | UNFIXED |
 | 6 | 🟢 Minor | integrate | `piecewise` indefinite integral not handled | UNFIXED |
