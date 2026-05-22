@@ -10312,7 +10312,27 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             return expr;
         }
 
-        // 3. Check for irreducible quadratic (discriminant < 0)
+        // 3. Check for polynomial part (degree num >= degree den)
+        // P/Q = Poly + Rem/Q. Do polynomial division first.
+        const pNum = this._getPolyCoeffs(num, varNode);
+        if (pNum && denPoly && pNum.maxDeg >= denPoly.maxDeg) {
+            const divRes = this._quo(num, den);
+            const remExpr = new Sub(num, new Mul(divRes, den)).simplify();
+            // If remainder is 0, just return the quotient
+            if (remExpr instanceof Num && remExpr.value === 0) {
+                return divRes.simplify();
+            }
+            // Recursively decompose the remainder fraction
+            const remResult = this._partfrac(new Div(remExpr, den), varNode).simplify();
+            // Add the polynomial part
+            if (divRes instanceof Num && divRes.value === 0) {
+                return remResult;
+            } else {
+                return new Add(divRes, remResult).simplify();
+            }
+        }
+
+        // 4. Check for irreducible quadratic (discriminant < 0)
         // For quadratics with complex roots, don't decompose over ℂ
         if (denPoly.maxDeg === 2) {
             const a = denPoly.coeffs[2]; // coeff of x^2
@@ -10331,7 +10351,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             }
         }
 
-        // 4. Find roots of denominator
+        // 5. Find roots of denominator
         const rootsResult = this._solve(den, varNode);
         let uniqueRoots = [];
 
@@ -10414,17 +10434,6 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 const denomTerm = new Pow(new Sub(varNode, r), new Num(k)).simplify();
                 result = new Add(result, new Div(coeff, denomTerm));
             }
-        }
-
-        // Check for polynomial part (degree num >= degree den)
-        // P/Q = Poly + Rem/Q. The loop above handles residues (Rem/Q).
-        // We need to add the polynomial part.
-        // Use polynomial division (quo).
-        const pNum = this._getPolyCoeffs(num, varNode);
-        const pDen = this._getPolyCoeffs(den, varNode);
-        if (pNum && pDen && pNum.maxDeg >= pDen.maxDeg) {
-             const divRes = this._quo(num, den);
-             result = new Add(divRes, result);
         }
 
         return result.simplify();
