@@ -571,9 +571,12 @@ class BinaryOp extends Expr {
 
 class Add extends BinaryOp {
     toString() { return `(${this.left} + ${this.right})`; }
-    simplify() {
-        const l = this.left.simplify();
-        const r = this.right.simplify();
+    simplify(skipCommonFactor = false) {
+        const l = this.left.simplify(skipCommonFactor);
+        const r = this.right.simplify(skipCommonFactor);
+        
+        const isExpandedForm = this._expandedForm || (l && l._expandedForm) || (r && r._expandedForm);
+        if (isExpandedForm) skipCommonFactor = true;
 
         // Associativity: (A + B) + C -> A + (B + C)
         if (l instanceof Add) {
@@ -685,14 +688,16 @@ class Add extends BinaryOp {
         // a + Sub(b,a) -> b — e.g. x+(x²-x) -> x²
         if (r instanceof Sub && r.right.toString() === l.toString()) return r.left;
 
-        const lb = extractCoeffBase(l);
-        const rb = extractCoeffBase(r);
-        if (lb && rb && exprEquals(lb.base, rb.base)) {
-            const newCoeff = new Add(lb.coeff, rb.coeff).simplify();
-            if (newCoeff instanceof Num && newCoeff.value === 0) return new Num(0);
-            if (newCoeff instanceof Num && newCoeff.value === 1) return lb.base;
-            if (newCoeff instanceof Num && newCoeff.value === -1) return new Mul(new Num(-1), lb.base).simplify();
-            return new Mul(newCoeff, lb.base).simplify();
+        if (!skipCommonFactor) {
+            const lb = extractCoeffBase(l);
+            const rb = extractCoeffBase(r);
+            if (lb && rb && exprEquals(lb.base, rb.base)) {
+                const newCoeff = new Add(lb.coeff, rb.coeff).simplify();
+                if (newCoeff instanceof Num && newCoeff.value === 0) return new Num(0);
+                if (newCoeff instanceof Num && newCoeff.value === 1) return lb.base;
+                if (newCoeff instanceof Num && newCoeff.value === -1) return new Mul(new Num(-1), lb.base).simplify();
+                return new Mul(newCoeff, lb.base).simplify();
+            }
         }
 
         if (exprEquals(l, r)) return new Mul(new Num(2), l);
@@ -723,12 +728,14 @@ class Add extends BinaryOp {
             }
             return null;
         };
-        const commonFactor = findCommonFactor(l, r);
-        if (commonFactor) {
-            const leftRest = removeFactor(l, commonFactor);
-            const rightRest = removeFactor(r, commonFactor);
-            if (leftRest !== null && rightRest !== null) {
-                return new Mul(commonFactor, new Add(leftRest, rightRest).simplify()).simplify();
+        if (!skipCommonFactor) {
+            const commonFactor = findCommonFactor(l, r);
+            if (commonFactor) {
+                const leftRest = removeFactor(l, commonFactor);
+                const rightRest = removeFactor(r, commonFactor);
+                if (leftRest !== null && rightRest !== null) {
+                    return new Mul(commonFactor, new Add(leftRest, rightRest).simplify()).simplify();
+                }
             }
         }
 
@@ -809,7 +816,11 @@ class Add extends BinaryOp {
     evaluateNumeric() { return this.left.evaluateNumeric() + this.right.evaluateNumeric(); }
     diff(varName) { return new Add(this.left.diff(varName), this.right.diff(varName)); }
     integrate(varName) { return new Add(this.left.integrate(varName), this.right.integrate(varName)); }
-    expand() { return new Add(this.left.expand(), this.right.expand()).simplify(); }
+    expand() { 
+        const result = new Add(this.left.expand(), this.right.expand());
+        result._expandedForm = true;
+        return result;
+    }
     toLatex() { return `${this.left.toLatex()} + ${this.right.toLatex()}`; }
 }
 
@@ -1036,7 +1047,11 @@ class Sub extends BinaryOp {
     evaluateNumeric() { return this.left.evaluateNumeric() - this.right.evaluateNumeric(); }
     diff(varName) { return new Sub(this.left.diff(varName), this.right.diff(varName)); }
     integrate(varName) { return new Sub(this.left.integrate(varName), this.right.integrate(varName)); }
-    expand() { return new Sub(this.left.expand(), this.right.expand()).simplify(); }
+    expand() { 
+        const result = new Sub(this.left.expand(), this.right.expand());
+        result._expandedForm = true;
+        return result;
+    }
     toLatex() { return `${this.left.toLatex()} - ${this.right.toLatex()}`; }
 }
 
@@ -1138,7 +1153,7 @@ class Mul extends BinaryOp {
 
         const isInf = (n) => n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf');
         const isNegInf = (n) => n instanceof Mul && n.left instanceof Num && n.left.value === -1 && isInf(n.right);
-        const checkInf = (n) => isInf(n) ? 1 : (isNegInf(n) ? -1 : 0);
+        const checkInf = (n) => isNegInf(n) ? -1 : (isInf(n) ? 1 : 0);
 
         const infL = checkInf(l);
         const infR = checkInf(r);
@@ -1320,11 +1335,29 @@ class Mul extends BinaryOp {
     expand() {
         const l = this.left.expand();
         const r = this.right.expand();
-        if (l instanceof Add) return new Add(new Mul(l.left, r).expand(), new Mul(l.right, r).expand()).simplify();
-        if (l instanceof Sub) return new Sub(new Mul(l.left, r).expand(), new Mul(l.right, r).expand()).simplify();
-        if (r instanceof Add) return new Add(new Mul(l, r.left).expand(), new Mul(l, r.right).expand()).simplify();
-        if (r instanceof Sub) return new Sub(new Mul(l, r.left).expand(), new Mul(l, r.right).expand()).simplify();
-        return new Mul(l, r).simplify();
+        if (l instanceof Add) {
+            const result = new Add(new Mul(l.left, r).expand(), new Mul(l.right, r).expand());
+            result._expandedForm = true;
+            return result;
+        }
+        if (l instanceof Sub) {
+            const result = new Sub(new Mul(l.left, r).expand(), new Mul(l.right, r).expand());
+            result._expandedForm = true;
+            return result;
+        }
+        if (r instanceof Add) {
+            const result = new Add(new Mul(l, r.left).expand(), new Mul(l, r.right).expand());
+            result._expandedForm = true;
+            return result;
+        }
+        if (r instanceof Sub) {
+            const result = new Sub(new Mul(l, r.left).expand(), new Mul(l, r.right).expand());
+            result._expandedForm = true;
+            return result;
+        }
+        const result = new Mul(l, r);
+        result._expandedForm = true;
+        return result;
     }
     toLatex() {
         let lTex = this.left.toLatex();

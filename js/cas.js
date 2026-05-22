@@ -4870,6 +4870,31 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                             }
                         });
 
+                        // If Ferrari produced deeply nested trig expressions (Casus Irreducibilis
+                        // with unsimplified cos(acos(...)/3) forms), fall back to numerical.
+                        if (unique.length > 0 && unique.some(r => this._hasDeepTrig(r))) {
+                            const numRoots = this._solvePolynomialNumerically(poly.coeffs, varNode, poly.maxDeg);
+                            if (numRoots && numRoots.length > 0) {
+                                const numUnique = [];
+                                const numSeen = new Set();
+                                numRoots.forEach(s => {
+                                    const str = s.toString();
+                                    if (!numSeen.has(str)) {
+                                        numSeen.add(str);
+                                        numUnique.push(s);
+                                    }
+                                });
+                                numUnique.sort((a, b) => {
+                                    const va = a.evaluateNumeric();
+                                    const vb = b.evaluateNumeric();
+                                    if (!isNaN(va) && !isNaN(vb)) return va - vb;
+                                    return a.toString().localeCompare(b.toString());
+                                });
+                                if (numUnique.length === 1) return numUnique[0];
+                                return new Call('set', numUnique);
+                            }
+                        }
+
                         // Sort and Return
                         unique.sort((a, b) => {
                             const va = a.evaluateNumeric();
@@ -5240,6 +5265,38 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         // We want m-k <= order => m <= order + k.
 
         const gSeries = this._taylor(g, varNode, point, order + k);
+
+        // Handle branch point: if gSeries is effectively 0 at the base point,
+        // g has a pure branch point singularity (e.g. sqrt(x-a)) and the
+        // standard Laurent division fails. Return the leading singular term.
+        const gSeriesAtPoint = gSeries.substitute(varNode, point).simplify();
+
+        // isZero helper: check if expr evaluates to 0
+        const isZero = (expr) => {
+            if (expr instanceof Num) return expr.value === 0;
+            if (expr instanceof Sym) return expr.name === '0' || expr.name === '0.0';
+            if (expr instanceof Mul) {
+                if (expr.left instanceof Num && expr.left.value === 0) return true;
+                if (expr.right instanceof Num && expr.right.value === 0) return true;
+            }
+            if (expr instanceof Add) return isZero(expr.left) && isZero(expr.right);
+            return false;
+        };
+
+        if (isZero(gSeriesAtPoint)) {
+            // gSeries=0 means g's Taylor expansion at 'point' is identically 0.
+            // This happens for branch points (e.g. (x-a)^(3/2)) where all
+            // derivatives at the point are 0 or ∞.
+            // The leading term = limit(g/(x-a)^(k-1)) * (x-a)^(1-k).
+            const denomPow = new Sub(new Num(1), new Num(k));
+            const denom = new Pow(x_minus_a, denomPow).simplify();
+            const ratio = new Div(g, denom).simplify();
+            const leadingCoeff = cas._limit(ratio, varNode, point);
+            if (!isBad(leadingCoeff)) {
+                const branchFactor = new Pow(x_minus_a, denomPow).simplify();
+                return new Mul(leadingCoeff, branchFactor).simplify();
+            }
+        }
 
         // 3. Divide by (x-a)^k
         return new Div(gSeries, factor).simplify();
@@ -8978,6 +9035,25 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         } catch (e) {
             return null;
         }
+    }
+
+    _hasDeepTrig(expr, depth = 0) {
+        const THRESHOLD = 10;
+        if (depth > THRESHOLD) return true;
+        if (expr instanceof Call) {
+            const name = expr.funcName;
+            if (name === 'acos' || name === 'asin' || name === 'atan' || name === 'cos' || name === 'sin' || name === 'tan') {
+                if (depth >= 4) return true;
+            }
+            if (expr.args) {
+                for (const arg of expr.args) {
+                    if (this._hasDeepTrig(arg, depth + 1)) return true;
+                }
+            }
+        }
+        if (expr.left && this._hasDeepTrig(expr.left, depth + 1)) return true;
+        if (expr.right && this._hasDeepTrig(expr.right, depth + 1)) return true;
+        return false;
     }
 
     _numericalEigenvalues(poly, varNode, n) {

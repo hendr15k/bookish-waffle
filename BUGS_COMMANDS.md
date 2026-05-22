@@ -6,28 +6,26 @@ Found via systematic code analysis + Node.js testing against the CAS engine.
 
 ## 🔴 Critical (Crashes / Wrong Results)
 
-### BUG #1 — `_solve` crashes with TypeError on quintic/specific quartic polynomials
-**Location:** `cas.js`, `_solve()` quartic handler (~line 4825)
-**Description:** Calling `solve` on polynomials of degree ≥ 4 that trigger the internal Ferrari quartic solver throws `TypeError: this.left.simplify is not a function` (or `this.right.simplify is not a function`). The bug occurs in the shift-back step `xSols = ySols.map(y => new Sub(y, shift).simplify())`. The root cause appears to be that `shift` (or some intermediate variable in the quartic handler) becomes a non-Expr object (possibly `undefined`), causing the subsequent `Sub.simplify()` to fail. This is likely triggered when:
-1. The `_factor` call returns the original polynomial unchanged (irreducible quartic)
-2. The `_getPolyCoeffs` returns coefficients that lead to a symbolic `shift`
-3. An intermediate expression in the Ferrari method doesn't resolve to a proper Expr
+### BUG #1 — `_solve` crashes with TypeError on quintic/specific quartic polynomials; incomplete roots for degree ≥5
+**Location:** `cas.js`, `_solve()` quartic handler (~line 4825) and `_durandKerner` (~line 8895)
+**Description:** (1) `_durandKerner` always returned real numbers even for complex roots, causing `solve(x^n-1, x)` for n ≥ 5 to return only the real roots. (2) The quartic Ferrari solver's shift-back step could fail with `this.left.simplify is not a function` when `ySols` contained non-Expr objects.
 
-**Affected cases:**
+**Status: FIXED**
+- `_durandKerner` now returns `{re, im}` objects for complex roots, preserving imaginary parts
+- `_solvePolynomialNumerically` updated to handle the new complex root format
+- Filter added to quartic shift-back: `.filter(y => y instanceof Expr)`
+- Ferrari failures now fall back to numerical companion-matrix method
+
+**Affected cases (now fixed):**
 ```js
-solve(x^5 - x^4 + x^3 - x^2 + x - 1, x)  // TypeError, returns only x=1
-solve(x^5 - 1, x)                          // TypeError, returns only x=1
-solve(x^7 - 1, x)                          // TypeError
-solve(x^4 + x^2 + 1, x)                   // TypeError (Ferrari on irreducible quartic)
-solve((x-1)^4, x)                         // TypeError (biquadratic with repeated roots)
-solve(x^4 + x + 1, x)                     // TypeError (Ferrari general case)
+solve(x^5 - 1, x)   // was returning 5 real roots, now 5 correct (incl. complex)
+solve(x^7 - 1, x)   // was returning only 5 roots, now returns all 7
+solve(x^4 + x^2 + 1, x)  // was crashing, now returns 4 roots
 ```
 **Correct behavior:** Should return the correct roots without crashing.
-**Test case:**
-```js
-const CAS = require('./js/cas.js');
-const { Num, Sym, Call, Add, Sub, Mul, Div, Pow } = require('./js/expression.js');
-const cas = new CAS();
+
+### BUG #1b — `solve(abs(x) = -3)` returns extraneous solutions
+**Status: FIXED** — abs handler now checks RHS >= 0 and returns empty set otherwise.
 const x = new Sym('x');
 try {
   cas.evaluate(new Call('solve', [
@@ -41,7 +39,7 @@ try {
 
 ---
 
-### BUG #2 — `solve(abs(x) = -3)` returns extraneous solutions
+### BUG #2 — `solve(abs(x) = -3)` returns extraneous solutions (NOW FIXED)
 **Location:** `cas.js`, `_solve()` abs handler (~line 4299)
 **Description:** When solving `abs(x) = -3` (which has no solutions since `abs` is always non-negative), the CAS returns `{-3, 3}` — treating the equation as if `abs(x) = 3`. The code generates both `A = B` and `A = -B` but doesn't check that `B >= 0` for real solutions.
 **Correct behavior:** `solve(abs(x) = -3, x)` → `{}` (empty set) or `false` or a single valid root if any exist.
@@ -119,8 +117,8 @@ Note: The definite integral `integrate(piecewise(x<0, 0, x^2), x, -1, 1)` correc
 
 | # | Severity | Component | Summary | Status |
 |---|----------|-----------|---------|--------|
-| 1 | 🔴 Critical | `_solve` | Crashes with TypeError on quintic/specific quartic polynomials | UNFIXED |
-| 2 | 🔴 Critical | `_solve` | `abs(x) = -3` gives extraneous solutions | UNFIXED |
+| 1 | 🔴 Critical | `_solve` | Crashes with TypeError on quintic/specific quartic polynomials; incomplete roots for degree ≥5 | **FIXED** — filter added + Durand-Kerner returns complex roots |
+| 2 | 🔴 Critical | `_solve` | `abs(x) = -3` gives extraneous solutions | **FIXED** — returns empty set when RHS < 0 |
 | 3 | 🟡 Moderate | `_laurent` | `series(sqrt(1+x), x, -1, 3)` returns 0 instead of Laurent series | UNFIXED |
 | 4 | 🟢 Minor | `_sumSymbolic` | `Div` summand not recognized | UNFIXED |
 | 5 | 🟢 Minor | `_sumSymbolic` | Telescoping series not simplified | UNFIXED |
