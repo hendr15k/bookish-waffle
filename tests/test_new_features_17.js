@@ -100,4 +100,22 @@ const D3 = new Vec(rows);
 const t8 = new Call('eigenvals', [D3]);
 runTest("eigenvals(D3)", t8, "[1, 2, 3]");
 
+// 5. Bug fix: Pow.simplify with negative exponent (HEN-56)
+// (c*x)^(-1) should give 1/(c*x), not fractional coefficient
+// (2*x)^(-1) -> 1/(2*x)
+const t9 = new Pow(new Mul(new Num(2), new Sym('x')), new Num(-1));
+runTest("Pow Simplify (2*x)^(-1)", t9, "(1 / (2 * x))");
+
+// (-2*x)^(-1) -> -1/(2*x) (simplified from 1/(-2*x))
+const t10 = new Pow(new Mul(new Num(-2), new Sym('x')), new Num(-1));
+runTest("Pow Simplify (-2*x)^(-1)", t10, "(-1 / (2 * x))");
+
+// (c*x)^(-2) -> 1/(c^2 * x^2)
+const t11 = new Pow(new Mul(new Num(2), new Sym('x')), new Num(-2));
+runTest("Pow Simplify (2*x)^(-2)", t11, "(1 / (4 * x^2))");
+
+// (c*x)^2 should still distribute (positive exponent)
+const t12 = new Pow(new Mul(new Num(2), new Sym('x')), new Num(2));
+runTest("Pow Simplify (2*x)^2", t12, "(4 * x^2)");
+
 console.log("--- End Tests ---");
