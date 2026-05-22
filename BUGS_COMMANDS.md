@@ -132,8 +132,8 @@ Note: The definite integral `integrate(piecewise(x<0, 0, x^2), x, -1, 1)` correc
 
 The following produce correct or expected unevaluated results:
 
-- `solve(tan(x)=1, x)` → `pi/4` (principal solution)
-- `solve(x*exp(x)=1, x)` → `LambertW(1)` ✓
+- `solve(tan(x)=1, x)` → `pi/4` (principal solution) ✓ **FIXED HEN-207** — was crashing before null-check fix
+- `solve(x*exp(x)=1, x)` → `LambertW(1)` ✓ **FIXED HEN-207** — was crashing before null-check fix
 - `limit((1+1/x)^x, x, Infinity)` → `e` ✓
 - `limit(x^x, x, 0, right)` → `1` ✓
 - `taylor(sin(x)/x, x, 0, 4)` → `1` ✓ (higher-order terms are 0)

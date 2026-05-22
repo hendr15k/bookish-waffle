@@ -4993,7 +4993,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
             // Degree >= 5: Abel-Ruffini — no general symbolic formula.
             // Use numerical companion-matrix + Durand-Kerner.
-            if (poly.maxDeg >= 5) {
+            if (poly && poly.maxDeg >= 5) {
                 const numRoots = this._solvePolynomialNumerically(poly.coeffs, varNode, poly.maxDeg);
                 if (numRoots && numRoots.length > 0) {
                     const unique = [];
