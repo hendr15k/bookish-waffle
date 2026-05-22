@@ -124,5 +124,5 @@ const impMul2 = new Mul(new Sym("x"), new Sym("y"));
 checkDirectLatex("Implicit Mul Vars", impMul2, "x y");
 
 checkDirectLatex("Scientific notation", new Num(1e-10), "\\times 10^{-10}");
-checkDirectLatex("Negated fraction", new Mul(new Num(-1), new sandbox.Div(new Sym("a"), new Sym("b"))), "-\\left(\\frac{a}{b}\\right)");
+checkDirectLatex("Negated fraction", new Mul(new Num(-1), new sandbox.Div(new Sym("a"), new Sym("b"))), "-\\frac{a}{b}");
 

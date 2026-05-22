@@ -1218,7 +1218,11 @@ class Mul extends BinaryOp {
             if (this.right instanceof Add || this.right instanceof Sub) {
                 return `-\\left(${this.right.toLatex()}\\right)`;
             }
-            // Div, Mul, Pow(left=Call) — wrap in parens
+            // Div — pull negation into the fraction
+            if (this.right instanceof Div) {
+                return `-\\frac{${this.right.left.toLatex()}}{${this.right.right.toLatex()}}`;
+            }
+            // Mul — wrap in parens
             return `-\\left(${this.right.toLatex()}\\right)`;
         }
 
@@ -1839,9 +1843,13 @@ class Div extends BinaryOp {
         return new Div(l, r);
     }
     toLatex() {
-        // Pull out negative sign
+        // Pull out negative sign from numerator
         if (this.left instanceof Num && this.left.value < 0 && this.right instanceof Num && this.right.value > 0) {
              return `-\\frac{${Math.abs(this.left.value)}}{${this.right.value}}`;
+        }
+        // Mul(Num(-1), expr) numerator -> pull negation out of fraction
+        if (this.left instanceof Mul && this.left.left instanceof Num && this.left.left.value === -1) {
+            return `-\\frac{${this.left.right.toLatex()}}{${this.right.toLatex()}}`;
         }
         return `\\frac{${this.left.toLatex()}}{${this.right.toLatex()}}`;
     }
