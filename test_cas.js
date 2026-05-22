@@ -14,6 +14,7 @@ const sandbox = {
     JSON: JSON,
     String: String,
     Boolean: Boolean,
+    window: {},
 };
 
 const expr = fs.readFileSync('js/expression.js', 'utf8');
@@ -28,6 +29,7 @@ vm.runInContext(help, sandbox);
 vm.runInContext(cas, sandbox);
 
 const myCAS = new sandbox.CAS();
+const parse = (s) => new sandbox.Parser(new sandbox.Lexer(s)).parse();
 
 const tests = [
     ['1+1', '2'],
@@ -39,7 +41,7 @@ const tests = [
 
 for (const [input, expected] of tests) {
     try {
-        const result = myCAS.evaluate(sandbox.Parser.parse(input));
+        const result = myCAS.evaluate(parse(input));
         console.log(`✓ ${input} = ${result.toString()}`);
     } catch(e) {
         console.log(`✗ ${input}: ${e.message}`);
