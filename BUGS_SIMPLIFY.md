@@ -310,6 +310,7 @@ expandCmd("(a+b+c)^2")  // Got: (a^2 + ((2 * (a * b)) + ((2 * (a * c)) + (b^2 + 
 partfracCmd("1/(2*x+1)", "x")  // Got: (1 / (2 * (x - (-1 / 2))))
 ```
 **Severity:** 🟢 — Non-standard form
+**Status:** ✅ Fixed (HEN-62). `partfrac(1/(2*x+1), x)` now correctly returns `1/(2*x+1)` in canonical form. Added regression tests in `tests/test_partfrac.js`.
 
 ---
 
@@ -319,5 +320,5 @@ partfracCmd("1/(2*x+1)", "x")  // Got: (1 / (2 * (x - (-1 / 2))))
 |----------|-------|-----------|
 | 🔴 Critical | 6 | Like-term collection, Mul coefficient merging, polynomial division (_quo), complex factorization, multivariate factor |
 | 🟡 Moderate | 12 | Commutative equality, expand simplification, negative powers, trig ratios, partial distribution, multivariate GCD |
-| 🟢 Minor | 4 | Common factor extraction, integer display, nesting, non-monic partfrac |
+| 🟢 Minor | 3 | Common factor extraction, integer display, nesting |
 | **Total** | **22** | |
