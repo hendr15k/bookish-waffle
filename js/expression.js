@@ -2311,12 +2311,6 @@ class Pow extends BinaryOp {
              return new Pow(base, new Mul(exp1, exp2).simplify()).simplify();
         }
 
-        // Negative integer exponents: x^(-n) → 1/x^n
-        if (r instanceof Num && r.value < 0 && Number.isInteger(r.value)) {
-            if (r.value === -1) return new Div(new Num(1), l).simplify();
-            return new Div(new Num(1), new Pow(l, new Num(-r.value))).simplify();
-        }
-
         return new Pow(l, r);
     }
     evaluateNumeric() { return Math.pow(this.left.evaluateNumeric(), this.right.evaluateNumeric()); }

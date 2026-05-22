@@ -93,21 +93,19 @@ simp("(-x)/y")     // Got: ((0 - x) / y)
 
 ---
 
-### BUG #4 — `Mul.simplify()` doesn't simplify power of powers `(a^x)^y` → `a^(x*y)`
-**Location:** `expression.js` (`Mul.simplify()`)
-**Description:** When the right side of a multiplication is `Pow(base, exp1)` and the left side is also `Pow(base, exp2)`, the code at line 1237-1241 handles `Pow * Pow` only when bases match (same `toString`). But it doesn't handle `(a^x)^y` where the outer `Pow` has a `Pow` as its base. The `Pow.expand()` at line 2267 handles `(a^x)^y` → `a^(x*y)`, but `simplify()` doesn't.
-
-**Correct behavior:**
-- `simplify((a^x)^y)` → `a^(x*y)`
-- `simplify((2^x)^3)` → `2^(3*x)`
+### ~~BUG #4 — `Mul.simplify()` doesn't simplify power of powers `(a^x)^y` → `a^(x*y)`~~ ✅ FIXED
+**Location:** `expression.js` (`Pow.simplify()`)
+**Description:** Fixed in Pow.simplify() via the `(a^b)^c = a^(b*c)` rule at line ~2307. Now correctly simplifies `(a^x)^y` → `a^(x*y)`.
 
 **Test case:**
 ```js
-simp("(a^x)^y")   // Got: ((a^x)^y)
-simp("(2^x)^3")   // Got: ((2^x)^3)
+simp("(a^x)^y")   // Got: a^((x * y))  ✓
+simp("(x^2)^3")   // Got: x^6          ✓
+simp("((a^x)^y)^z") // Got: a^(((x * y) * z))  ✓
 ```
 
 **Severity:** 🟡 Moderate — common symbolic exponent simplification
+**Fixed:** HEN-90
 
 ---
 
@@ -174,7 +172,7 @@ simp("log(exp(x))")  // Got: log(exp(x))
 | 1 | 🔴 Critical | `Mul.expand()` + `Add.simplify()` | expand() doesn't distribute Mul*Add and simplify() re-factors result | Open |
 | 2 | 🟡 Moderate | `Sub.simplify()` | `Sub(0, x)` not flattened to `-x` | Open |
 | 3 | 🟡 Moderate | `Mul.simplify()` | `(-x)*y`, `(-x)*(-y)` etc. not simplified | Open |
-| 4 | 🟡 Moderate | `Pow.simplify()` | `(a^x)^y` not simplified to `a^(x*y)` in simplify | Open |
+| 4 | 🟡 Moderate | `Pow.simplify()` | `(a^x)^y` not simplified to `a^(x*y)` in simplify | ✅ Fixed (HEN-90) |
 | 5 | 🟡 Moderate | `Mul.simplify()` | `a^x * a^y` not combined to `a^(x+y)` | Open |
 | 6 | 🟢 | — | Not a bug — confirmed working | N/A |
 | 7 | 🟢 Minor | `Call.simplify()` | `log(exp(x))` not simplified | Open |

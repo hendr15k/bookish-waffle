@@ -118,4 +118,44 @@ runTest("Pow Simplify (2*x)^(-2)", t11, "(1 / (4 * x^2))");
 const t12 = new Pow(new Mul(new Num(2), new Sym('x')), new Num(2));
 runTest("Pow Simplify (2*x)^2", t12, "(4 * x^2)");
 
+// HEN-90: Negative integer exponents → fractions
+// x^(-1) -> 1/x
+runTest("Pow x^(-1) -> 1/x", new Pow(new Sym('x'), new Num(-1)), "(1 / x)");
+
+// x^(-2) -> 1/x^2
+runTest("Pow x^(-2) -> 1/x^2", new Pow(new Sym('x'), new Num(-2)), "(1 / x^2)");
+
+// x^(-3) -> 1/x^3
+runTest("Pow x^(-3) -> 1/x^3", new Pow(new Sym('x'), new Num(-3)), "(1 / x^3)");
+
+// HEN-90: Power-of-powers (a^x)^y -> a^(x*y)
+// (a^x)^y -> a^(x*y)
+const pow_base_a = new Sym('a');
+const pow_exp_x = new Sym('x');
+const pow_exp_y = new Sym('y');
+const t_pow1 = new Pow(new Pow(pow_base_a, pow_exp_x), pow_exp_y);
+const r_pow1 = cas.evaluate(t_pow1);
+if (r_pow1 instanceof Pow && r_pow1.left.toString() === 'a' && r_pow1.right.toString() === '(x * y)') {
+    console.log("PASS: Pow (a^x)^y -> a^(x*y)");
+} else {
+    console.log("FAIL: Pow (a^x)^y -> a^(x*y)");
+    console.log("  Got:", r_pow1.toString(), "type:", r_pow1.constructor.name);
+}
+
+// (x^2)^3 -> x^6
+const t_pow2 = new Pow(new Pow(new Sym('x'), new Num(2)), new Num(3));
+runTest("Pow (x^2)^3 -> x^6", t_pow2, "x^6");
+
+// ((a^x)^y)^z -> a^((x*y)*z)
+const pow_exp_z = new Sym('z');
+const inner = new Pow(new Pow(new Sym('a'), new Sym('x')), new Sym('y'));
+const t_pow3 = new Pow(inner, pow_exp_z);
+const r_pow3 = cas.evaluate(t_pow3);
+if (r_pow3 instanceof Pow && r_pow3.left.toString() === 'a' && r_pow3.right.toString() === '((x * y) * z)') {
+    console.log("PASS: Pow ((a^x)^y)^z -> a^((x*y)*z)");
+} else {
+    console.log("FAIL: Pow ((a^x)^y)^z -> a^((x*y)*z)");
+    console.log("  Got:", r_pow3.toString(), "type:", r_pow3.constructor.name);
+}
+
 console.log("--- End Tests ---");
