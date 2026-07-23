@@ -896,6 +896,18 @@ class Sub extends BinaryOp {
                 return (a.left.toString() === b.left.toString() && a.right.toString() === b.right.toString()) ||
                        (a.left.toString() === b.right.toString() && a.right.toString() === b.left.toString());
             }
+            if (a instanceof Mul && b instanceof Mul) {
+                // Flatten Mul expressions to handle nested multiplications
+                const flattenMul = (expr) => {
+                    if (expr instanceof Mul) {
+                        return [...flattenMul(expr.left), ...flattenMul(expr.right)];
+                    }
+                    return [expr.toString()];
+                };
+                const aTerms = flattenMul(a).sort();
+                const bTerms = flattenMul(b).sort();
+                return aTerms.length === bTerms.length && aTerms.every((t, i) => t === bTerms[i]);
+            }
             return false;
         };
 
@@ -1316,6 +1328,20 @@ class Mul extends BinaryOp {
             return result;
         }
 
+        // (-x) * (-y) -> x * y
+        const isNeg = (e) => e instanceof Sub && e.left instanceof Num && e.left.value === 0;
+        if (isNeg(l) && isNeg(r)) {
+            return new Mul(l.right, r.right).simplify();
+        }
+        // (-x) * y -> -(x * y)
+        if (isNeg(l)) {
+            return new Mul(new Num(-1), new Mul(l.right, r).simplify()).simplify();
+        }
+        // x * (-y) -> -(x * y)
+        if (isNeg(r)) {
+            return new Mul(new Num(-1), new Mul(l, r.right).simplify()).simplify();
+        }
+
         // x * x -> x^2
         if (exprEquals(l, r)) {
             return new Pow(l, new Num(2));
@@ -1335,6 +1361,11 @@ class Mul extends BinaryOp {
             if (sum === 0) return new Num(1);
             if (sum === 1) return l.left;
             return new Pow(l.left, new Num(sum)).simplify();
+        }
+
+        // a^x * a^y -> a^(x+y) for symbolic exponents
+        if (l instanceof Pow && r instanceof Pow && l.left.toString() === r.left.toString()) {
+            return new Pow(l.left, new Add(l.right, r.right).simplify()).simplify();
         }
 
         // (c1 * x^n) * (c2 * x^m) -> (c1*c2) * x^(n+m)
@@ -1417,22 +1448,30 @@ class Mul extends BinaryOp {
         const l = this.left.expand();
         const r = this.right.expand();
         if (l instanceof Add) {
-            const result = flattenCombine(new Add(new Mul(l.left, r).expand(), new Mul(l.right, r).expand()).simplify()).simplify();
+            const expandedAdd = new Add(new Mul(l.left, r).expand(), new Mul(l.right, r).expand());
+            expandedAdd._expandedForm = true;
+            const result = flattenCombine(expandedAdd.simplify(true)).simplify(true);
             result._expandedForm = true;
             return result;
         }
         if (l instanceof Sub) {
-            const result = flattenCombine(new Sub(new Mul(l.left, r).expand(), new Mul(l.right, r).expand()).simplify()).simplify();
+            const expandedSub = new Sub(new Mul(l.left, r).expand(), new Mul(l.right, r).expand());
+            expandedSub._expandedForm = true;
+            const result = flattenCombine(expandedSub.simplify()).simplify(true);
             result._expandedForm = true;
             return result;
         }
         if (r instanceof Add) {
-            const result = flattenCombine(new Add(new Mul(l, r.left).expand(), new Mul(l, r.right).expand()).simplify()).simplify();
+            const expandedAdd = new Add(new Mul(l, r.left).expand(), new Mul(l, r.right).expand());
+            expandedAdd._expandedForm = true;
+            const result = flattenCombine(expandedAdd.simplify(true)).simplify(true);
             result._expandedForm = true;
             return result;
         }
         if (r instanceof Sub) {
-            const result = flattenCombine(new Sub(new Mul(l, r.left).expand(), new Mul(l, r.right).expand()).simplify()).simplify();
+            const expandedSub = new Sub(new Mul(l, r.left).expand(), new Mul(l, r.right).expand());
+            expandedSub._expandedForm = true;
+            const result = flattenCombine(expandedSub.simplify()).simplify(true);
             result._expandedForm = true;
             return result;
         }
@@ -2849,6 +2888,8 @@ class Call extends Expr {
             const arg = simpleArgs[0];
             if (arg instanceof Num && arg.value === 1) return new Num(0);
             if (arg instanceof Num && arg.value === 10) return new Num(1);
+            // log(exp(x)) -> x
+            if (arg instanceof Call && arg.funcName === 'exp') return arg.args[0];
             // log(10^x) -> x
             if (arg instanceof Pow && arg.left instanceof Num && arg.left.value === 10) return arg.right;
             // log(100) -> 2

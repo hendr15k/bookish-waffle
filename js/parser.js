@@ -726,7 +726,7 @@ class Parser {
 
     power() {
         let node = this.factor();
-        if (this.currentToken.type === 'BANG') {
+        while (this.currentToken.type === 'BANG') {
             this.eat('BANG');
             node = new Call('fact', [node]);
         }
@@ -822,29 +822,57 @@ class Parser {
 
     compExpr() {
         let node = this.rangeExpr();
-        if (this.currentToken.type === TOKEN_EQ) {
-            this.eat(TOKEN_EQ);
-            node = new Eq(node, this.rangeExpr());
-        } else if (this.currentToken.type === TOKEN_BOOL_EQ) {
-            this.eat(TOKEN_BOOL_EQ);
-            node = new BooleanEq(node, this.rangeExpr());
-        } else if (this.currentToken.type === TOKEN_NEQ) {
-            this.eat(TOKEN_NEQ);
-            node = new Neq(node, this.rangeExpr());
-        } else if (this.currentToken.type === TOKEN_LT) {
-            this.eat(TOKEN_LT);
-            node = new Lt(node, this.rangeExpr());
-        } else if (this.currentToken.type === TOKEN_GT) {
-            this.eat(TOKEN_GT);
-            node = new Gt(node, this.rangeExpr());
-        } else if (this.currentToken.type === TOKEN_LE) {
-            this.eat(TOKEN_LE);
-            node = new Le(node, this.rangeExpr());
-        } else if (this.currentToken.type === TOKEN_GE) {
-            this.eat(TOKEN_GE);
-            node = new Ge(node, this.rangeExpr());
+        const comparisons = [];
+        
+        while (true) {
+            if (this.currentToken.type === TOKEN_EQ) {
+                this.eat(TOKEN_EQ);
+                const right = this.rangeExpr();
+                comparisons.push(new Eq(node, right));
+                node = right;
+            } else if (this.currentToken.type === TOKEN_BOOL_EQ) {
+                this.eat(TOKEN_BOOL_EQ);
+                const right = this.rangeExpr();
+                comparisons.push(new BooleanEq(node, right));
+                node = right;
+            } else if (this.currentToken.type === TOKEN_NEQ) {
+                this.eat(TOKEN_NEQ);
+                const right = this.rangeExpr();
+                comparisons.push(new Neq(node, right));
+                node = right;
+            } else if (this.currentToken.type === TOKEN_LT) {
+                this.eat(TOKEN_LT);
+                const right = this.rangeExpr();
+                comparisons.push(new Lt(node, right));
+                node = right;
+            } else if (this.currentToken.type === TOKEN_GT) {
+                this.eat(TOKEN_GT);
+                const right = this.rangeExpr();
+                comparisons.push(new Gt(node, right));
+                node = right;
+            } else if (this.currentToken.type === TOKEN_LE) {
+                this.eat(TOKEN_LE);
+                const right = this.rangeExpr();
+                comparisons.push(new Le(node, right));
+                node = right;
+            } else if (this.currentToken.type === TOKEN_GE) {
+                this.eat(TOKEN_GE);
+                const right = this.rangeExpr();
+                comparisons.push(new Ge(node, right));
+                node = right;
+            } else {
+                break;
+            }
         }
-        return node;
+        
+        if (comparisons.length === 0) return node;
+        if (comparisons.length === 1) return comparisons[0];
+        
+        let result = comparisons[0];
+        for (let i = 1; i < comparisons.length; i++) {
+            result = new And(result, comparisons[i]);
+        }
+        return result;
     }
 
     andExpr() {
