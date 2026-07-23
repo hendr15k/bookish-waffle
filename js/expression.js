@@ -903,6 +903,28 @@ class Sub extends BinaryOp {
         if (l instanceof Add) {
             if (exprEquals(l.left, r)) return l.right;
             if (exprEquals(l.right, r)) return l.left;
+            if (!(r instanceof Add)) {
+                const flattenAdd = (expr, terms) => {
+                    if (expr instanceof Add) {
+                        flattenAdd(expr.left, terms);
+                        flattenAdd(expr.right, terms);
+                    } else {
+                        terms.push(expr);
+                    }
+                };
+                const terms = [];
+                flattenAdd(l, terms);
+                const idx = terms.findIndex(t => exprEquals(t, r));
+                if (idx !== -1) {
+                    terms.splice(idx, 1);
+                    if (terms.length === 0) return new Num(0);
+                    let result = terms[0];
+                    for (let i = 1; i < terms.length; i++) {
+                        result = new Add(result, terms[i]);
+                    }
+                    return result.simplify();
+                }
+            }
         }
         // (A-B)-A -> -B
         if (l instanceof Sub) {
