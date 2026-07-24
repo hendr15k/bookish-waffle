@@ -60,6 +60,12 @@
     --rose: #c04552;
     --rose-tint: #f9e4e6;
 
+    --plum: #6d5bd0;
+    --plum-deep: #54439f;
+    --plum-tint: #eae7f8;
+
+    --backdrop: rgba(23, 48, 66, 0.45);
+
     --shadow-sm: 0 1px 2px rgba(23, 48, 66, 0.06), 0 4px 14px rgba(23, 48, 66, 0.05);
     --shadow-md: 0 2px 4px rgba(23, 48, 66, 0.07), 0 14px 34px rgba(23, 48, 66, 0.09);
     --shadow-lg: 0 6px 16px rgba(23, 48, 66, 0.12), 0 28px 60px rgba(23, 48, 66, 0.14);
@@ -97,6 +103,12 @@ body.dark-mode {
 
     --rose: #e0737f;
     --rose-tint: #332024;
+
+    --plum: #a99bf0;
+    --plum-deep: #8a78e6;
+    --plum-tint: #241f45;
+
+    --backdrop: rgba(2, 10, 14, 0.62);
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 14px rgba(0, 0, 0, 0.25);
     --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.35), 0 14px 34px rgba(0, 0, 0, 0.3);
@@ -1288,6 +1300,399 @@ body.graphing-mode .mobile-bottom-bar { display: none !important; }
         }
     }
 }
+
+/* ---------- Worksheet header ---------- */
+
+#main-content { display: flex; flex-direction: column; }
+
+.worksheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.ws-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-body);
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+}
+
+.ws-title::before {
+    content: "";
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+    background: var(--gold);
+    transform: rotate(45deg);
+    box-shadow: 0 0 0 3px var(--gold-tint);
+    transition: transform 0.4s var(--ease-spring);
+}
+
+.worksheet-head:hover .ws-title::before { transform: rotate(225deg); }
+
+.ws-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.ws-count {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--ink-faint);
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 4px 11px;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.ws-count b { color: var(--teal-strong); font-weight: 700; }
+
+.ws-clear {
+    font-family: var(--font-body);
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--ink-faint);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: color 0.18s, background 0.18s, border-color 0.18s, transform 0.18s var(--ease-out);
+}
+
+.ws-clear:hover {
+    color: var(--rose);
+    background: var(--rose-tint);
+    border-color: var(--rose);
+    transform: translateY(-1px);
+}
+
+/* ---------- History entries: worksheet numbering ---------- */
+
+.entry { counter-increment: ws-entry; }
+#history { counter-reset: ws-entry; }
+
+.entry-idx {
+    position: absolute;
+    top: 13px;
+    right: 12px;
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    font-weight: 600;
+    color: var(--ink-faint);
+    opacity: 0.75;
+    letter-spacing: 0.03em;
+    pointer-events: none;
+    transition: color 0.18s, opacity 0.18s;
+}
+
+.entry-idx::before { content: "[" counter(ws-entry, decimal-leading-zero) "]"; }
+
+.entry:hover .entry-idx { color: var(--teal-strong); opacity: 1; }
+
+.entry .copy-btn {
+    position: absolute;
+    right: 10px;
+    top: 34px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.05em;
+    opacity: 0;
+    padding: 3px 6px;
+    border-radius: 7px;
+    z-index: 10;
+    transition: opacity 0.18s, transform 0.18s var(--ease-out), background 0.18s;
+}
+
+.entry:hover .copy-btn, .entry:focus-within .copy-btn { opacity: 0.7; }
+.entry .copy-btn:hover { opacity: 1; transform: scale(1.15); background: var(--teal-tint); }
+.entry > .copy-btn:nth-of-type(2) { top: 64px; }
+
+#app-history-content { counter-reset: ws-entry; }
+
+@media (hover: none) { .entry .copy-btn { opacity: 0.55; } }
+
+/* ---------- Symbol palette ---------- */
+
+#symbol-palette {
+    display: flex;
+    gap: 6px;
+    align-items: stretch;
+    margin: 12px 0 14px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+#symbol-palette::-webkit-scrollbar { display: none; }
+
+.sym-key {
+    flex: 0 0 auto;
+    min-width: 46px;
+    padding: 9px 11px;
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+    background: var(--card);
+    border: 1px solid var(--line-strong);
+    border-bottom-width: 3px;
+    border-radius: 9px;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.13s var(--ease-out), border-color 0.13s, color 0.13s, background 0.13s, box-shadow 0.13s;
+}
+
+.sym-key:hover {
+    color: var(--teal-strong);
+    border-color: var(--teal);
+    background: var(--teal-tint);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm), 0 0 0 3px var(--teal-glow);
+}
+
+.sym-key:active { transform: translateY(1px) scale(0.94); border-bottom-width: 1px; }
+
+.sym-key.sym-wide {
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+}
+
+.sym-key.sym-accent {
+    background: var(--gold-tint);
+    border-color: var(--gold);
+    color: #8a6117;
+}
+
+body.dark-mode .sym-key.sym-accent { color: var(--gold); }
+
+/* ---------- Footer ---------- */
+
+#app-footer {
+    flex: 1 1 100%;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+    padding: 16px 2px 4px;
+    border-top: 1px solid var(--line);
+    font-size: 0.76rem;
+    color: var(--ink-faint);
+}
+
+#app-footer .ft-brand {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 0.92rem;
+    color: var(--ink-soft);
+}
+
+#app-footer .ft-brand b { color: var(--teal); font-weight: 600; }
+
+#app-footer .ft-hints { display: inline-flex; gap: 14px; flex-wrap: wrap; align-items: baseline; }
+
+#app-footer .ft-hints span { white-space: nowrap; }
+
+@media (max-width: 768px) { #app-footer .ft-hints { display: none; } }
+
+/* ---------- Toasts ---------- */
+
+.toast {
+    position: fixed;
+    bottom: 84px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 11px 20px;
+    border-radius: 999px;
+    font-size: 0.86rem;
+    font-weight: 600;
+    box-shadow: var(--shadow-lg);
+    z-index: 10000;
+    animation: toast-in 0.32s var(--ease-spring) both;
+    max-width: min(92vw, 480px);
+}
+
+.toast::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--teal);
+    flex: 0 0 auto;
+}
+
+.toast.toast-error::before { background: var(--rose); }
+.toast.toast-success::before { background: var(--teal); }
+
+.toast.toast-out { animation: toast-out 0.25s var(--ease-out) forwards; }
+
+@keyframes toast-in {
+    from { opacity: 0; transform: translate(-50%, 16px) scale(0.94); }
+    to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+@keyframes toast-out {
+    to { opacity: 0; transform: translate(-50%, 10px) scale(0.96); }
+}
+
+/* ---------- Modal backdrops ---------- */
+
+#shortcuts-modal, #sessions-modal { background: var(--backdrop) !important; }
+
+#shortcuts-modal > div, #sessions-modal > div {
+    background: var(--card) !important;
+    color: var(--ink) !important;
+    box-shadow: var(--shadow-lg) !important;
+    border-radius: var(--r-lg) !important;
+}
+
+#shortcuts-modal h2, #sessions-modal h2 { color: var(--ink); }
+
+#shortcuts-modal [style*="color:var(--text-color)"],
+#sessions-modal [style*="color:var(--text_color)"],
+#sessions-modal [style*="color:var(--text-color)"] { color: var(--ink) !important; }
+
+#shortcuts-modal kbd {
+    background: var(--card-soft) !important;
+    border: 1px solid var(--line-strong);
+    color: var(--ink-soft);
+}
+
+#sessions-modal input {
+    background: var(--card-soft) !important;
+    border: 1.5px solid var(--line-strong) !important;
+    color: var(--ink) !important;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+#sessions-modal input:focus { border-color: var(--teal) !important; box-shadow: 0 0 0 4px var(--teal-glow); }
+
+#sessions-modal #sessions-list > div {
+    background: var(--card-soft) !important;
+    border: 1px solid var(--line) !important;
+}
+
+/* ---------- App grid: no-results state ---------- */
+
+#app-grid-noresults {
+    display: none;
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 38px 16px;
+    color: var(--ink-faint);
+    animation: entry-in 0.35s var(--ease-out);
+}
+
+#app-grid-noresults .glyph {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 2.6rem;
+    color: var(--plum);
+    opacity: 0.6;
+    display: block;
+    margin-bottom: 10px;
+}
+
+#app-grid-noresults b { color: var(--ink-soft); font-family: var(--font-display); font-size: 1.1rem; }
+
+/* ---------- Sidebar refinements ---------- */
+
+#sidebar h2 { position: relative; }
+
+#sidebar h2::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: -1px;
+    width: 26px;
+    height: 2px;
+    background: var(--gold);
+    border-radius: 2px;
+    transition: width 0.3s var(--ease-out);
+}
+
+#sidebar h2:hover::after { width: 52px; }
+
+#sidebar li { position: relative; }
+
+#sidebar li::before {
+    content: "›";
+    position: absolute;
+    left: -2px;
+    opacity: 0;
+    color: var(--teal);
+    font-family: var(--font-body);
+    transition: opacity 0.15s, left 0.15s;
+}
+
+#sidebar li:hover::before { opacity: 1; left: 1px; }
+#sidebar li:hover { padding-left: 14px; }
+
+/* variable delete button */
+.variable-item button { transition: transform 0.15s var(--ease-out), color 0.15s !important; }
+.variable-item button:hover { transform: scale(1.25); color: var(--rose) !important; }
+
+/* ---------- Focus visibility ---------- */
+
+.hdr-btn:focus-visible,
+.action-btn:focus-visible,
+.function-btn:focus-visible,
+.sym-key:focus-visible,
+.tab-btn:focus-visible,
+.back-btn:focus-visible,
+.app-categories button:focus-visible,
+#history-empty .hint-chips button:focus-visible,
+.mobile-bottom-bar button:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 2px;
+}
+
+.app-card:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 3px;
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-md);
+}
+
+/* ---------- Dark-mode brand mark / primary polish ---------- */
+
+body.dark-mode .brand-mark { box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, 0.14); }
+
+body.dark-mode .hdr-btn.primary {
+    background: linear-gradient(150deg, var(--teal-deep), var(--teal));
+    color: #06231f;
+}
+
+body.dark-mode .hdr-btn.primary:hover { color: #031713; }
+
+body.dark-mode #submit-btn { color: #06231f; }
+
+@media (prefers-reduced-motion: reduce) {
+    .toast { animation: none; }
+    .toast.toast-out { animation: none; opacity: 0; }
+}
     </style>
     <style>
 /* ============================================================
@@ -1500,6 +1905,7 @@ body.dark-mode .entry code { color: var(--teal); }
             </div>
         </div>
         <div class="header-actions">
+            <button id="theme-toggle" class="hdr-btn" title="Dark Mode umschalten" aria-label="Dark Mode umschalten"><span class="ic">☾</span><span class="lbl">Dark</span></button>
             <button id="shortcuts-btn" class="hdr-btn" title="Tastaturkürzel"><span class="ic">⌨</span><span class="lbl">Kürzel</span></button>
             <button id="sessions-btn" class="hdr-btn" title="Sitzungen"><span class="ic">🗂</span><span class="lbl">Sitzungen</span></button>
             <button id="graphing-toggle" class="hdr-btn"><span class="ic">📈</span><span class="lbl">Graphing Mode</span></button>
@@ -1509,6 +1915,13 @@ body.dark-mode .entry code { color: var(--teal); }
 
     <div id="app-shell">
     <div id="main-content">
+        <div class="worksheet-head">
+            <span class="ws-title">Arbeitsblatt</span>
+            <span class="ws-meta">
+                <span class="ws-count" id="ws-count" title="Anzahl der Berechnungen"><b>0</b>&nbsp;Berechnungen</span>
+                <button class="ws-clear" id="ws-clear" title="Arbeitsblatt leeren (Ctrl+L)">Leeren</button>
+            </span>
+        </div>
         <div id="history">
             <div id="history-empty">
                 <span class="glyph">∂</span>
@@ -1522,6 +1935,26 @@ body.dark-mode .entry code { color: var(--teal); }
                     <button data-cmd="plot(sin(x)/x, x, -10, 10)">Plot</button>
                 </div>
             </div>
+        </div>
+        <div id="symbol-palette" aria-label="Symbolleiste">
+            <button class="sym-key" data-ins="(" title="Klammer auf">(</button>
+            <button class="sym-key" data-ins=")" title="Klammer zu">)</button>
+            <button class="sym-key" data-ins="^" title="Potenz">^</button>
+            <button class="sym-key" data-ins="sqrt(" title="Wurzel">√</button>
+            <button class="sym-key" data-ins="pi" title="Pi">π</button>
+            <button class="sym-key" data-ins="*" title="Multiplikation">·</button>
+            <button class="sym-key" data-ins="/" title="Division">⁄</button>
+            <button class="sym-key" data-ins="," title="Komma">,</button>
+            <button class="sym-key" data-ins=":=" title="Zuweisung">:=</button>
+            <button class="sym-key" data-ins="inf" title="Unendlich">∞</button>
+            <button class="sym-key sym-wide" data-ins="diff(" title="Ableitung">diff</button>
+            <button class="sym-key sym-wide" data-ins="integrate(" title="Integral">∫</button>
+            <button class="sym-key sym-wide" data-ins="sum(" title="Summe">∑</button>
+            <button class="sym-key sym-wide" data-ins="limit(" title="Grenzwert">lim</button>
+            <button class="sym-key sym-wide" data-ins="solve(" title="Lösen">solve</button>
+            <button class="sym-key sym-wide" data-ins="taylor(" title="Taylorreihe">taylor</button>
+            <button class="sym-key sym-wide" data-ins="plot(" title="Plot">plot</button>
+            <button class="sym-key sym-wide sym-accent" data-ins="ans" title="Letztes Ergebnis">ans</button>
         </div>
         <div id="input-area">
             <input type="text" id="command-input" placeholder="Enter command (e.g. sum(k^2, k, 1, 5))" autocomplete="off">
@@ -1664,6 +2097,11 @@ body.dark-mode .entry code { color: var(--teal); }
         <div class="app-card" onclick="openTool('gemini')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('gemini')">
             <span class="app-icon" style="color: #4285F4;">✨</span>
             <span class="app-name">Gemini AI</span>
+        </div>
+        <div id="app-grid-noresults">
+            <span class="glyph">∅</span>
+            <b>Keine App gefunden</b>
+            <div>Versuche einen anderen Suchbegriff oder eine andere Kategorie.</div>
         </div>
     </div>
 
@@ -3941,6 +4379,17 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
     </div>
     </div><!-- /app-shell -->
 
+    <footer id="app-footer">
+        <span class="ft-brand">Web <b>CAS</b> — Algebra im Browser</span>
+        <span class="ft-hints">
+            <span><kbd>Tab</kbd> vervollständigt Befehle</span>
+            <span><kbd>↑</kbd><kbd>↓</kbd> Befehlsverlauf</span>
+            <span><kbd>?</kbd> + Befehl zeigt Hilfe</span>
+            <span><kbd>Ctrl</kbd>+<kbd>L</kbd> leert das Blatt</span>
+        </span>
+        <span>100 % client-seitig · Xcas-Syntax</span>
+    </footer>
+
     <!-- Load JS modules -->
     <script src="js/expression.js"></script>
     <script src="js/parser.js"></script>
@@ -4109,22 +4558,30 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         });
 
         // Dark Mode Logic
-        try {
-            if (localStorage.getItem('darkMode') === 'true') {
-                document.body.classList.add('dark-mode');
-                darkModeToggle.checked = true;
+        const themeBtn = document.getElementById('theme-toggle');
+
+        function applyTheme(dark) {
+            document.body.classList.toggle('dark-mode', dark);
+            darkModeToggle.checked = dark;
+            if (themeBtn) {
+                themeBtn.querySelector('.ic').textContent = dark ? '☀' : '☾';
+                themeBtn.querySelector('.lbl').textContent = dark ? 'Light' : 'Dark';
+                themeBtn.title = dark ? 'Light Mode umschalten' : 'Dark Mode umschalten';
             }
+            try { localStorage.setItem('darkMode', dark ? 'true' : 'false'); } catch(e) {}
+        }
+
+        try {
+            if (localStorage.getItem('darkMode') === 'true') applyTheme(true);
         } catch(e) { console.warn("LocalStorage access denied"); }
 
-        darkModeToggle.addEventListener('change', (e) => {
-            if (e.target.checked) {
-                document.body.classList.add('dark-mode');
-                try { localStorage.setItem('darkMode', 'true'); } catch(e) {}
-            } else {
-                document.body.classList.remove('dark-mode');
-                try { localStorage.setItem('darkMode', 'false'); } catch(e) {}
-            }
-        });
+        darkModeToggle.addEventListener('change', (e) => applyTheme(e.target.checked));
+
+        if (themeBtn) {
+            themeBtn.addEventListener('click', () => {
+                applyTheme(!document.body.classList.contains('dark-mode'));
+            });
+        }
 
         function setToggleLabel(btn, text) {
             const lbl = btn.querySelector('.lbl');
@@ -6104,6 +6561,11 @@ if (mode === 'desktop') {
             const entryDiv = document.createElement('div');
             entryDiv.className = 'entry';
 
+            const idxSpan = document.createElement('span');
+            idxSpan.className = 'entry-idx';
+            idxSpan.setAttribute('aria-hidden', 'true');
+            entryDiv.appendChild(idxSpan);
+
             // Allow clicking entry to copy result to input
             entryDiv.style.cursor = 'pointer';
             entryDiv.title = 'Click to insert result into input';
@@ -6113,20 +6575,7 @@ if (mode === 'desktop') {
                 const copyBtn = document.createElement('button');
                 copyBtn.innerHTML = '📋';
                 copyBtn.title = 'Copy LaTeX';
-                copyBtn.className = 'copy-btn'; // Use class for styling hooks if needed
-                // Inline styles for simplicity
-                copyBtn.style.float = 'right';
-                copyBtn.style.background = 'none';
-                copyBtn.style.border = 'none';
-                copyBtn.style.cursor = 'pointer';
-                copyBtn.style.fontSize = '1.2em';
-                copyBtn.style.opacity = '0.5';
-                copyBtn.style.padding = '0 5px';
-                copyBtn.style.zIndex = '10';
-                copyBtn.style.position = 'relative'; // Ensure it's clickable
-
-                copyBtn.onmouseover = () => copyBtn.style.opacity = '1';
-                copyBtn.onmouseout = () => copyBtn.style.opacity = '0.5';
+                copyBtn.className = 'copy-btn';
                 copyBtn.onclick = (e) => {
                     e.stopPropagation(); // Prevent entry click
                     navigator.clipboard.writeText(latex).then(() => {
@@ -6400,9 +6849,7 @@ if (mode === 'desktop') {
             const copyBtn = document.createElement('button');
             copyBtn.innerHTML = '📋';
             copyBtn.title = "Copy Result";
-            copyBtn.style.cssText = "position: absolute; right: 10px; top: 10px; background: none; border: none; cursor: pointer; opacity: 0.5;";
-            copyBtn.onmouseover = () => copyBtn.style.opacity = 1;
-            copyBtn.onmouseout = () => copyBtn.style.opacity = 0.5;
+            copyBtn.className = 'copy-btn';
             copyBtn.onclick = (e) => {
                 e.stopPropagation();
                 let textToCopy = result.toString();
@@ -6860,6 +7307,8 @@ if (mode === 'desktop') {
                     <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-color);opacity:0.7;">Close tool / modal</span><kbd style="background:var(--bg-color);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:0.9em;">Escape</kbd></div>
                     <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-color);opacity:0.7;">Command history</span><kbd style="background:var(--bg-color);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:0.9em;">↑ / ↓</kbd></div>
                     <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-color);opacity:0.7;">Autocomplete</span><kbd style="background:var(--bg-color);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:0.9em;">Tab</kbd></div>
+                    <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-color);opacity:0.7;">Eingabe fokussieren</span><kbd style="background:var(--bg-color);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:0.9em;">/</kbd></div>
+                    <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-color);opacity:0.7;">Dark Mode</span><kbd style="background:var(--bg-color);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:0.9em;">Header ☾</kbd></div>
                 </div>
             </div>
         `;
@@ -6970,10 +7419,13 @@ if (mode === 'desktop') {
 
         window.showToast = function(msg, type) {
             const t = document.createElement('div');
+            t.className = 'toast' + (type === 'success' ? ' toast-success' : type === 'error' ? ' toast-error' : '');
             t.textContent = msg;
-            t.style.cssText = 'position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:' + (type === 'success' ? '#28a745' : '#dc3545') + '; color:white; padding:10px 20px; border-radius:8px; font-size:0.9em; z-index:10000;';
             document.body.appendChild(t);
-            setTimeout(() => t.remove(), 2500);
+            setTimeout(() => {
+                t.classList.add('toast-out');
+                setTimeout(() => t.remove(), 260);
+            }, 2300);
         };
 
         window.openSessionsManager = function() {
@@ -10019,6 +10471,89 @@ if (mode === 'desktop') {
             if (mq.addEventListener) mq.addEventListener('change', applyHdr);
             applyHdr();
         }
+
+        // ---- Symbol palette: insert at cursor, keep focus ----
+        var palette = document.getElementById('symbol-palette');
+        if (palette) {
+            palette.addEventListener('pointerdown', function (e) {
+                if (e.target.closest('button')) e.preventDefault();
+            });
+            palette.addEventListener('click', function (e) {
+                var key = e.target.closest('.sym-key');
+                if (!key) return;
+                var ins = key.dataset.ins || key.textContent;
+                if (typeof window.insertAtCursor === 'function') {
+                    window.insertAtCursor('command-input', ins);
+                }
+                var inp = document.getElementById('command-input');
+                if (inp) inp.focus();
+            });
+        }
+
+        // ---- Worksheet counter + clear ----
+        var wsCount = document.getElementById('ws-count');
+        var histEl = document.getElementById('history');
+        function syncWsCount() {
+            if (!wsCount || !histEl) return;
+            var n = histEl.querySelectorAll('.entry').length;
+            wsCount.innerHTML = '<b>' + n + '</b>&nbsp;' + (n === 1 ? 'Berechnung' : 'Berechnungen');
+        }
+        if (histEl) {
+            new MutationObserver(syncWsCount).observe(histEl, { childList: true, subtree: true });
+            syncWsCount();
+        }
+        var wsClear = document.getElementById('ws-clear');
+        if (wsClear) {
+            wsClear.addEventListener('click', function () {
+                if (typeof window.clearHistory === 'function') window.clearHistory();
+                if (typeof window.showToast === 'function') window.showToast('Arbeitsblatt geleert', 'success');
+            });
+        }
+
+        // ---- App grid: no-results state ----
+        function syncAppGridEmpty() {
+            var grid = document.getElementById('app-grid');
+            var empty = document.getElementById('app-grid-noresults');
+            if (!grid || !empty || grid.style.display === 'none') return;
+            var visible = 0;
+            grid.querySelectorAll('.app-card').forEach(function (c) {
+                if (c.style.display !== 'none') visible++;
+            });
+            empty.style.display = visible === 0 ? 'block' : 'none';
+        }
+        ['filterApps', 'filterAppsByCategory'].forEach(function (name) {
+            var orig = window[name];
+            if (typeof orig === 'function') {
+                window[name] = function () {
+                    var r = orig.apply(this, arguments);
+                    syncAppGridEmpty();
+                    return r;
+                };
+            }
+        });
+
+        // ---- Global shortcuts: "/" focuses input, Esc closes modals ----
+        document.addEventListener('keydown', function (e) {
+            var tag = (document.activeElement && document.activeElement.tagName) || '';
+            var typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+            if (e.key === '/' && !typing) {
+                var inp = document.getElementById('command-input');
+                var main = document.getElementById('main-content');
+                var visible = inp && main && main.style.display !== 'none';
+                if (visible) {
+                    e.preventDefault();
+                    inp.focus();
+                }
+            }
+
+            if (e.key === 'Escape') {
+                ['shortcuts-modal', 'sessions-modal'].forEach(function (id) {
+                    var m = document.getElementById(id);
+                    if (m && m.style.display === 'flex') m.style.display = 'none';
+                });
+            }
+        });
     })();
     </script>
 
