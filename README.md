@@ -9,14 +9,16 @@ A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, bu
 ## Highlights
 
 - **15 functional domains** — from basic arithmetic to control theory
-- **~34,000 lines of code** — 23k JS engine + 7.5k UI
-- **40 test files** — all passing
+- **~40,000 lines of code** — 24.5k JS engine + 10.9k UI
+- **56 test files** — all passing
 - **Zero dependencies at runtime** — only MathJax (LaTeX rendering)
 - **Dark Mode** — easy on the eyes
 - **Mobile App Mode** — grid-based tool interface for touch devices
 - **Offline capable** — everything runs locally
 - **Exact trigonometric values** — sin(π/6)=1/2, cos(π/3)=1/2, tan(π/4)=1, etc.
 - **Smart algebraic simplification** — like-term collection, negative exponents as fractions
+- **Live syntax feedback** — real-time parse check while typing
+- **Worksheet UX** — entry timestamps, rerun buttons, numbered entries, scroll-to-newest pill
 
 ---
 
@@ -207,9 +209,26 @@ x^(-2)                               // → 1/x²
 
 ---
 
-## Recent Improvements (April 2026)
+## Recent Improvements (July 2026)
 
-### Bug Fixes & Enhancements
+### UI Redesign (Rounds 1–3)
+- **Complete visual redesign** — new design system (Fraunces / Public Sans / JetBrains Mono), Teal/Gold/Rose/Plum palette
+- **Worksheet header** — entry counter with bump animation, "Leeren" button
+- **Symbol palette** — one-tap math symbols and function shortcuts
+- **Dark mode toggle** — persisted via localStorage
+- **Toast notifications** — success/error/info feedback for all actions
+- **Live syntax check** — debounced parse feedback (LED + status text) while typing
+- **Entry metadata** — timestamps, numbered entries, ↻ rerun buttons, fresh-entry highlight
+- **Scroll-to-newest pill** — appears when scrolled up, smooth-scrolls to bottom
+- **Micro-interactions** — brand-mark pulse on evaluate, counter bump, icon discs with `color-mix`
+- **Keyboard shortcuts** — `/` focuses input, `Esc` clears/closes, `Ctrl+Z` input undo
+
+### Bug Fixes (July 2026)
+- **`?`-help syntax** — live syntax check no longer flags `?term` as invalid
+- **`entry-fresh` cleanup** — teal highlight class removed after animation (with reduced-motion fallback)
+- **Input status reset** — status returns to "bereit" after evaluate clears the field
+
+### Earlier Fixes (April 2026)
 - **Exact trigonometric values** — sin/cos/tan of π/6, π/4, π/3 multiples (all 12 quadrants)
 - **atan(∞) = π/2** — infinite limits for inverse trig
 - **Factor over ℝ** — irreducible quadratics like x²+1 stay unfactored (no complex factors)
@@ -223,8 +242,11 @@ x^(-2)                               // → 1/x²
 
 ### Bug Reports (from automated analysis)
 - `BUGS_PARSER.md` — 7 parser/LaTeX bugs identified
+- `BUGS_PARSER_FINDINGS.md` — additional parser findings
 - `BUGS_SIMPLIFY.md` — 22 simplification bugs identified
 - `BUGS_CALCULUS.md` — calculus edge cases documented
+- `BUGS_EXPRESSION.md` — expression tree issues
+- `BUGS_COMMANDS.md` — command-level bugs
 
 ## Development & Testing
 
@@ -240,13 +262,13 @@ npm run test:chemistry   # Run chemistry tests
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `js/parser.js` | 1,032 | Lexer and Parser (Recursive Descent) → AST |
-| `js/expression.js` | 4,933 | AST node definitions (`Expr`, `Add`, `Mul`, `Call`, etc.) |
-| `js/cas.js` | 16,077 | Core CAS engine: evaluation, substitution, algorithms |
-| `js/help.js` | 807 | Help system and command documentation |
-| `js/chemistry.js` | 230 | Chemistry module (molar mass, balancing) |
-| `index.html` | ~7,500 | Frontend UI (command-line + app mode) |
-| `tests/` | 3,169 | 40 Node.js test files |
+| `js/parser.js` | 1,086 | Lexer and Parser (Recursive Descent) → AST |
+| `js/expression.js` | 5,402 | AST node definitions (`Expr`, `Add`, `Mul`, `Call`, etc.) |
+| `js/cas.js` | 17,042 | Core CAS engine: evaluation, substitution, algorithms |
+| `js/help.js` | 809 | Help system and command documentation |
+| `js/chemistry.js` | 233 | Chemistry module (molar mass, balancing) |
+| `index.html` | 10,887 | Frontend UI (command-line + app mode + worksheet UX) |
+| `tests/` | 4,961 | 56 Node.js test files |
 
 ---
 
@@ -254,14 +276,14 @@ npm run test:chemistry   # Run chemistry tests
 
 | Metric | Value |
 |--------|-------|
-| Total lines of code | ~34,000 |
-| JavaScript engine | 23,049 lines |
-| Frontend | 7,466 lines |
-| Test files | 40 |
-| Test lines | 3,169 |
+| Total lines of code | ~40,000 |
+| JavaScript engine | 24,572 lines |
+| Frontend | 10,887 lines |
+| Test files | 56 |
+| Test lines | 4,961 |
 | Feature domains | 15 |
 | Live since | March 2025 |
-| Last major update | April 2026 |
+| Last major update | July 2026 |
 
 ---
 
