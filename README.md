@@ -1,326 +1,119 @@
-# Web CAS (Client-Side)
+# Web CAS
 
-A lightweight, **client-side Computer Algebra System** with Xcas-like syntax, built with vanilla JavaScript. No backend, no API keys — runs entirely in your browser.
+A **client-side Computer Algebra System** with Xcas-like syntax, built in vanilla JavaScript.
+No backend, no API keys — everything runs in the browser.
 
-[**🧮 Live Demo**](https://hendr15k.github.io/bookish-waffle/) · [**📱 Android APK (Nightly Release)**](https://github.com/hendr15k/bookish-waffle/releases/tag/android-nightly) · [📖 Deutsche Anleitung](ANLEITUNG.md)
-
----
-
-## Highlights
-
-- **15 functional domains** — from basic arithmetic to control theory
-- **~40,000 lines of code** — 24.5k JS engine + 10.9k UI
-- **56 test files** — all passing
-- **Zero dependencies at runtime** — only MathJax (LaTeX rendering)
-- **Dark Mode** — easy on the eyes
-- **Mobile App Mode** — grid-based tool interface for touch devices
-- **Offline capable** — everything runs locally
-- **Exact trigonometric values** — sin(π/6)=1/2, cos(π/3)=1/2, tan(π/4)=1, etc.
-- **Smart algebraic simplification** — like-term collection, negative exponents as fractions
-- **Live syntax feedback** — real-time parse check while typing
-- **Worksheet UX** — entry timestamps, rerun buttons, numbered entries, scroll-to-newest pill
+[Live Demo](https://hendr15k.github.io/bookish-waffle/) · [Android APK (Nightly)](https://github.com/hendr15k/bookish-waffle/releases/tag/android-nightly) · [Deutsche Anleitung](ANLEITUNG.md)
 
 ---
 
-## Features by Domain
+## Quick Start
 
-### 🔢 Arithmetic & Algebra
-* Basic operations: `+`, `-`, `*`, `/`, `^`
-* Symbolic computation: variables, simplification, expansion
-* `expand(expr)`, `simplify(expr)`, `factor(n)`, `gcd(a, b)`, `lcm(a, b)`, `factorial(n)`
-* Equation solving: `solve(equation, variable)` — linear, quadratic, polynomial systems
-* Inequality solving: `solve(inequality, variable)`
-* Nonlinear system solver
-* Partial fractions: `partfrac(expr, var)`
-* Complete the square, coefficient extraction, polynomial degree, Sturm sequences
-* Set operations
+```bash
+git clone https://github.com/hendr15k/bookish-waffle.git
+cd bookish-waffle
+# open index.html in any modern browser — done
+```
 
-### 📐 Calculus
-* **Differentiation**: `diff(expr, var)` — symbolic, multi-order
-* **Integration**: `integrate(expr, var)` (indefinite) and `integrate(expr, var,lower,upper)` (definite)
-  - By parts, substitution, partial fractions, special functions
-* **Limits**: `limit(expr, var, point)` — one-sided, infinite, trigonometric
-* **Taylor / Laurent / Padé** approximations and generic series tools
-* **Sums & Products**: `sum(expr, var, start, end)`, `product(expr, var, start, end)`
-* **ODE tools**: symbolic `desolve`, numerical `rk4`, `rk45`, ODE stats and plotting
-* **Function analysis**: extrema, stationary points, asymptotes, real-root counting
-* **Optimization**: minimize, maximize, Lagrange multipliers, Euler-Lagrange
-* **Riemann Sums** with visualization
-* **N-step numerical integration**
-* **Fourier / Laplace / Z-transforms**, FFT and inverse FFT
-* **Curve tools**: arc length, surface area, curvature
-* **Special integrals**: erf, erfc, erfi, Fresnel, Airy, Gamma, Polygamma
-* **Vector calculus**: Laplacian, Jacobian, Hessian, scalar potentials, conservative-field tests
+Or just visit the [live demo](https://hendr15k.github.io/bookish-waffle/).
 
-### 📊 Linear Algebra
-* Vectors & matrices: `[a, b]` or `[[a,b],[c,d]]`
-* Operations: multiply, dot product, cross product, angle, distance, midpoint, projection
-* `det(M)`, `inv(M)`, `trans(M)`, `eigenvalues(M)`, `eigenvectors(M)` — exact on small matrices; larger ones can take noticeably longer
-* Matrix decompositions: LU, QR, Cholesky, SVD
-* `rref(M)` (Row Reduced Echelon Form), `rank(M)`, `kernel(M)`
-* `adj(M)` (Adjugate), matrix powers: `pow(M, n)`
-* Characteristic polynomial, pseudoinverse, condition number, nullity, row/column spaces
-* Matrix generators: identity, zeros, ones, Hilbert, Toeplitz, Vandermonde, diagonal
-* Solve linear systems
-* Gram-Schmidt orthogonalization, Kronecker products, matrix exponential, commutators
-* Chinese Remainder Theorem: `crt()`
-* Lagrange interpolation
-* RK4 (Runge-Kutta 4th order)
-* Least squares: `lsq()`
-* Convolution
-
-### 📈 Statistics & Probability
-* Descriptive: `mean(list)`, `variance(list)`, `stdDev(list)`
-* Regression: linear, polynomial, exponential, power, logarithmic
-* **Distributions**: Normal, Binomial, Poisson, Exponential, Geometric, t, F, Chi-squared, Beta, Uniform, Hypergeometric, Gamma
-* PDF/PMF, CDF, and selected inverse-CDF / quantile tools
-* **Hypothesis Tests**: Z-Test, T-Test, 2-sample T-Test, proportion tests, chi-square test
-* Covariance, correlation, confidence intervals, entropy, ANOVA
-* Advanced stats: mode, geometric mean, harmonic mean, RMS, MAD, moments, skewness, kurtosis, KL divergence
-
-### 🔢 Number Theory
-* `factor(n)`, `gcd(a, b)`, `lcm(a, b)`
-* Prime factorization, primality testing
-* Next/previous primes, modular inverse, modular powers
-* Divisors, prime factors, Fibonacci, divisor sums
-* Euler's totient: `totient(n)`
-* Möbius and sigma arithmetic functions
-* Extended GCD, Chinese remainder theorem, primitive roots
-* Legendre and Jacobi symbols, perfect/square checks, continued fractions
-* Base conversion and Roman numeral conversion
-
-### 📉 Plotting & Visualization
-* **2D plots**: `plot(expr, var, min, max)` — with canvas rendering
-* **Curve analysis tools**: arc length, surface area, curvature
-* **Multi-plot** support
-* **Parametric plots** with dedicated UI tab
-* **Polar plots** with dedicated UI tab
-* **Implicit plots**
-* **Vector fields**
-* **3D plots**: `plot3d(f, var1, var2, min1, max1, min2, max2)`
-* **Interactive plotting** with buttons
-* **Distribution plots**
-* N-step plotting with configurable rectangles
-* Plot pan/zoom and interactive inspection
-
-### 💰 Finance
-* Time Value of Money calculations
-* NPV, IRR
-* Compound interest and loan payments
-* Annuities and amortization schedules
-* Black-Scholes option pricing
-
-### ⚡ Physics
-* Kinematics calculations
-* Electricity (Ohm's law, circuits)
-* Physics equation solver
-* **AC Circuit Analysis**
-* **Coulomb's Law**
-
-### 🧪 Chemistry
-* Molar mass calculator
-* Equation balancing
-* CAS Registry Number validation
-
-### 📐 Geometry
-* Shape calculations
-* Circle properties
-* Distance calculations
-* **Analytic geometry** tools
-* Plane equations from three points
-
-### 🔬 Fourier Analysis
-* **FFT** (Fast Fourier Transform)
-* Fourier series expansion
-* Fresnel integrals and cyclic integration
-
-### 🎛️ Laplace Transform
-* Forward and inverse Laplace transforms
-* Transfer function analysis
-* Convolution operations
-
-### 📊 Optimization
-* Simplex algorithm
-* Gradient descent: `gradient_descent()`
-
-### 🎛️ Control Theory
-* **Routh-Hurwitz stability criterion**
-* Transfer functions
-* **Bode plots** (phase and magnitude)
-
-### 🕸️ Graph Theory
-* Pathfinding algorithms
-* Connectivity analysis
-
-### 🧠 Logic
-* Truth table generation
-* Boolean expression simplification
-* CNF and DNF conversion
-* NAND, NOR, XNOR helpers
-* Operators: `and`, `or`, `not`, `xor`
-
-### 🎹 Interactive Tools
-* **Desktop mode**: Command-line interface with history
-* **App mode**: Grid-based tool interface for mobile/tablet
-* **Dark mode** toggle
-* **Keyboard shortcuts**
-* **Variable definitions** stored across calculations
-* **Command history** persisted via localStorage
-* **Named sessions** with quick save/load
-* **History search and export**
-* Dedicated apps for complex numbers and special functions
-
----
-
-## Output
-
-* Results rendered in **LaTeX** using MathJax for beautiful mathematical display
-* Canvas-based function plotting
-* Command history saved locally in browser
-
----
-
-## Usage
-
-1. Open [the live demo](https://hendr15k.github.io/bookish-waffle/) in any modern browser
-2. Or clone and open `index.html` locally
-3. Type commands in the input field
-
-**Examples:**
-```js
-diff(sin(x^2), x)                    // Differentiate → 2x·cos(x²)
-integrate(x * e^x, x)                // Integrate → x·eˣ - eˣ
-solve(x^2 - 4 = 0, x)                // Solve → {2, -2}
-[[1, 2], [3, 4]] * [x, y]            // Matrix-vector multiply
-plot(sin(x), x, -10, 10)             // Plot function
-limit(sin(x)/x, x, 0)                // Limit → 1
-laplace(t^2, t, s)                   // Laplace → 2/s³
-fourierSeries(x^2, x, 0, 5)          // Fourier series
-det([[1,2],[3,4]])                   // Determinant → -2
-sin(pi/6)                            // Exact value → 1/2
-cos(pi/3)                            // Exact value → 1/2
-atan(Infinity)                       // → π/2
-factor(x^3 - 1)                      // → (x-1)(x²+x+1)
-expand((x+1)*(x-1))                  // → x²-1
-simplify(sin(x)/cos(x))              // → tan(x)
-x^(-2)                               // → 1/x²
-2*x + 3*x                            // → 5x
+```
+diff(sin(x^2), x)              →  2x·cos(x²)
+integrate(x * e^x, x)          →  x·eˣ − eˣ
+solve(x^2 - 4 = 0, x)          →  {2, −2}
+det([[1,2],[3,4]])             →  −2
+plot(sin(x), x, -10, 10)       →  canvas plot
+limit(sin(x)/x, x, 0)          →  1
+laplace(t^2, t, s)             →  2/s³
+sin(pi/6)                      →  1/2
+factor(x^3 - 1)                →  (x−1)(x²+x+1)
+simplify(sin(x)/cos(x))        →  tan(x)
 ```
 
 ---
 
-## Recent Improvements (July 2026)
+## Features
 
-### UI Redesign (Rounds 1–3)
-- **Complete visual redesign** — new design system (Fraunces / Public Sans / JetBrains Mono), Teal/Gold/Rose/Plum palette
-- **Worksheet header** — entry counter with bump animation, "Leeren" button
+**15 domains**, ~40k lines of code, zero runtime dependencies (MathJax for LaTeX rendering only).
+
+| Domain | Highlights |
+|--------|-----------|
+| Algebra | expand, simplify, factor, solve (linear/quadratic/polynomial/inequalities), partfrac, Sturm sequences |
+| Calculus | diff, integrate (definite/indefinite), limits, Taylor/Laurent/Padé, sums, products, ODE (desolve, rk4/rk45) |
+| Transforms | Fourier series, FFT, Laplace (forward/inverse), Z-transform |
+| Linear Algebra | det, inv, eigenvalues/eigenvectors, LU/QR/Cholesky/SVD, rref, rank, kernel, Gram-Schmidt, matrix exp |
+| Statistics | descriptive stats, 12 distributions, hypothesis tests (Z/T/χ²), regression (linear/poly/exp), ANOVA |
+| Number Theory | factorization, primality, totient, CRT, modular arithmetic, continued fractions, Legendre/Jacobi |
+| Plotting | 2D/3D/parametric/polar/implicit plots, vector fields, pan & zoom, distribution plots |
+| Optimization | simplex, gradient descent, Lagrange multipliers, Euler-Lagrange |
+| Control Theory | Routh-Hurwitz, transfer functions, Bode plots |
+| Finance | NPV, IRR, compound interest, annuities, amortization, Black-Scholes |
+| Physics | kinematics, circuits (DC/AC), Coulomb's law |
+| Chemistry | molar mass, equation balancing, CAS number validation |
+| Geometry | shapes, analytic geometry, plane equations |
+| Graph Theory | pathfinding, connectivity |
+| Logic | truth tables, CNF/DNF, Boolean simplification |
+
+### UI
+
+- **Desktop mode** — command-line with history, sessions, search & export
+- **App mode** — grid-based tool interface for mobile/tablet
+- **Worksheet UX** — numbered entries, timestamps, ↻ rerun, live syntax check, scroll-to-newest pill
 - **Symbol palette** — one-tap math symbols and function shortcuts
-- **Dark mode toggle** — persisted via localStorage
-- **Toast notifications** — success/error/info feedback for all actions
-- **Live syntax check** — debounced parse feedback (LED + status text) while typing
-- **Entry metadata** — timestamps, numbered entries, ↻ rerun buttons, fresh-entry highlight
-- **Scroll-to-newest pill** — appears when scrolled up, smooth-scrolls to bottom
-- **Micro-interactions** — brand-mark pulse on evaluate, counter bump, icon discs with `color-mix`
-- **Keyboard shortcuts** — `/` focuses input, `Esc` clears/closes, `Ctrl+Z` input undo
+- **Dark mode** — persisted toggle
+- **Keyboard shortcuts** — `/` focus, `Esc` clear/close, `Ctrl+Z` input undo, `Ctrl+L` clear worksheet
+- **Offline capable** — everything runs locally, no network needed
 
-### Bug Fixes (July 2026)
-- **`?`-help syntax** — live syntax check no longer flags `?term` as invalid
-- **`entry-fresh` cleanup** — teal highlight class removed after animation (with reduced-motion fallback)
-- **Input status reset** — status returns to "bereit" after evaluate clears the field
+---
 
-### Earlier Fixes (April 2026)
-- **Exact trigonometric values** — sin/cos/tan of π/6, π/4, π/3 multiples (all 12 quadrants)
-- **atan(∞) = π/2** — infinite limits for inverse trig
-- **Factor over ℝ** — irreducible quadratics like x²+1 stay unfactored (no complex factors)
-- **Like-term collection** — 2x+3x→5x, 5x-3x→2x in Add/Sub.simplify
-- **Negative exponents** — x⁻²→1/x² automatically
-- **Trig ratio simplification** — sin/cos→tan, 1/sin→csc, cos/sin→cot
-- **LaTeX improvements** — scientific notation (1×10⁻¹⁰), negated fractions (-1/x)
-- **Expand + simplify** — expand() now calls simplify() after distribution
-- **Parser roundtrip** — negative numbers parse correctly (no more Mul(-1,n) bloat)
-- **Jekyll compatibility** — .nojekyll added to prevent Liquid template errors
-
-### Bug Reports (from automated analysis)
-- `BUGS_PARSER.md` — 7 parser/LaTeX bugs identified
-- `BUGS_PARSER_FINDINGS.md` — additional parser findings
-- `BUGS_SIMPLIFY.md` — 22 simplification bugs identified
-- `BUGS_CALCULUS.md` — calculus edge cases documented
-- `BUGS_EXPRESSION.md` — expression tree issues
-- `BUGS_COMMANDS.md` — command-level bugs
-
-## Development & Testing
+## Development
 
 ```bash
-npm install              # Install dev dependencies (jsdom for UI tests)
-npm test                 # Run ALL tests (40 files)
-npm run test:core        # Run only core tests
-npm run test:latex       # Run LaTeX rendering tests
-npm run test:chemistry   # Run chemistry tests
+npm install                # dev dependencies (jsdom, playwright)
+npm test                   # run all 56 test files
+npm run test:core          # core engine tests
+npm run test:latex         # LaTeX rendering
+npm run test:chemistry     # chemistry module
+npm run test:ui            # UI logic (jsdom)
 ```
 
 ### Architecture
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `js/parser.js` | 1,086 | Lexer and Parser (Recursive Descent) → AST |
-| `js/expression.js` | 5,402 | AST node definitions (`Expr`, `Add`, `Mul`, `Call`, etc.) |
-| `js/cas.js` | 17,042 | Core CAS engine: evaluation, substitution, algorithms |
-| `js/help.js` | 809 | Help system and command documentation |
-| `js/chemistry.js` | 233 | Chemistry module (molar mass, balancing) |
-| `index.html` | 10,887 | Frontend UI (command-line + app mode + worksheet UX) |
+| File | Lines | Role |
+|------|------:|------|
+| `js/cas.js` | 17,042 | CAS engine: evaluation, algorithms, 300+ commands |
+| `js/expression.js` | 5,402 | AST nodes (`Add`, `Mul`, `Call`, …), simplification rules |
+| `js/parser.js` | 1,086 | Recursive-descent parser → AST |
+| `js/help.js` | 809 | Help system, command docs |
+| `js/chemistry.js` | 233 | Molar mass, equation balancing |
+| `index.html` | 10,887 | Full UI (worksheet, app mode, tools, plotting) |
 | `tests/` | 4,961 | 56 Node.js test files |
 
 ---
 
-## Project Stats
+## Android App
 
-| Metric | Value |
-|--------|-------|
-| Total lines of code | ~40,000 |
-| JavaScript engine | 24,572 lines |
-| Frontend | 10,887 lines |
-| Test files | 56 |
-| Test lines | 4,961 |
-| Feature domains | 15 |
-| Live since | March 2025 |
-| Last major update | July 2026 |
+Capacitor-based wrapper. Nightly APKs are built via GitHub Actions on every push to `main`.
+
+**Download:** [Nightly release → `app-debug.apk`](https://github.com/hendr15k/bookish-waffle/releases/tag/android-nightly)
+
+```bash
+npm run build:android:web   # prepare dist-android/
+npm run cap:sync            # sync into android/
+```
+
+### CI/CD
+
+- Push to `main` → updates **Android Nightly** prerelease
+- Tag `v*` → creates a stable GitHub Release
+- Release assets: debug APK, unsigned release APK, signed APK (if secrets configured)
+
+### Signing secrets (optional)
+
+`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`
 
 ---
 
 ## License
 
-MIT — see LICENSE file.
-
-## Android App + APK Releases
-
-This repository now also contains an Android wrapper built with Capacitor.
-
-**Direct download:**
-- Nightly release page: <https://github.com/hendr15k/bookish-waffle/releases/tag/android-nightly>
-- Installable asset: `app-debug.apk`
-
-### Local commands
-
-```bash
-npm run build:android:web   # prepare dist-android/
-npm run cap:sync            # sync web assets into android/
-```
-
-### GitHub Actions APK builds
-
-- Pushes to `main` create/update the **Android Nightly** prerelease
-- Tags like `v1.0.0` create a normal GitHub Release
-- Local Gradle builds need a configured Android SDK (`ANDROID_HOME` or `android/local.properties`)
-- GitHub Actions sets up the Android SDK automatically
-- Release assets include:
-  - installable debug APK
-  - unsigned release APK
-  - signed release APK if Android signing secrets are configured
-
-### Optional signing secrets
-
-- `ANDROID_KEYSTORE_BASE64`
-- `ANDROID_KEYSTORE_PASSWORD`
-- `ANDROID_KEY_ALIAS`
-- `ANDROID_KEY_PASSWORD`
-
+MIT
