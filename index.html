@@ -6773,6 +6773,16 @@ if (mode === 'desktop') {
         function addToHistory(command, result, isError, latex) {
             const entryDiv = document.createElement('div');
             entryDiv.className = 'entry' + (isError ? ' entry-error' : ' entry-fresh');
+            if (!isError) {
+                var freshDone = function () { entryDiv.classList.remove('entry-fresh'); };
+                entryDiv.addEventListener('animationend', function handler(e) {
+                    if (e.animationName === 'entry-fade') {
+                        freshDone();
+                        entryDiv.removeEventListener('animationend', handler);
+                    }
+                });
+                setTimeout(freshDone, 2200);
+            }
 
             const idxSpan = document.createElement('span');
             idxSpan.className = 'entry-idx';
@@ -7173,6 +7183,7 @@ if (mode === 'desktop') {
             }
 
             input.value = '';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
         }
 
         // --- Helper Functions for UI Tools ---
@@ -10826,6 +10837,11 @@ if (mode === 'desktop') {
                 var v = cmdInput.value.trim();
                 inputWrap.classList.remove('is-ok', 'is-error');
                 if (!v) { if (statusMsg) statusMsg.textContent = 'bereit'; return; }
+                if (v.charAt(0) === '?') {
+                    inputWrap.classList.add('is-ok');
+                    if (statusMsg) statusMsg.textContent = 'Syntax OK';
+                    return;
+                }
                 try {
                     var p = new window.Parser(new window.Lexer(v));
                     p.parse();
