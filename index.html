@@ -414,10 +414,11 @@ button { font-family: var(--font-body); }
     min-height: 380px;
     max-height: 620px;
     overflow-y: auto;
-    margin-bottom: 22px;
     position: relative;
     transition: box-shadow 0.25s var(--ease-out);
 }
+
+#history-wrap { margin-bottom: 22px; }
 
 #history:focus-within, #history:hover { box-shadow: var(--shadow-md); }
 
@@ -534,6 +535,8 @@ button { font-family: var(--font-body); }
 /* ---------- Command input ---------- */
 
 #input-area { display: flex; gap: 0; }
+
+#input-wrap { flex: 1 1 auto; min-width: 0; display: flex; }
 
 #command-input {
     flex-grow: 1;
@@ -1402,28 +1405,7 @@ body.graphing-mode .mobile-bottom-bar { display: none !important; }
 
 .entry:hover .entry-idx { color: var(--teal-strong); opacity: 1; }
 
-.entry .copy-btn {
-    position: absolute;
-    right: 10px;
-    top: 34px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 1.05em;
-    opacity: 0;
-    padding: 3px 6px;
-    border-radius: 7px;
-    z-index: 10;
-    transition: opacity 0.18s, transform 0.18s var(--ease-out), background 0.18s;
-}
-
-.entry:hover .copy-btn, .entry:focus-within .copy-btn { opacity: 0.7; }
-.entry .copy-btn:hover { opacity: 1; transform: scale(1.15); background: var(--teal-tint); }
-.entry > .copy-btn:nth-of-type(2) { top: 64px; }
-
 #app-history-content { counter-reset: ws-entry; }
-
-@media (hover: none) { .entry .copy-btn { opacity: 0.55; } }
 
 /* ---------- Symbol palette ---------- */
 
@@ -1689,9 +1671,232 @@ body.dark-mode .hdr-btn.primary:hover { color: #031713; }
 
 body.dark-mode #submit-btn { color: #06231f; }
 
+/* ---------- Input status line ---------- */
+
+#input-wrap { position: relative; }
+
+#command-input { padding-left: 44px; }
+
+.input-prompt {
+    position: absolute;
+    left: 17px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--teal);
+    opacity: 0.8;
+    pointer-events: none;
+    transition: color 0.25s, opacity 0.25s;
+}
+
+#input-wrap:focus-within .input-prompt { opacity: 1; }
+
+#input-wrap.is-error .input-prompt { color: var(--rose); }
+#input-wrap.is-ok .input-prompt { color: var(--teal); }
+
+#input-status {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: var(--ink-faint);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.22s var(--ease-out), color 0.22s;
+}
+
+#input-status .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ink-faint);
+    flex: 0 0 auto;
+    transition: background 0.22s, box-shadow 0.22s;
+}
+
+#input-wrap.is-ok #input-status,
+#input-wrap.is-error #input-status { opacity: 1; }
+
+#input-wrap.is-ok #input-status { color: var(--teal-strong); }
+#input-wrap.is-ok #input-status .dot {
+    background: var(--teal);
+    box-shadow: 0 0 0 3px var(--teal-glow);
+    animation: dot-pulse 1.8s ease-in-out infinite;
+}
+
+#input-wrap.is-error #input-status { color: var(--rose); }
+#input-wrap.is-error #input-status .dot {
+    background: var(--rose);
+    box-shadow: 0 0 0 3px var(--rose-tint);
+}
+
+#input-wrap.is-error #command-input { border-color: var(--rose); }
+#input-wrap.is-error #command-input:focus { box-shadow: 0 0 0 4px var(--rose-tint); }
+
+@keyframes dot-pulse {
+    0%, 100% { box-shadow: 0 0 0 3px var(--teal-glow); }
+    50%      { box-shadow: 0 0 0 6px var(--teal-glow); }
+}
+
+/* ---------- History wrapper + scroll pill ---------- */
+
+#history-wrap { position: relative; }
+
+#scroll-latest {
+    position: absolute;
+    right: 16px;
+    bottom: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    border-radius: 999px;
+    font-family: var(--font-body);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    box-shadow: var(--shadow-md);
+    opacity: 0;
+    transform: translateY(8px);
+    pointer-events: none;
+    transition: opacity 0.25s var(--ease-out), transform 0.25s var(--ease-out), background 0.2s;
+    z-index: 5;
+}
+
+#scroll-latest.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+#scroll-latest:hover { background: var(--teal-deep); }
+#scroll-latest .arr { display: inline-block; animation: arr-bob 1.1s ease-in-out infinite; }
+
+@keyframes arr-bob {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(3px); }
+}
+
+/* ---------- Entry states ---------- */
+
+.entry.entry-error { border-left-color: var(--rose); }
+.entry.entry-error:hover { border-left-color: var(--rose); }
+.entry.entry-error .command { color: var(--rose); }
+
+.entry.entry-fresh {
+    background: var(--teal-tint);
+    border-left-color: var(--teal);
+    animation: entry-in 0.4s var(--ease-out) both, entry-fade 1.6s var(--ease-out) 0.45s both;
+}
+
+@keyframes entry-fade {
+    from { background: var(--teal-tint); }
+    to   { background: transparent; }
+}
+
+.entry-time {
+    position: absolute;
+    top: 14px;
+    right: 46px;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    color: var(--ink-faint);
+    opacity: 0.65;
+    letter-spacing: 0.03em;
+    pointer-events: none;
+    transition: opacity 0.18s;
+}
+
+.entry:hover .entry-time { opacity: 1; }
+
+.entry .copy-btn, .entry .rerun-btn {
+    position: absolute;
+    right: 10px;
+    top: 34px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.05em;
+    opacity: 0;
+    padding: 3px 6px;
+    border-radius: 7px;
+    z-index: 10;
+    transition: opacity 0.18s, transform 0.18s var(--ease-out), background 0.18s;
+}
+
+.entry:hover .copy-btn, .entry:focus-within .copy-btn,
+.entry:hover .rerun-btn, .entry:focus-within .rerun-btn { opacity: 0.7; }
+
+.entry .copy-btn:hover, .entry .rerun-btn:hover {
+    opacity: 1;
+    transform: scale(1.15);
+    background: var(--teal-tint);
+}
+
+.entry .rerun-btn { font-size: 0.95em; }
+.entry > button:nth-of-type(2) { top: 64px; }
+.entry > button:nth-of-type(3) { top: 94px; }
+
+@media (hover: none) {
+    .entry .copy-btn, .entry .rerun-btn { opacity: 0.55; }
+}
+
+/* ---------- App icon discs ---------- */
+
+.app-icon {
+    width: 58px;
+    height: 58px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: color-mix(in srgb, currentColor 13%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 26%, transparent);
+    margin-bottom: 12px;
+}
+
+@supports not (background: color-mix(in srgb, red 10%, blue)) {
+    .app-icon { background: var(--card-soft); box-shadow: inset 0 0 0 1px var(--line); }
+}
+
+/* ---------- Brand mark pulse on evaluate ---------- */
+
+.brand-mark.pulse { animation: brand-pulse 0.55s var(--ease-spring); }
+
+@keyframes brand-pulse {
+    0%   { transform: rotate(-3deg) scale(1); }
+    45%  { transform: rotate(2deg) scale(1.14); }
+    100% { transform: rotate(-3deg) scale(1); }
+}
+
+/* ---------- Worksheet counter bump ---------- */
+
+.ws-count.bump { animation: ws-bump 0.4s var(--ease-spring); }
+
+@keyframes ws-bump {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.16); border-color: var(--teal); }
+    100% { transform: scale(1); }
+}
+
+/* ---------- Toast variants ---------- */
+
+.toast.toast-info::before { background: var(--plum); }
+
 @media (prefers-reduced-motion: reduce) {
     .toast { animation: none; }
     .toast.toast-out { animation: none; opacity: 0; }
+    #input-wrap.is-ok #input-status .dot { animation: none; }
+    #scroll-latest .arr { animation: none; }
+    .entry.entry-fresh { animation: entry-in 0.4s var(--ease-out) both; }
 }
     </style>
     <style>
@@ -1922,19 +2127,22 @@ body.dark-mode .entry code { color: var(--teal); }
                 <button class="ws-clear" id="ws-clear" title="Arbeitsblatt leeren (Ctrl+L)">Leeren</button>
             </span>
         </div>
-        <div id="history">
-            <div id="history-empty">
-                <span class="glyph">∂</span>
-                <div class="hint-title">Bereit für die erste Rechnung</div>
-                <div>Gib unten einen Befehl ein — oder tippe auf ein Beispiel:</div>
-                <div class="hint-chips">
-                    <button data-cmd="diff(sin(x)*cos(x), x)">diff(sin(x)·cos(x), x)</button>
-                    <button data-cmd="integrate(x^2*exp(-x), x, 0, inf)">∫ x²e⁻ˣ dx</button>
-                    <button data-cmd="solve(x^3 - 6*x^2 + 11*x - 6, x)">Nullstellen</button>
-                    <button data-cmd="taylor(sin(x), x, 0, 7)">Taylor</button>
-                    <button data-cmd="plot(sin(x)/x, x, -10, 10)">Plot</button>
+        <div id="history-wrap">
+            <div id="history">
+                <div id="history-empty">
+                    <span class="glyph">∂</span>
+                    <div class="hint-title">Bereit für die erste Rechnung</div>
+                    <div>Gib unten einen Befehl ein — oder tippe auf ein Beispiel:</div>
+                    <div class="hint-chips">
+                        <button data-cmd="diff(sin(x)*cos(x), x)">diff(sin(x)·cos(x), x)</button>
+                        <button data-cmd="integrate(x^2*exp(-x), x, 0, inf)">∫ x²e⁻ˣ dx</button>
+                        <button data-cmd="solve(x^3 - 6*x^2 + 11*x - 6, x)">Nullstellen</button>
+                        <button data-cmd="taylor(sin(x), x, 0, 7)">Taylor</button>
+                        <button data-cmd="plot(sin(x)/x, x, -10, 10)">Plot</button>
+                    </div>
                 </div>
             </div>
+            <button id="scroll-latest" type="button" title="Zur neuesten Berechnung springen"><span class="arr">↓</span>&nbsp;Neueste</button>
         </div>
         <div id="symbol-palette" aria-label="Symbolleiste">
             <button class="sym-key" data-ins="(" title="Klammer auf">(</button>
@@ -1957,8 +2165,12 @@ body.dark-mode .entry code { color: var(--teal); }
             <button class="sym-key sym-wide sym-accent" data-ins="ans" title="Letztes Ergebnis">ans</button>
         </div>
         <div id="input-area">
-            <input type="text" id="command-input" placeholder="Enter command (e.g. sum(k^2, k, 1, 5))" autocomplete="off">
-            <button id="submit-btn">Evaluate</button>
+            <div id="input-wrap">
+                <span class="input-prompt" aria-hidden="true">ƒ</span>
+                <input type="text" id="command-input" placeholder="Befehl eingeben — z. B. sum(k^2, k, 1, 5)" autocomplete="off" spellcheck="false">
+                <span id="input-status" aria-live="polite"><span class="dot"></span><span class="msg">bereit</span></span>
+            </div>
+            <button id="submit-btn">Auswerten</button>
         </div>
     </div>
 
@@ -4382,9 +4594,10 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
     <footer id="app-footer">
         <span class="ft-brand">Web <b>CAS</b> — Algebra im Browser</span>
         <span class="ft-hints">
+            <span><kbd>/</kbd> springt zur Eingabe</span>
             <span><kbd>Tab</kbd> vervollständigt Befehle</span>
             <span><kbd>↑</kbd><kbd>↓</kbd> Befehlsverlauf</span>
-            <span><kbd>?</kbd> + Befehl zeigt Hilfe</span>
+            <span><kbd>Esc</kbd> leert die Eingabe</span>
             <span><kbd>Ctrl</kbd>+<kbd>L</kbd> leert das Blatt</span>
         </span>
         <span>100 % client-seitig · Xcas-Syntax</span>
@@ -6559,12 +6772,30 @@ if (mode === 'desktop') {
 
         function addToHistory(command, result, isError, latex) {
             const entryDiv = document.createElement('div');
-            entryDiv.className = 'entry';
+            entryDiv.className = 'entry' + (isError ? ' entry-error' : ' entry-fresh');
 
             const idxSpan = document.createElement('span');
             idxSpan.className = 'entry-idx';
             idxSpan.setAttribute('aria-hidden', 'true');
             entryDiv.appendChild(idxSpan);
+
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'entry-time';
+            timeSpan.setAttribute('aria-hidden', 'true');
+            timeSpan.textContent = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            entryDiv.appendChild(timeSpan);
+
+            const rerunBtn = document.createElement('button');
+            rerunBtn.className = 'rerun-btn';
+            rerunBtn.innerHTML = '↻';
+            rerunBtn.title = 'Befehl erneut ausführen';
+            rerunBtn.onclick = (e) => {
+                e.stopPropagation();
+                input.value = command;
+                evaluate();
+                if (typeof window.showToast === 'function') window.showToast('Erneut ausgeführt: ' + command, 'info');
+            };
+            entryDiv.appendChild(rerunBtn);
 
             // Allow clicking entry to copy result to input
             entryDiv.style.cursor = 'pointer';
@@ -6582,9 +6813,10 @@ if (mode === 'desktop') {
                         const originalText = copyBtn.innerHTML;
                         copyBtn.innerHTML = '✅';
                         setTimeout(() => copyBtn.innerHTML = originalText, 1000);
+                        if (typeof window.showToast === 'function') window.showToast('LaTeX kopiert', 'success');
                     }).catch(err => {
                         console.error('Failed to copy: ', err);
-                        alert("Failed to copy to clipboard (permission denied?)");
+                        if (typeof window.showToast === 'function') window.showToast('Kopieren fehlgeschlagen', 'error');
                     });
                 };
                 entryDiv.appendChild(copyBtn);
@@ -6860,6 +7092,7 @@ if (mode === 'desktop') {
                     const originalText = copyBtn.innerHTML;
                     copyBtn.innerHTML = '✓';
                     setTimeout(() => copyBtn.innerHTML = originalText, 1000);
+                    if (typeof window.showToast === 'function') window.showToast('Ergebnis kopiert', 'success');
                 });
             };
             // Add to entryDiv, making it relative
@@ -6869,6 +7102,23 @@ if (mode === 'desktop') {
             // LaTeX already rendered above via renderMath for the main result path
             // No additional typesetting needed - KaTeX renders synchronously
             history.scrollTop = history.scrollHeight;
+        }
+
+        function setInputStatus(state, msg) {
+            const wrap = document.getElementById('input-wrap');
+            const label = document.querySelector('#input-status .msg');
+            if (!wrap) return;
+            wrap.classList.remove('is-ok', 'is-error');
+            if (state) wrap.classList.add('is-' + state);
+            if (label && msg) label.textContent = msg;
+        }
+
+        function pulseBrand() {
+            const mark = document.querySelector('.brand-mark');
+            if (!mark) return;
+            mark.classList.remove('pulse');
+            void mark.offsetWidth;
+            mark.classList.add('pulse');
         }
 
         function evaluate() {
@@ -6886,6 +7136,8 @@ if (mode === 'desktop') {
                 }
             }
 
+            pulseBrand();
+
             try {
                 const lexer = new Lexer(command);
                 const parser = new Parser(lexer);
@@ -6899,6 +7151,7 @@ if (mode === 'desktop') {
                      const latex = (result && typeof result.toLatex === 'function') ? result.toLatex() : null;
                      addToHistory(displayCommand, result.toString(), false, latex);
                 }
+                setInputStatus('ok', 'OK');
 
                 // Update variables list
                 updateVariables();
@@ -6915,6 +7168,7 @@ if (mode === 'desktop') {
 
             } catch (error) {
                 addToHistory(displayCommand, error.message, true);
+                setInputStatus('error', 'Fehler');
                 console.error(error);
             }
 
@@ -7419,7 +7673,7 @@ if (mode === 'desktop') {
 
         window.showToast = function(msg, type) {
             const t = document.createElement('div');
-            t.className = 'toast' + (type === 'success' ? ' toast-success' : type === 'error' ? ' toast-error' : '');
+            t.className = 'toast' + (type === 'success' ? ' toast-success' : type === 'error' ? ' toast-error' : type === 'info' ? ' toast-info' : '');
             t.textContent = msg;
             document.body.appendChild(t);
             setTimeout(() => {
@@ -10493,10 +10747,17 @@ if (mode === 'desktop') {
         // ---- Worksheet counter + clear ----
         var wsCount = document.getElementById('ws-count');
         var histEl = document.getElementById('history');
+        var lastEntryCount = -1;
         function syncWsCount() {
             if (!wsCount || !histEl) return;
             var n = histEl.querySelectorAll('.entry').length;
             wsCount.innerHTML = '<b>' + n + '</b>&nbsp;' + (n === 1 ? 'Berechnung' : 'Berechnungen');
+            if (lastEntryCount >= 0 && n > lastEntryCount) {
+                wsCount.classList.remove('bump');
+                void wsCount.offsetWidth;
+                wsCount.classList.add('bump');
+            }
+            lastEntryCount = n;
         }
         if (histEl) {
             new MutationObserver(syncWsCount).observe(histEl, { childList: true, subtree: true });
@@ -10554,6 +10815,55 @@ if (mode === 'desktop') {
                 });
             }
         });
+
+        // ---- Live syntax feedback on the command input ----
+        var cmdInput = document.getElementById('command-input');
+        var inputWrap = document.getElementById('input-wrap');
+        var statusMsg = document.querySelector('#input-status .msg');
+        if (cmdInput && inputWrap) {
+            var syntaxTimer = null;
+            var checkSyntax = function () {
+                var v = cmdInput.value.trim();
+                inputWrap.classList.remove('is-ok', 'is-error');
+                if (!v) { if (statusMsg) statusMsg.textContent = 'bereit'; return; }
+                try {
+                    var p = new window.Parser(new window.Lexer(v));
+                    p.parse();
+                    inputWrap.classList.add('is-ok');
+                    if (statusMsg) statusMsg.textContent = 'Syntax OK';
+                } catch (err) {
+                    inputWrap.classList.add('is-error');
+                    if (statusMsg) statusMsg.textContent = 'Syntax?';
+                }
+            };
+            cmdInput.addEventListener('input', function () {
+                clearTimeout(syntaxTimer);
+                syntaxTimer = setTimeout(checkSyntax, 240);
+            });
+            cmdInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape') { cmdInput.value = ''; checkSyntax(); }
+            });
+        }
+
+        // ---- "Jump to newest" pill on the worksheet ----
+        var histBox = document.getElementById('history');
+        var pill = document.getElementById('scroll-latest');
+        if (histBox && pill) {
+            var pillTimer = null;
+            var syncPill = function () {
+                var dist = histBox.scrollHeight - histBox.scrollTop - histBox.clientHeight;
+                pill.classList.toggle('show', dist > 150);
+            };
+            histBox.addEventListener('scroll', function () {
+                clearTimeout(pillTimer);
+                pillTimer = setTimeout(syncPill, 90);
+            }, { passive: true });
+            new MutationObserver(syncPill).observe(histBox, { childList: true });
+            pill.addEventListener('click', function () {
+                histBox.scrollTo({ top: histBox.scrollHeight, behavior: 'smooth' });
+            });
+            syncPill();
+        }
     })();
     </script>
 
