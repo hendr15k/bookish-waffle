@@ -1300,6 +1300,10 @@ class Mul extends BinaryOp {
             if (r instanceof Sub && r.left instanceof Num && r.left.value === 0) {
                 return r.right;
             }
+            // Keep -1 * x^n as an explicit coefficient rather than 0 - x^n
+            if (r instanceof Pow) {
+                return new Mul(l, r);
+            }
             return new Sub(new Num(0), r);
         }
 

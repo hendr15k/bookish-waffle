@@ -1394,13 +1394,13 @@ class CAS {
                 if (node.args.length !== 1) throw new Error("toRoman requires 1 argument");
                 const n = this._recursiveEval(args[0]);
                 if (!(n instanceof Num)) throw new Error("toRoman requires an integer");
-                const num = parseInt(n.value);
+                let num = parseInt(n.value);
                 if (isNaN(num) || num <= 0 || num > 3999) throw new Error("toRoman: number must be 1-3999");
                 const vals = [1000,900,500,400,100,90,50,40,10,9,5,4,1];
                 const syms = ['M','CM','D','CD','C','XC','L','XL','X','IX','V','IV','I'];
                 let result = '';
                 for (let i = 0; i < vals.length; i++) {
-                    while (num >= vals[i]) { result += syms[i]; }
+                    while (num >= vals[i]) { result += syms[i]; num -= vals[i]; }
                 }
                 return new Sym(result);
             }
@@ -2732,13 +2732,15 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             }
 
             if (node.funcName === 'mse') {
-                if (node.args.length !== 1) throw new Error("mse requires 1 argument (list)");
-                return this._mse(args[0]);
+                if (node.args.length === 1) return this._mse(args[0]);
+                if (node.args.length === 2) return this._mse(args[0], args[1]);
+                throw new Error("mse requires 1 or 2 arguments: mse(errors) or mse(actual, predicted)");
             }
 
             if (node.funcName === 'mae') {
-                if (node.args.length !== 1) throw new Error("mae requires 1 argument (list)");
-                return this._mae(args[0]);
+                if (node.args.length === 1) return this._mae(args[0]);
+                if (node.args.length === 2) return this._mae(args[0], args[1]);
+                throw new Error("mae requires 1 or 2 arguments: mae(errors) or mae(actual, predicted)");
             }
 
             if (node.funcName === 'convolution') {
@@ -2907,13 +2909,26 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 return new Call('EllipticK', args);
             }
             if (node.funcName === 'EllipticE') {
-                if (node.args.length !== 1) throw new Error("EllipticE requires 1 argument");
+                if (node.args.length !== 2) throw new Error("EllipticE requires 2 arguments: EllipticE(phi, m)");
+                const phiArg = this._recursiveEval(args[0]);
+                const mArg = this._recursiveEval(args[1]);
+                if (mArg instanceof Num || mArg instanceof Sym) {
+                    const phiVal = phiArg.evaluateNumeric();
+                    const mVal = mArg.evaluateNumeric();
+                    if (!isNaN(phiVal) && !isNaN(mVal)) {
+                        return new Num(this._ellipticE(phiVal, mVal));
+                    }
+                }
                 return new Call('EllipticE', args);
             }
 
             if (node.funcName === 'lagrange' || node.funcName === 'lagrangeMultipliers') {
-                // lagrange(f, constraints, vars)
-                if (node.args.length !== 3) throw new Error("lagrange requires 3 arguments: expr, constraints, vars");
+                if (node.args.length === 2) {
+                    // lagrange(points, var) — Lagrange polynomial interpolation
+                    return this._lagrangeInterpolate(this._recursiveEval(args[0]), args[1]);
+                }
+                // lagrange(f, constraints, vars) — Lagrange multipliers
+                if (node.args.length !== 3) throw new Error("lagrange requires 2 or 3 arguments: lagrange(points, var) or lagrange(expr, constraints, vars)");
                 return this._lagrangeMultiplier(args[0], args[1], args[2]);
             }
 
@@ -10672,13 +10687,27 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             }
             const remPoly = this._getPolyCoeffs(remExpr, varNode);
             if (remPoly && remPoly.maxDeg < denPoly.maxDeg) {
-                const remResult = this._partfrac(new Div(remExpr, den), varNode).simplify();
+                let remClean = new Num(0);
+                for (let d = remPoly.maxDeg; d >= 0; d--) {
+                    const c = remPoly.coeffs[d];
+                    if (c && !(c instanceof Num && c.value === 0)) {
+                        const term = d === 0 ? c : d === 1 ? new Mul(c, varNode).simplify() : new Mul(c, new Pow(varNode, new Num(d))).simplify();
+                        remClean = new Add(remClean, term).simplify();
+                    }
+                }
+                const remResult = this._partfrac(new Div(remClean, den), varNode).simplify();
                 if (divRes instanceof Num && divRes.value === 0) {
                     return remResult;
                 } else {
                     return new Add(divRes, remResult).simplify();
                 }
             }
+        }
+
+        // 3b. Linear denominator: a proper fraction with a linear denominator
+        // is already in partial-fraction form — nothing to decompose.
+        if (denPoly.maxDeg <= 1) {
+            return expr;
         }
 
         // 4. Check for irreducible quadratic (discriminant < 0)
@@ -15141,30 +15170,56 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         return new Call('inverse_fourier_transform', [expr, w, t]);
     }
 
-    _mse(list) {
-        if (!(list instanceof Vec)) throw new Error("mse requires a list");
+    _mse(actual, predicted) {
+        if (predicted !== undefined) {
+            // mse(actual, predicted) — errors are actual - predicted
+            if (!(actual instanceof Vec) || !(predicted instanceof Vec)) throw new Error("mse requires lists");
+            if (actual.elements.length !== predicted.elements.length) throw new Error("mse: lists must have equal length");
+            const n = actual.elements.length;
+            if (n === 0) return new Num(0);
+            let sum = new Num(0);
+            for (let i = 0; i < n; i++) {
+                const e = new Sub(actual.elements[i], predicted.elements[i]);
+                sum = new Add(sum, new Pow(e, new Num(2)));
+            }
+            return new Div(sum.simplify(), new Num(n)).simplify();
+        }
+        if (!(actual instanceof Vec)) throw new Error("mse requires a list");
         // mean squared error (from 0? or mean?)
         // If single list, usually MSE of errors implies elements ARE errors?
         // Or MSE of data from mean? That's variance (biased).
         // Let's assume list is errors. sum(x^2)/n
         // Or if list of points? No, usually mse(residuals).
 
-        const n = list.elements.length;
+        const n = actual.elements.length;
         if (n === 0) return new Num(0);
         let sum = new Num(0);
-        for(const e of list.elements) {
+        for(const e of actual.elements) {
             sum = new Add(sum, new Pow(e, new Num(2)));
         }
         return new Div(sum.simplify(), new Num(n)).simplify();
     }
 
-    _mae(list) {
-        if (!(list instanceof Vec)) throw new Error("mae requires a list");
+    _mae(actual, predicted) {
+        if (predicted !== undefined) {
+            // mae(actual, predicted) — errors are actual - predicted
+            if (!(actual instanceof Vec) || !(predicted instanceof Vec)) throw new Error("mae requires lists");
+            if (actual.elements.length !== predicted.elements.length) throw new Error("mae: lists must have equal length");
+            const n = actual.elements.length;
+            if (n === 0) return new Num(0);
+            let sum = new Num(0);
+            for (let i = 0; i < n; i++) {
+                const e = new Sub(actual.elements[i], predicted.elements[i]);
+                sum = new Add(sum, new Call('abs', [e]));
+            }
+            return new Div(sum.simplify(), new Num(n)).simplify();
+        }
+        if (!(actual instanceof Vec)) throw new Error("mae requires a list");
         // mean absolute error
-        const n = list.elements.length;
+        const n = actual.elements.length;
         if (n === 0) return new Num(0);
         let sum = new Num(0);
-        for(const e of list.elements) {
+        for(const e of actual.elements) {
             sum = new Add(sum, new Call('abs', [e]));
         }
         return new Div(sum.simplify(), new Num(n)).simplify();
@@ -16174,6 +16229,56 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             return new Num(1);
         }
         return new Call('isPrimitiveRoot', [g, n]);
+    }
+
+    _ellipticE(phi, m) {
+        // Incomplete elliptic integral of the second kind:
+        // E(phi, m) = integral_0^phi sqrt(1 - m*sin^2(theta)) d theta
+        // Evaluated numerically with adaptive Simpson quadrature.
+        phi = phi % (2 * Math.PI);
+        if (phi < 0) phi += 2 * Math.PI;
+        const f = (theta) => Math.sqrt(Math.max(0, 1 - m * Math.sin(theta) * Math.sin(theta)));
+        const simpson = (a, b, fa, fb, depth) => {
+            const mid = (a + b) / 2;
+            const fm = f(mid);
+            const h = (b - a) / 2;
+            const s2 = (h / 3) * (fa + 4 * fm + fb);
+            const fl = f(a + h / 2);
+            const fr = f(mid + h / 2);
+            const s1 = (h / 6) * (fa + 4 * fl + 2 * fm + 4 * fr + fb);
+            if (depth <= 0 || Math.abs(s1 - s2) < 1e-14) return s1 + (s1 - s2) / 15;
+            return simpson(a, mid, fa, fm, depth - 1) + simpson(mid, b, fm, fb, depth - 1);
+        };
+        const n = Math.max(1, Math.ceil(phi / (2 * Math.PI)));
+        const seg = phi / n;
+        let total = 0;
+        for (let k = 0; k < n; k++) {
+            const a = k * seg;
+            const b = (k + 1) * seg;
+            total += simpson(a, b, f(a), f(b), 40);
+        }
+        return total;
+    }
+
+    _lagrangeInterpolate(points, varNode) {
+        if (!(points instanceof Vec) || points.elements.length === 0) throw new Error("lagrange requires a non-empty list of points");
+        if (!(varNode instanceof Sym)) throw new Error("lagrange: second argument must be a variable");
+        const pts = [];
+        for (const p of points.elements) {
+            if (!(p instanceof Vec) || p.elements.length < 2) throw new Error("lagrange: each point must be [x, y]");
+            pts.push([p.elements[0].simplify(), p.elements[1].simplify()]);
+        }
+        let result = new Num(0);
+        for (let i = 0; i < pts.length; i++) {
+            // L_i(x) = product_{j != i} (x - x_j) / (x_i - x_j)
+            let Li = new Num(1);
+            for (let j = 0; j < pts.length; j++) {
+                if (i === j) continue;
+                Li = new Mul(Li, new Div(new Sub(varNode, pts[j][0]), new Sub(pts[i][0], pts[j][0]))).simplify();
+            }
+            result = new Add(result, new Mul(pts[i][1], Li)).simplify();
+        }
+        return result.simplify();
     }
 
     _lagrangeMultiplier(expr, constraints, vars) {

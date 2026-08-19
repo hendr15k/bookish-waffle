@@ -220,7 +220,15 @@ class Lexer {
                 if (lowerId === 'or') return new Token(TOKEN_OR, id);
                 if (lowerId === 'not') return new Token(TOKEN_NOT, id);
                 if (lowerId === 'xor') return new Token(TOKEN_XOR, id);
-                if (lowerId === 'mod') return new Token(TOKEN_MOD, id);
+                if (lowerId === 'mod') {
+                    // 'mod(a, b)' is a function call, 'a mod b' is the infix operator
+                    let p = this.pos;
+                    while (p < this.text.length && /\s/.test(this.text[p])) p++;
+                    if (p < this.text.length && this.text[p] === '(') {
+                        return new Token(TOKEN_IDENTIFIER, id);
+                    }
+                    return new Token(TOKEN_MOD, id);
+                }
 
                 // Control Flow
                 if (lowerId === 'if') return new Token(TOKEN_IF, id);

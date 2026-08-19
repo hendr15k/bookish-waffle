@@ -54,8 +54,8 @@ function skip(desc) {
 
 function runCommand(cas, cmdStr) {
     try {
-        const l = new Lexer(cmdStr);
-        const p = new Parser(l);
+        const l = new window.Lexer(cmdStr);
+        const p = new window.Parser(l);
         const t = p.parse();
         return cas.evaluate(t);
     } catch (e) {
@@ -66,7 +66,7 @@ function runCommand(cas, cmdStr) {
 window.addEventListener('load', () => {
     // Wait for scripts to be injected
     const waitForScripts = () => {
-        if (typeof Lexer === 'undefined' || typeof Parser === 'undefined' || typeof CAS === 'undefined') {
+        if (typeof window.Lexer === 'undefined' || typeof window.Parser === 'undefined' || typeof window.CAS === 'undefined') {
             return false;
         }
         return true;
@@ -131,7 +131,7 @@ window.addEventListener('load', () => {
     test("trigReduce(sin(x)^2)", () => { const r = runCommand(cas, "trigReduce(sin(x)^2)"); if (r.error) throw new Error(r.error); });
     test("trigExpand(sin(2*x))", () => { const r = runCommand(cas, "trigExpand(sin(2*x))"); if (r.error) throw new Error(r.error); });
     test("trigSimplify(sin(x)^2+cos(x)^2)", () => { const r = runCommand(cas, "trigSimplify(sin(x)^2+cos(x)^2)"); if (r.error) throw new Error(r.error); });
-    test("lagrange([[1,2],[2,4]], [x,y])", () => { const r = runCommand(cas, "lagrange([[1,2],[2,4]], [x,y])"); if (r.error) throw new Error(r.error); });
+    test("lagrange([[1,2],[2,4]], x)", () => { const r = runCommand(cas, "lagrange([[1,2],[2,4]], x)"); if (r.error) throw new Error(r.error); });
     test("taylor(sin(x), x, 0, 4)", () => { const r = runCommand(cas, "taylor(sin(x), x, 0, 4)"); if (r.error) throw new Error(r.error); });
     test("laurent(1/x, x, 0, 3)", () => { const r = runCommand(cas, "laurent(1/x, x, 0, 3)"); if (r.error) throw new Error(r.error); });
     test("pade(exp(x), x, 2, 2)", () => { const r = runCommand(cas, "pade(exp(x), x, 2, 2)"); if (r.error) throw new Error(r.error); });
@@ -168,7 +168,7 @@ window.addEventListener('load', () => {
     test("desolve(diff(y,x)=y, y)", () => { const r = runCommand(cas, "desolve(diff(y,x)=y, y)"); if (r.error) throw new Error(r.error); });
     test("desolve(diff(y,x,2)+y=0, y)", () => { const r = runCommand(cas, "desolve(diff(y,x,2)+y=0, y)"); if (r.error) throw new Error(r.error); });
     test("slopefield(x+y, x, y)", () => { const r = runCommand(cas, "slopefield(x+y, x, y)"); if (r.error) throw new Error(r.error); });
-    test("vectorfield([x, y], [x,y])", () => { const r = runCommand(cas, "vectorfield([x, y], [x,y])"); if (r.error) throw new Error(r.error); });
+    test("vectorfield([x, y], x, y)", () => { const r = runCommand(cas, "vectorfield([x, y], x, y)"); if (r.error) throw new Error(r.error); });
     test("wronskian([exp(x), exp(-x)], x)", () => { const r = runCommand(cas, "wronskian([exp(x), exp(-x)], x)"); if (r.error) throw new Error(r.error); });
 
     // Transforms
@@ -192,7 +192,7 @@ window.addEventListener('load', () => {
     // ODE Numerical
     test("rk4(y-t*t+1, y, t, 0.5, 0, 2, 0.2)", () => { const r = runCommand(cas, "rk4(y-t*t+1, y, t, 0.5, 0, 2, 0.2)"); if (r.error) throw new Error(r.error); });
     test("rk45(-0.5*y, y, t, 1, 0, 2, 0.1, 1e-6, [])", () => { const r = runCommand(cas, "rk45(-0.5*y, y, t, 1, 0, 2, 0.1, 1e-6, [])"); if (r.error) throw new Error(r.error); });
-    test("odestats(rk4(y-t*t+1, y, t, 0.5, 0, 2, 0.2))", () => { const r = runCommand(cas, "odestats(rk4(y-t*t+1, y, t, 0.5, 0, 2, 0.2))"); if (r.error) throw new Error(r.error); });
+    test("odestats(rk45(y-t*t+1, y, t, 0.5, 0, 2, 0.2, 1e-6, []))", () => { const r = runCommand(cas, "odestats(rk45(y-t*t+1, y, t, 0.5, 0, 2, 0.2, 1e-6, []))"); if (r.error) throw new Error(r.error); });
     test("odeplot(rk4(y-t*t+1, y, t, 0.5, 0, 2, 0.2))", () => { const r = runCommand(cas, "odeplot(rk4(y-t*t+1, y, t, 0.5, 0, 2, 0.2))"); if (r.error) throw new Error(r.error); });
 
     // ============================================================
