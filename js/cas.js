@@ -310,7 +310,11 @@ class CAS {
                     const lower = args[2];
                     const upper = args[3];
 
-                    // Check for Singularities in Interval (e.g. 1/x^2 from -1 to 1)
+                    // Check for Singularities in Interval (e.g. 1/x^2 from -1 to 1).
+                    // When poles of the integrand lie strictly inside (a,b), evaluate
+                    // the integral as an improper integral: split at each pole and use
+                    // one-sided limits of the antiderivative. Divergent results yield
+                    // +/-Infinity, indeterminate ones yield NaN.
                     let den = null;
                     if (func instanceof Div) den = func.right;
                     else if (func instanceof Pow && func.right instanceof Num && func.right.value < 0) den = func.left;
@@ -322,7 +326,7 @@ class CAS {
                             const a = lower.evaluateNumeric();
                             const b = upper.evaluateNumeric();
 
-                            if (!isNaN(a) && !isNaN(b)) {
+                            if (!isNaN(a) && !isNaN(b) && Number.isFinite(a) && Number.isFinite(b)) {
                                 if (roots instanceof Vec) {
                                     for(const r of roots.elements) {
                                         const rVal = r.evaluateNumeric();
@@ -334,43 +338,78 @@ class CAS {
                                 }
 
                                 if (poles.length > 0) {
-                                    // Dedupe and Sort
                                     const uniquePoles = [...new Set(poles)].sort((u,v) => u-v);
-                                    let sum = new Num(0);
-                                    let prev = lower;
+                                    const fLo = Math.min(a, b);
+                                    const fHi = Math.max(a, b);
 
-                                    const isInf = (n) => {
-                                        if (n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf')) return true;
-                                        if (n instanceof Mul && n.left instanceof Num && n.left.value < 0 && (n.right.name === 'Infinity' || n.right.name === 'infinity' || n.right.name === 'inf')) return true;
-                                        // Check for Add containing Infinity (e.g. NaN + Infinity)
-                                        if (n instanceof Add || n instanceof Sub) {
-                                            const hasInf = (x) => isInf(x);
-                                            if (hasInf(n.left) || hasInf(n.right)) return true;
+                                    const antideriv = this.evaluate(func.integrate(varNode));
+                                    const evalF = (v) => antideriv.substitute(varNode, new Num(v)).simplify();
+                                    const isInfVal = (v) => (v instanceof Sym && (v.name === 'Infinity' || v.name === 'infinity' || v.name === 'inf')) ||
+                                                            (v instanceof Mul && v.left instanceof Num && v.left.value < 0 && (v.right instanceof Sym && (v.right.name === 'Infinity' || v.right.name === 'infinity' || v.right.name === 'inf')));
+                                    const infSign = (v) => (v instanceof Mul && v.left instanceof Num && v.left.value < 0) ? -1 : 1;
+                                    // One-sided limit of the antiderivative via numeric sampling.
+                                    // Since the antiderivative is finite (but large) near a pole,
+                                    // divergence is detected by monotonically growing magnitude
+                                    // as the sample approaches the pole from the given side.
+                                    const oneSided = (pVal, fromLeft) => {
+                                        const epsilons = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7];
+                                        const vals = [];
+                                        let sawInf = null;
+                                        for (const e of epsilons) {
+                                            const xv = fromLeft ? pVal - e : pVal + e;
+                                            let vv;
+                                            try { vv = antideriv.substitute(varNode, new Num(xv)).evaluateNumeric(); } catch(err) { vv = NaN; }
+                                            if (vv === Infinity) { sawInf = 1; break; }
+                                            if (vv === -Infinity) { sawInf = -1; break; }
+                                            vals.push(vv);
                                         }
-                                        return false;
-                                    };
-                                    const isNaNExpr = (n) => {
-                                        if (n instanceof Sym && n.name === 'NaN') return true;
-                                        if (n instanceof Num && isNaN(n.value)) return true;
-                                        if (n instanceof Add || n instanceof Sub) {
-                                            const hasNaN = (x) => isNaNExpr(x);
-                                            if (hasNaN(n.left) || hasNaN(n.right)) return true;
+                                        if (sawInf !== null) {
+                                            return sawInf === 1 ? new Sym('Infinity') : new Mul(new Num(-1), new Sym('Infinity'));
                                         }
-                                        return false;
+                                        if (vals.length < 2 || vals.some(v => isNaN(v))) return new Sym('NaN');
+                                        const mags = vals.map(v => Math.abs(v));
+                                        let monotonicGrowth = true;
+                                        for (let i = 1; i < mags.length; i++) {
+                                            if (mags[i] < mags[i - 1] * 0.99) { monotonicGrowth = false; break; }
+                                        }
+                                        if (monotonicGrowth && mags[mags.length - 1] > mags[0] * 1.5) {
+                                            return (vals[vals.length - 1] > 0) ? new Sym('Infinity') : new Mul(new Num(-1), new Sym('Infinity'));
+                                        }
+                                        return new Num(vals[vals.length - 1]);
                                     };
 
-                                    for(const p of uniquePoles) {
-                                        const pNum = new Num(p);
-                                        // Integrate from prev to p (singularity)
-                                        const part = this.evaluate(new Call('integrate', [func, varNode, prev, pNum]));
-                                        sum = new Add(sum, part).simplify();
-                                        prev = pNum;
+                                    const points = [fLo, ...uniquePoles, fHi];
+                                    let total = new Num(0);
+                                    let totalInf = 0; // 1 -> +Inf, -1 -> -Inf, NaN -> indeterminate
+                                    for (let i = 0; i < points.length - 1; i++) {
+                                        const L = points[i];
+                                        const R = points[i + 1];
+                                        const isLeftPole = i > 0;
+                                        const isRightPole = i < points.length - 2;
+                                        const fL = isLeftPole ? oneSided(L, false) : evalF(L);
+                                        const fR = isRightPole ? oneSided(R, true) : evalF(R);
+
+                                        const ls = isInfVal(fL) ? infSign(fL) : 0;
+                                        const rs = isInfVal(fR) ? infSign(fR) : 0;
+                                        let segInf = 0;
+                                        if (rs !== 0 && ls === 0) segInf = rs;
+                                        else if (ls !== 0 && rs === 0) segInf = -ls;
+                                        else if (rs !== 0 && ls !== 0 && rs !== ls) segInf = rs;
+                                        else if (rs !== 0 && ls !== 0) segInf = NaN;
+
+                                        if (isNaN(segInf)) totalInf = NaN;
+                                        else if (segInf !== 0) {
+                                            if (totalInf === 0) totalInf = segInf;
+                                            else if (totalInf !== segInf) totalInf = NaN;
+                                        }
+                                        const seg = new Sub(fR, fL).simplify();
+                                        total = new Add(total, seg).simplify();
                                     }
-                                    // Last segment
-                                    const part = this.evaluate(new Call('integrate', [func, varNode, prev, upper]));
-                                    sum = new Add(sum, part).simplify();
 
-                                    return sum;
+                                    if (isNaN(totalInf)) return new Sym('NaN');
+                                    if (totalInf === 1) return new Sym('Infinity');
+                                    if (totalInf === -1) return new Mul(new Num(-1), new Sym('Infinity'));
+                                    return total;
                                 }
                             }
                         } catch(e) {
@@ -596,24 +635,83 @@ class CAS {
                     }
 
                     // Check for singularities of the integrand INSIDE [lower, upper]
-                    // For poles of f(x), check where the antiderivative blows up
+                    // If a pole is found, evaluate the integral as an improper
+                    // integral: split at each pole and combine the one-sided
+                    // limits of the antiderivative. Divergent results yield
+                    // Infinity / -Infinity, indeterminate ones yield NaN.
                     {
                         const lowVal = lower.evaluateNumeric();
                         const upVal = upper.evaluateNumeric();
                         if (!isNaN(lowVal) && !isNaN(upVal) && Number.isFinite(lowVal) && Number.isFinite(upVal)) {
                             // Sample points inside interval to detect poles
-                            const steps = 20;
+                            const steps = 100;
                             const dx = (upVal - lowVal) / steps;
+                            const polePts = [];
                             for (let si = 1; si < steps; si++) {
                                 const xi = lowVal + si * dx;
                                 try {
                                     const fVal = func.substitute(varNode, new Num(xi)).evaluateNumeric();
                                     if (!isFinite(fVal) || isNaN(fVal)) {
-                                        // Singularity detected inside interval
-                                        return new Sym('NaN');
+                                        polePts.push(xi);
                                     }
-                                } catch(e) {}
+                                } catch(e) {
+                                    polePts.push(xi);
+                                }
                             }
+                            const poles = [];
+                            for (const p of polePts) {
+                                if (poles.length === 0 || p - poles[poles.length - 1] > 1e-9) poles.push(p);
+                            }
+
+                            if (poles.length > 0) {
+                                const isInfVal = (v) => (v instanceof Sym && (v.name === 'Infinity' || v.name === 'infinity' || v.name === 'inf')) ||
+                                                        (v instanceof Mul && v.left instanceof Num && v.left.value === -1 && (v.right instanceof Sym && (v.right.name === 'Infinity' || v.right.name === 'infinity' || v.right.name === 'inf')));
+                                const infSign = (v) => (v instanceof Mul && v.left instanceof Num && v.left.value === -1) ? -1 : 1;
+
+                                const bounds = [lowVal, ...poles, upVal];
+                                let total = new Num(0);
+                                let totalInf = 0; // 1 -> +Inf, -1 -> -Inf, NaN -> indeterminate
+                                for (let bIdx = 0; bIdx < bounds.length - 1; bIdx++) {
+                                    const a = bounds[bIdx];
+                                    const b = bounds[bIdx + 1];
+                                    let leftVal;
+                                    if (bIdx === 0) {
+                                        leftVal = indefinite.substitute(varNode, new Num(a)).simplify();
+                                    } else {
+                                        leftVal = this._limit(indefinite, varNode, new Num(a), 0, 1);
+                                    }
+                                    let rightVal;
+                                    if (bIdx === bounds.length - 2) {
+                                        rightVal = indefinite.substitute(varNode, new Num(b)).simplify();
+                                    } else {
+                                        rightVal = this._limit(indefinite, varNode, new Num(b), 0, -1);
+                                    }
+
+                                    const ls = isInfVal(leftVal) ? infSign(leftVal) : 0;
+                                    const rs = isInfVal(rightVal) ? infSign(rightVal) : 0;
+                                    let segInf = 0;
+                                    if (rs !== 0 && ls === 0) segInf = rs;
+                                    else if (ls !== 0 && rs === 0) segInf = -ls;
+                                    else if (rs !== 0 && ls !== 0 && rs !== ls) segInf = rs;
+                                    else if (rs !== 0 && ls !== 0) segInf = NaN;
+
+                                    if (isNaN(segInf)) {
+                                        totalInf = NaN;
+                                    } else if (segInf !== 0) {
+                                        if (totalInf === 0) totalInf = segInf;
+                                        else if (totalInf !== segInf) totalInf = NaN;
+                                    }
+
+                                    const segVal = new Sub(rightVal, leftVal).simplify();
+                                    total = new Add(total, segVal).simplify();
+                                }
+
+                                if (isNaN(totalInf)) return new Sym('NaN');
+                                if (totalInf === 1) return new Sym('Infinity');
+                                if (totalInf === -1) return new Mul(new Num(-1), new Sym('Infinity'));
+                                return total;
+                            }
+
                             // Also check antiderivative limits at sample points
                             for (let si = 1; si < steps; si++) {
                                 const xi = lowVal + si * dx;
@@ -5404,7 +5502,85 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         }
 
         // 3. Divide by (x-a)^k
+        // If the symbolic Taylor expansion still contains singular terms (e.g.
+        // csc(0)/cot(0), Infinity or NaN at the point), symbolic differentiation
+        // failed to resolve the analytic part. Fall back to a numeric
+        // coefficient fit of g(x) = f(x)*(x-a)^k around the point.
+        const gsStr = gSeries.toString();
+        if (/Infinity|NaN|undefined|csc\(|cot\(|sec\(|tan\(/.test(gsStr)) {
+            const numPoly = this._numericSeries(g, varNode, point, order + k);
+            if (numPoly) return new Div(numPoly, factor).simplify();
+        }
         return new Div(gSeries, factor).simplify();
+    }
+
+    _numericSeries(expr, varNode, point, N) {
+        // Numerically fit the Taylor polynomial of expr up to degree N around
+        // 'point' by solving a (u-scaled) Vandermonde system. Returns the
+        // resulting polynomial expression or null if the fit fails.
+        let a;
+        try { a = point.evaluateNumeric(); } catch(e) { return null; }
+        if (!Number.isFinite(a)) return null;
+
+        const m = N + 1;
+        const rMax = 0.5;
+        // Sample points a + (i/m)*rMax; fit in scaled coordinate u = i/m in (0,1]
+        const us = [];
+        for (let i = 1; i <= m; i++) us.push(i / m);
+        const ys = us.map(u => {
+            try { return expr.substitute(varNode, new Num(a + u * rMax)).evaluateNumeric(); }
+            catch(e) { return NaN; }
+        });
+        if (ys.some(y => !Number.isFinite(y))) return null;
+
+        // Vandermonde matrix in u: A[i][n] = u_i^n, augmented with ys
+        const A = us.map((u, i) => {
+            const row = [];
+            let p = 1;
+            for (let n = 0; n <= N; n++) { row.push(p); p *= u; }
+            row.push(ys[i]);
+            return row;
+        });
+
+        // Gaussian elimination with partial pivoting
+        for (let col = 0; col <= N; col++) {
+            let pivot = col;
+            for (let r2 = col + 1; r2 < m; r2++) {
+                if (Math.abs(A[r2][col]) > Math.abs(A[pivot][col])) pivot = r2;
+            }
+            if (Math.abs(A[pivot][col]) < 1e-12) return null;
+            if (pivot !== col) { const tmp = A[col]; A[col] = A[pivot]; A[pivot] = tmp; }
+            const pv = A[col][col];
+            for (let r2 = 0; r2 < m; r2++) {
+                if (r2 === col) continue;
+                const factor = A[r2][col] / pv;
+                if (factor === 0) continue;
+                for (let c = col; c <= N + 1; c++) A[r2][c] -= factor * A[col][c];
+            }
+        }
+
+        // b_n is the coefficient of u^n; recover c_n = b_n / rMax^n
+        const coeffs = [];
+        for (let n = 0; n <= N; n++) {
+            const bn = A[n][N + 1] / A[n][n];
+            let c = bn / Math.pow(rMax, n);
+            if (Math.abs(c) < 1e-9) c = 0;
+            coeffs.push(c);
+        }
+
+        const xa = (a === 0) ? varNode : new Sub(varNode, new Num(a)).simplify();
+        let poly = new Num(0);
+        for (let n = 0; n <= N; n++) {
+            if (coeffs[n] === 0) continue;
+            let term;
+            if (n === 0) {
+                term = new Num(coeffs[0]);
+            } else {
+                term = new Mul(new Num(coeffs[n]), new Pow(xa, new Num(n))).simplify();
+            }
+            poly = new Add(poly, term).simplify();
+        }
+        return poly;
     }
 
     _factorial(n) {
