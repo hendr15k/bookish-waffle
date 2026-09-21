@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -768,7 +768,8 @@ body.dark-mode .ac-item .ac-name { color: var(--teal); }
 
 .app-search-wrap {
     position: relative;
-    display: flex;
+    /* Nur sichtbar im App-Modus (switchMode('app') setzt display:flex) */
+    display: none;
     align-items: center;
     margin-bottom: 14px;
 }
@@ -1302,7 +1303,9 @@ canvas {
 
 @media (max-width: 768px) {
     .mobile-bottom-bar { display: flex; }
-    body { padding-bottom: 86px; }
+    /* Seitenende freihalten: die 900px-Regel weiter unten setzt sonst
+       padding-bottom wieder auf 32px zurueck. */
+    body { padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px)); }
 }
 
 body.mobile-mode .mobile-bottom-bar { display: flex; }
@@ -1329,6 +1332,13 @@ body.graphing-mode .mobile-bottom-bar { display: none !important; }
     .math-strip-track { animation: none; }
 }
 
+/* ---------- Short desktop viewports ---------- */
+
+@media (min-width: 901px) and (max-height: 780px) {
+    #history { min-height: 260px; max-height: 46vh; }
+    .math-strip { display: none; }
+}
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 900px) {
@@ -1338,6 +1348,9 @@ body.graphing-mode .mobile-bottom-bar { display: none !important; }
 }
 
 @media (max-width: 768px) {
+    /* Seitenende freihalten: die 900px-Regel oben setzt das padding sonst
+       wieder auf 32px - die feste Bottom-Bar braucht ~86px Abstand. */
+    body { padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px)); }
     #app-header { padding: 18px 0 14px; }
     .brand-mark { width: 46px; height: 46px; font-size: 1.6rem; }
     .hdr-btn { padding: 9px 13px; min-height: 40px; font-size: 0.82rem; }
@@ -1531,6 +1544,7 @@ body.graphing-mode .mobile-bottom-bar { display: none !important; }
 
 #symbol-palette {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     align-items: stretch;
     margin: 12px 0 14px;
@@ -2018,7 +2032,8 @@ body.dark-mode #submit-btn { color: #06231f; }
     #scroll-latest .arr { animation: none; }
     .entry.entry-fresh { animation: entry-in 0.4s var(--ease-out) both; }
 }
-    </style>
+    
+</style>
     <style>
 /* ============================================================
    Web CAS — Inline-Style Overrides
@@ -2197,6 +2212,13 @@ body.dark-mode .entry code { color: var(--teal); }
 
 /* --- copy-LaTeX button --- */
 .copy-btn { transition: opacity 0.15s, transform 0.15s; }
+.entry .copy-btn.copy-btn-tex {
+    font-family: var(--font-body);
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+}
 .copy-btn:hover { transform: scale(1.2); }
     </style>
 </head>
@@ -2230,11 +2252,11 @@ body.dark-mode .entry code { color: var(--teal); }
             </div>
         </div>
         <div class="header-actions">
-            <button id="theme-toggle" class="hdr-btn" title="Dark Mode umschalten" aria-label="Dark Mode umschalten"><span class="ic">☾</span><span class="lbl">Dark</span></button>
+            <button id="theme-toggle" class="hdr-btn" title="Dunkelmodus umschalten" aria-label="Dunkelmodus umschalten"><span class="ic">☾</span><span class="lbl">Dunkel</span></button>
             <button id="shortcuts-btn" class="hdr-btn" title="Tastaturkürzel"><span class="ic">⌨</span><span class="lbl">Kürzel</span></button>
             <button id="sessions-btn" class="hdr-btn" title="Sitzungen"><span class="ic">🗂</span><span class="lbl">Sitzungen</span></button>
-            <button id="graphing-toggle" class="hdr-btn"><span class="ic">📈</span><span class="lbl">Graphing Mode</span></button>
-            <button id="mode-toggle" class="hdr-btn primary"><span class="ic">▦</span><span class="lbl">App Mode</span></button>
+            <button id="graphing-toggle" class="hdr-btn"><span class="ic">📈</span><span class="lbl">Graphen</span></button>
+            <button id="mode-toggle" class="hdr-btn primary"><span class="ic">▦</span><span class="lbl">Apps</span></button>
         </div>
     </header>
 
@@ -2366,7 +2388,7 @@ body.dark-mode .entry code { color: var(--teal); }
         </div>
         <div class="app-card" data-cat="tools" data-desc="Variablen & Definitionen" onclick="openTool('variables')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('variables')">
             <span class="app-icon" style="color: #6c757d;">x=y</span>
-            <span class="app-name">Variables</span>
+            <span class="app-name">Variablen</span>
             <span class="app-desc">Variablen &amp; Definitionen</span>
         </div>
         <div class="app-card" data-cat="tools" data-desc="Verlauf durchsuchen" onclick="openTool('history')" tabindex="0" role="button" onkeydown="if(event.key==='Enter' || event.key===' ') openTool('history')">
@@ -2476,7 +2498,7 @@ body.dark-mode .entry code { color: var(--teal); }
         <div class="tool-form">
             <div class="form-group" style="position: relative;">
                 <label for="calc-main-input" class="form-label" style="display:none;">Calculator Input</label>
-                <input type="text" class="form-input" id="calc-main-input" placeholder="Enter expression..." style="font-size: 1.5em; padding: 15px;" autocapitalize="off" autocorrect="off" oninput="liveCalc()">
+                <input type="text" class="form-input" id="calc-main-input" placeholder="Ausdruck eingeben…" style="font-size: 1.5em; padding: 15px;" autocapitalize="off" autocorrect="off" oninput="liveCalc()">
                 <button onclick="document.getElementById('calc-main-input').value = ''" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #999; font-size: 1.2em; cursor: pointer;">×</button>
             </div>
 
@@ -2532,7 +2554,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="alg-expr">Expression</label>
-                    <input type="text" class="form-input" id="alg-expr" placeholder="e.g. (x+1)^2">
+                    <input type="text" class="form-input" id="alg-expr" placeholder="z. B. (x+1)^2">
                 </div>
                 <div class="action-grid">
                     <button class="action-btn" onclick="runTool('simplify', ['alg-expr'])">Simplify</button>
@@ -2547,7 +2569,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="alg-eq">Equation (= 0)</label>
-                    <input type="text" class="form-input" id="alg-eq" placeholder="e.g. x^2 - 4">
+                    <input type="text" class="form-input" id="alg-eq" placeholder="z. B. x^2 - 4">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="alg-var">Variable</label>
@@ -2561,7 +2583,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="alg-neq">Equation (= 0)</label>
-                    <input type="text" class="form-input" id="alg-neq" placeholder="e.g. cos(x) - x">
+                    <input type="text" class="form-input" id="alg-neq" placeholder="z. B. cos(x) - x">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -2581,11 +2603,11 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="alg-adv-expr">Expression</label>
-                    <input type="text" class="form-input" id="alg-adv-expr" placeholder="e.g. 1/(x^2-1)">
+                    <input type="text" class="form-input" id="alg-adv-expr" placeholder="z. B. 1/(x^2-1)">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="alg-adv-expr2">Expression 2 (for Resultant)</label>
-                    <input type="text" class="form-input" id="alg-adv-expr2" placeholder="e.g. x^2-1">
+                    <input type="text" class="form-input" id="alg-adv-expr2" placeholder="z. B. x^2-1">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -2655,7 +2677,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="calc-expr">Expression</label>
-                    <input type="text" class="form-input" id="calc-expr" placeholder="e.g. sin(x)">
+                    <input type="text" class="form-input" id="calc-expr" placeholder="z. B. sin(x)">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex: 1;">
@@ -2680,7 +2702,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="int-expr">Expression</label>
-                    <input type="text" class="form-input" id="int-expr" placeholder="e.g. x^2">
+                    <input type="text" class="form-input" id="int-expr" placeholder="z. B. x^2">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="int-var">Variable</label>
@@ -2710,7 +2732,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="desolve-eq">Equation (Use y' or diff(y,x))</label>
-                    <input type="text" class="form-input" id="desolve-eq" placeholder="e.g. diff(y,x) = y">
+                    <input type="text" class="form-input" id="desolve-eq" placeholder="z. B. diff(y,x) = y">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex: 1;">
@@ -2724,7 +2746,7 @@ body.dark-mode .entry code { color: var(--teal); }
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="desolve-funcs">Functions (comma-separated list)</label>
-                    <input type="text" class="form-input" id="desolve-funcs" placeholder="e.g. [y1, y2] or y1, y2">
+                    <input type="text" class="form-input" id="desolve-funcs" placeholder="z. B. [y1, y2] or y1, y2">
                 </div>
                 <div class="action-grid">
                     <button class="action-btn" onclick="runTool('desolve', ['desolve-eq', 'desolve-var'])">Solve ODE</button>
@@ -2739,7 +2761,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="taylor-expr">Function</label>
-                    <input type="text" class="form-input" id="taylor-expr" placeholder="e.g. cos(x)">
+                    <input type="text" class="form-input" id="taylor-expr" placeholder="z. B. cos(x)">
                 </div>
                  <div class="form-row">
                     <div class="form-group" style="flex: 1;">
@@ -2767,7 +2789,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="riemann-expr">Function</label>
-                    <input type="text" class="form-input" id="riemann-expr" placeholder="e.g. x^2">
+                    <input type="text" class="form-input" id="riemann-expr" placeholder="z. B. x^2">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="riemann-var">Variable</label>
@@ -2806,7 +2828,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="fourier-expr">Function</label>
-                    <input type="text" class="form-input" id="fourier-expr" placeholder="e.g. x^2">
+                    <input type="text" class="form-input" id="fourier-expr" placeholder="z. B. x^2">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -2834,7 +2856,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="tangent-expr">Function</label>
-                    <input type="text" class="form-input" id="tangent-expr" placeholder="e.g. x^2">
+                    <input type="text" class="form-input" id="tangent-expr" placeholder="z. B. x^2">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -2858,10 +2880,10 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="vcalc-expr">Vector Field / Scalar Func</label>
-                    <input type="text" class="form-input" id="vcalc-expr" placeholder="e.g. [x^2, y^2, z] or x*y*z">
+                    <input type="text" class="form-input" id="vcalc-expr" placeholder="z. B. [x^2, y^2, z] or x*y*z">
                 </div>
                 <div class="form-group">
-                    <label class="form-label" for="vcalc-vars">Variables</label>
+                    <label class="form-label" for="vcalc-vars">Variablen</label>
                     <input type="text" class="form-input" id="vcalc-vars" placeholder="[x, y, z]" value="[x, y, z]">
                 </div>
                 <div class="action-grid">
@@ -2882,7 +2904,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="laplace-expr">Function f(t) or F(s)</label>
-                    <input type="text" class="form-input" id="laplace-expr" placeholder="e.g. t^2 or 1/s^3">
+                    <input type="text" class="form-input" id="laplace-expr" placeholder="z. B. t^2 or 1/s^3">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -2896,7 +2918,7 @@ body.dark-mode .entry code { color: var(--teal); }
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="laplace-expr2">Function g(t) (for convolution)</label>
-                    <input type="text" class="form-input" id="laplace-expr2" placeholder="e.g. 1">
+                    <input type="text" class="form-input" id="laplace-expr2" placeholder="z. B. 1">
                 </div>
                 <div class="action-grid">
                     <button class="action-btn" onclick="runTool('laplace', ['laplace-expr', 'laplace-t', 'laplace-s'])">Transform (L)</button>
@@ -2910,7 +2932,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="curve-expr">Function</label>
-                    <input type="text" class="form-input" id="curve-expr" placeholder="e.g. x^2">
+                    <input type="text" class="form-input" id="curve-expr" placeholder="z. B. x^2">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -2939,7 +2961,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="ode-num-eq">ODE (y' = ...)</label>
-                    <input type="text" class="form-input" id="ode-num-eq" placeholder="e.g. diff(y,x) = -0.5*y">
+                    <input type="text" class="form-input" id="ode-num-eq" placeholder="z. B. diff(y,x) = -0.5*y">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="ode-num-var">Dep Var</label>
@@ -2948,7 +2970,7 @@ body.dark-mode .entry code { color: var(--teal); }
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
                         <label class="form-label" for="ode-num-ic">IC: y(x0)=y0</label>
-                        <input type="text" class="form-input" id="ode-num-ic" value="0" placeholder="e.g. 1">
+                        <input type="text" class="form-input" id="ode-num-ic" value="0" placeholder="z. B. 1">
                     </div>
                     <div class="form-group" style="flex:1">
                         <label class="form-label" for="ode-num-x0">Start x</label>
@@ -2976,7 +2998,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="trans-expr">f(t) or f(n)</label>
-                    <input type="text" class="form-input" id="trans-expr" placeholder="e.g. exp(-t) or [1,1,1]">
+                    <input type="text" class="form-input" id="trans-expr" placeholder="z. B. exp(-t) or [1,1,1]">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -3005,15 +3027,15 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="opt-expr">Function f(x,y,...)</label>
-                    <input type="text" class="form-input" id="opt-expr" placeholder="e.g. x^2 + y^2">
+                    <input type="text" class="form-input" id="opt-expr" placeholder="z. B. x^2 + y^2">
                 </div>
                 <div class="form-group">
-                    <label class="form-label" for="opt-vars">Variables</label>
+                    <label class="form-label" for="opt-vars">Variablen</label>
                     <input type="text" class="form-input" id="opt-vars" value="[x, y]" placeholder="[x, y]">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="opt-constraint">Constraint (g(x,y)=0)</label>
-                    <input type="text" class="form-input" id="opt-constraint" placeholder="e.g. x+y-10=0">
+                    <input type="text" class="form-input" id="opt-constraint" placeholder="z. B. x+y-10=0">
                 </div>
                 <div class="action-grid">
                     <button class="action-btn" onclick="const v=document.getElementById('opt-vars').value.replace(/[\[\]]/g,'').split(',')[0];runTool('minimize',['opt-expr',v])">Minimize</button>
@@ -3028,7 +3050,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="an-expr">Function f(x)</label>
-                    <input type="text" class="form-input" id="an-expr" placeholder="e.g. x^3 - 3*x^2">
+                    <input type="text" class="form-input" id="an-expr" placeholder="z. B. x^3 - 3*x^2">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -3081,11 +3103,11 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="plot-expr">Function y=</label>
-                    <input type="text" class="form-input" id="plot-expr" placeholder="e.g. sin(x)">
+                    <input type="text" class="form-input" id="plot-expr" placeholder="z. B. sin(x)">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="plot-var">Variable</label>
-                    <input type="text" class="form-input" id="plot-var" placeholder="e.g. x" value="x">
+                    <input type="text" class="form-input" id="plot-var" placeholder="z. B. x" value="x">
                 </div>
                 <div class="form-row">
                      <div class="form-group" style="flex:1">
@@ -3123,11 +3145,11 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="plot-param-x">x(t)</label>
-                    <input type="text" class="form-input" id="plot-param-x" placeholder="e.g. cos(t)">
+                    <input type="text" class="form-input" id="plot-param-x" placeholder="z. B. cos(t)">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="plot-param-y">y(t)</label>
-                    <input type="text" class="form-input" id="plot-param-y" placeholder="e.g. sin(t)">
+                    <input type="text" class="form-input" id="plot-param-y" placeholder="z. B. sin(t)">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -3157,7 +3179,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="plot-polar-r">r(θ)</label>
-                    <input type="text" class="form-input" id="plot-polar-r" placeholder="e.g. 1+cos(t)">
+                    <input type="text" class="form-input" id="plot-polar-r" placeholder="z. B. 1+cos(t)">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -3187,7 +3209,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="plot-3d-expr">Function z=f(x,y)</label>
-                    <input type="text" class="form-input" id="plot-3d-expr" placeholder="e.g. sin(sqrt(x^2+y^2))">
+                    <input type="text" class="form-input" id="plot-3d-expr" placeholder="z. B. sin(sqrt(x^2+y^2))">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -3229,7 +3251,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="plot-imp-eq">Equation f(x,y) = g(x,y)</label>
-                    <input type="text" class="form-input" id="plot-imp-eq" placeholder="e.g. x^2 + y^2 = 1">
+                    <input type="text" class="form-input" id="plot-imp-eq" placeholder="z. B. x^2 + y^2 = 1">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -3271,7 +3293,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="plot-vec-expr">Vector [u, v] or Slope Eq</label>
-                    <input type="text" class="form-input" id="plot-vec-expr" placeholder="e.g. [y, -x] or y' = x+y">
+                    <input type="text" class="form-input" id="plot-vec-expr" placeholder="z. B. [y, -x] or y' = x+y">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -3478,7 +3500,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="stat-list">Data List</label>
-                    <input type="text" class="form-input" id="stat-list" placeholder="e.g. [1, 2, 3, 4, 5]">
+                    <input type="text" class="form-input" id="stat-list" placeholder="z. B. [1, 2, 3, 4, 5]">
                 </div>
                 <div class="action-grid">
                     <button class="action-btn" onclick="runTool('mean', ['stat-list'])">Mean</button>
@@ -3644,7 +3666,7 @@ body.dark-mode .entry code { color: var(--teal); }
                           <h3>Compute Values</h3>
                           <div class="form-group">
                               <label class="form-label" for="dist-x-val">x</label>
-                              <input type="number" class="form-input" id="dist-x-val" placeholder="Enter x value" value="">
+                              <input type="number" class="form-input" id="dist-x-val" placeholder="x-Wert eingeben" value="">
                           </div>
                           <div class="action-grid">
                               <button class="action-btn" onclick="runDistPDF()">PDF / PMF</button>
@@ -3658,7 +3680,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="test-data">Data List</label>
-                    <input type="text" class="form-input" id="test-data" placeholder="e.g. [1, 2, 3, 4, 5]">
+                    <input type="text" class="form-input" id="test-data" placeholder="z. B. [1, 2, 3, 4, 5]">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -3680,15 +3702,15 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="stat-adv-list-a">List A / Observed Values</label>
-                    <input type="text" class="form-input" id="stat-adv-list-a" placeholder="e.g. [1,2,3] or [0.5,0.5]">
+                    <input type="text" class="form-input" id="stat-adv-list-a" placeholder="z. B. [1,2,3] or [0.5,0.5]">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="stat-adv-expected">Expected Values (Chi-Sq)</label>
-                    <input type="text" class="form-input" id="stat-adv-expected" placeholder="e.g. [1.5,2.5,2.5] (must match length of List A)">
+                    <input type="text" class="form-input" id="stat-adv-expected" placeholder="z. B. [1.5,2.5,2.5] (must match length of List A)">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="stat-adv-list-b">List B / Second Dataset</label>
-                    <input type="text" class="form-input" id="stat-adv-list-b" placeholder="e.g. [2,4,6]">
+                    <input type="text" class="form-input" id="stat-adv-list-b" placeholder="z. B. [2,4,6]">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -3734,11 +3756,11 @@ body.dark-mode .entry code { color: var(--teal); }
         <div class="tool-form">
             <div class="form-group">
                 <label class="form-label" for="num-a">Number A / n</label>
-                <input type="text" class="form-input" id="num-a" placeholder="e.g. 12">
+                <input type="text" class="form-input" id="num-a" placeholder="z. B. 12">
             </div>
              <div class="form-group">
                 <label class="form-label" for="num-b">Number B / k (Optional)</label>
-                <input type="text" class="form-input" id="num-b" placeholder="e.g. 15">
+                <input type="text" class="form-input" id="num-b" placeholder="z. B. 15">
             </div>
             <div class="action-grid">
                 <button class="action-btn" onclick="runTool('factorial', ['num-a'])">n!</button>
@@ -3810,7 +3832,7 @@ body.dark-mode .entry code { color: var(--teal); }
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="num-base-val">Value</label>
-                    <input type="text" class="form-input" id="num-base-val" placeholder="e.g. 255">
+                    <input type="text" class="form-input" id="num-base-val" placeholder="z. B. 255">
                 </div>
                 <div class="action-grid">
                     <button class="action-btn" onclick="runTool('toBase', ['num-base-val', 'num-base-to'])">Convert</button>
@@ -3964,19 +3986,19 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="fin-p">Principal (P)</label>
-                    <input type="number" class="form-input" id="fin-p" placeholder="e.g. 1000">
+                    <input type="number" class="form-input" id="fin-p" placeholder="z. B. 1000">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="fin-r">Rate (%) (r)</label>
-                    <input type="number" class="form-input" id="fin-r" placeholder="e.g. 5">
+                    <input type="number" class="form-input" id="fin-r" placeholder="z. B. 5">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="fin-t">Time (years) (t)</label>
-                    <input type="number" class="form-input" id="fin-t" placeholder="e.g. 10">
+                    <input type="number" class="form-input" id="fin-t" placeholder="z. B. 10">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="fin-n">Compounds/year (n)</label>
-                    <input type="number" class="form-input" id="fin-n" placeholder="e.g. 12" value="12">
+                    <input type="number" class="form-input" id="fin-n" placeholder="z. B. 12" value="12">
                 </div>
                 <button class="action-btn" onclick="runFinance('compound')">Calculate Amount</button>
             </div>
@@ -3986,15 +4008,15 @@ body.dark-mode .entry code { color: var(--teal); }
              <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="loan-p">Loan Amount (P)</label>
-                    <input type="number" class="form-input" id="loan-p" placeholder="e.g. 200000">
+                    <input type="number" class="form-input" id="loan-p" placeholder="z. B. 200000">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="loan-r">Rate (%) (Annual)</label>
-                    <input type="number" class="form-input" id="loan-r" placeholder="e.g. 3.5">
+                    <input type="number" class="form-input" id="loan-r" placeholder="z. B. 3.5">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="loan-t">Term (years)</label>
-                    <input type="number" class="form-input" id="loan-t" placeholder="e.g. 30">
+                    <input type="number" class="form-input" id="loan-t" placeholder="z. B. 30">
                 </div>
                 <button class="action-btn" onclick="runFinance('loan')">Calculate Payment</button>
              </div>
@@ -4004,11 +4026,11 @@ body.dark-mode .entry code { color: var(--teal); }
               <div class="tool-form">
                  <div class="form-group">
                      <label class="form-label" for="fin-flows">Cash Flows (C0, C1, ...)</label>
-                     <input type="text" class="form-input" id="fin-flows" placeholder="e.g. -1000, 200, 300, 500">
+                     <input type="text" class="form-input" id="fin-flows" placeholder="z. B. -1000, 200, 300, 500">
                  </div>
                  <div class="form-group">
                      <label class="form-label" for="fin-rate">Discount Rate (%) (r)</label>
-                     <input type="number" class="form-input" id="fin-rate" placeholder="e.g. 5">
+                     <input type="number" class="form-input" id="fin-rate" placeholder="z. B. 5">
                  </div>
                  <div class="action-grid">
                      <button class="action-btn" onclick="runFinance('npv')">Calculate NPV</button>
@@ -4021,15 +4043,15 @@ body.dark-mode .entry code { color: var(--teal); }
               <div class="tool-form">
                  <div class="form-group">
                      <label class="form-label" for="annuity-pmt">Payment (PMT)</label>
-                     <input type="number" class="form-input" id="annuity-pmt" placeholder="e.g. 500">
+                     <input type="number" class="form-input" id="annuity-pmt" placeholder="z. B. 500">
                  </div>
                  <div class="form-group">
                      <label class="form-label" for="annuity-r">Rate (%) (Annual)</label>
-                     <input type="number" class="form-input" id="annuity-r" placeholder="e.g. 5">
+                     <input type="number" class="form-input" id="annuity-r" placeholder="z. B. 5">
                  </div>
                  <div class="form-group">
                      <label class="form-label" for="annuity-n">Periods (n)</label>
-                     <input type="number" class="form-input" id="annuity-n" placeholder="e.g. 20">
+                     <input type="number" class="form-input" id="annuity-n" placeholder="z. B. 20">
                  </div>
                  <div class="action-grid">
                     <button class="action-btn" onclick="runRawCommand(`annuity(${document.getElementById('annuity-r').value}/100, ${document.getElementById('annuity-n').value}, ${document.getElementById('annuity-pmt').value})`)">PV of Annuity</button>
@@ -4042,15 +4064,15 @@ body.dark-mode .entry code { color: var(--teal); }
               <div class="tool-form">
                  <div class="form-group">
                      <label class="form-label" for="amort-p">Principal (P)</label>
-                     <input type="number" class="form-input" id="amort-p" placeholder="e.g. 200000">
+                     <input type="number" class="form-input" id="amort-p" placeholder="z. B. 200000">
                  </div>
                  <div class="form-group">
                      <label class="form-label" for="amort-r">Rate (%) (Annual)</label>
-                     <input type="number" class="form-input" id="amort-r" placeholder="e.g. 3.5">
+                     <input type="number" class="form-input" id="amort-r" placeholder="z. B. 3.5">
                  </div>
                  <div class="form-group">
                      <label class="form-label" for="amort-t">Term (years)</label>
-                     <input type="number" class="form-input" id="amort-t" placeholder="e.g. 30">
+                     <input type="number" class="form-input" id="amort-t" placeholder="z. B. 30">
                  </div>
                  <div class="action-grid">
                      <button class="action-btn" onclick="runRawCommand(`amortization(${document.getElementById('amort-r').value}/100/12, ${document.getElementById('amort-t').value}*12, ${document.getElementById('amort-p').value})`)">Full Schedule</button>
@@ -4063,23 +4085,23 @@ body.dark-mode .entry code { color: var(--teal); }
               <div class="tool-form">
                  <div class="form-group">
                      <label class="form-label" for="bs-s">Stock Price (S)</label>
-                     <input type="number" class="form-input" id="bs-s" placeholder="e.g. 100">
+                     <input type="number" class="form-input" id="bs-s" placeholder="z. B. 100">
                  </div>
                  <div class="form-group">
                      <label class="form-label" for="bs-k">Strike Price (K)</label>
-                     <input type="number" class="form-input" id="bs-k" placeholder="e.g. 100">
+                     <input type="number" class="form-input" id="bs-k" placeholder="z. B. 100">
                  </div>
                  <div class="form-group">
                      <label class="form-label" for="bs-t">Time to Maturity (T, yrs)</label>
-                     <input type="number" class="form-input" id="bs-t" placeholder="e.g. 1">
+                     <input type="number" class="form-input" id="bs-t" placeholder="z. B. 1">
                  </div>
                  <div class="form-group">
                      <label class="form-label" for="bs-r">Risk-Free Rate (%)</label>
-                     <input type="number" class="form-input" id="bs-r" placeholder="e.g. 5">
+                     <input type="number" class="form-input" id="bs-r" placeholder="z. B. 5">
                  </div>
                  <div class="form-group">
                      <label class="form-label" for="bs-sig">Volatility (%) (σ)</label>
-                     <input type="number" class="form-input" id="bs-sig" placeholder="e.g. 20">
+                     <input type="number" class="form-input" id="bs-sig" placeholder="z. B. 20">
                  </div>
                  <div class="action-grid">
                      <button class="action-btn" onclick="runTool('blackScholes', ['bs-s', 'bs-k', 'bs-t', 'bs-r', 'bs-sig'])">Option Price</button>
@@ -4271,7 +4293,7 @@ body.dark-mode .entry code { color: var(--teal); }
         <div class="tool-form">
             <div class="form-group">
                 <label class="form-label" for="logic-expr">Expression</label>
-                <input type="text" class="form-input" id="logic-expr" placeholder="e.g. (A or B) and not C">
+                <input type="text" class="form-input" id="logic-expr" placeholder="z. B. (A or B) and not C">
                 <small style="color:#666;">Use: and, or, not, xor, (, )</small>
             </div>
             <div class="action-grid">
@@ -4327,7 +4349,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="chem-formula">Chemical Formula</label>
-                    <input type="text" class="form-input" id="chem-formula" placeholder="e.g. H2O, C6H12O6">
+                    <input type="text" class="form-input" id="chem-formula" placeholder="z. B. H2O, C6H12O6">
                 </div>
                 <button class="action-btn" onclick="runTool('molarMass', ['chem-formula'])">Calculate Molar Mass</button>
             </div>
@@ -4337,7 +4359,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="chem-elem">Element Symbol</label>
-                    <input type="text" class="form-input" id="chem-elem" placeholder="e.g. Au, Fe">
+                    <input type="text" class="form-input" id="chem-elem" placeholder="z. B. Au, Fe">
                 </div>
                 <button class="action-btn" onclick="runTool('atomicWeight', ['chem-elem'])">Get Atomic Weight</button>
             </div>
@@ -4347,7 +4369,7 @@ body.dark-mode .entry code { color: var(--teal); }
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="chem-eq">Chemical Equation (use -> or =)</label>
-                    <input type="text" class="form-input" id="chem-eq" placeholder="e.g. H2 + O2 -> H2O">
+                    <input type="text" class="form-input" id="chem-eq" placeholder="z. B. H2 + O2 -> H2O">
                 </div>
                 <button class="action-btn" onclick="runTool('balance', ['chem-eq'])">Balance Equation</button>
             </div>
@@ -4401,7 +4423,7 @@ body.dark-mode .entry code { color: var(--teal); }
         <div class="tool-form">
             <div class="form-group">
                 <label class="form-label" for="table-expr">Function f(x)</label>
-                <input type="text" class="form-input" id="table-expr" placeholder="e.g. x^2 + 1">
+                <input type="text" class="form-input" id="table-expr" placeholder="z. B. x^2 + 1">
             </div>
             <div class="form-row">
                 <div class="form-group" style="flex:1">
@@ -4449,7 +4471,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         <div class="tool-form">
             <div class="form-group">
                 <label class="form-label" for="complex-expr">Complex Expression</label>
-                <input type="text" class="form-input" id="complex-expr" placeholder="e.g. 3+4i">
+                <input type="text" class="form-input" id="complex-expr" placeholder="z. B. 3+4i">
             </div>
             <div class="action-grid">
                 <button class="action-btn" onclick="runTool('abs', ['complex-expr'])">Magnitude</button>
@@ -4476,7 +4498,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
         <div class="tool-form">
             <div class="form-group">
                 <label class="form-label" for="special-expr">Expression</label>
-                <input type="text" class="form-input" id="special-expr" placeholder="e.g. x or 2">
+                <input type="text" class="form-input" id="special-expr" placeholder="z. B. x or 2">
             </div>
             <div class="form-row">
                 <div class="form-group" style="flex:1">
@@ -4546,7 +4568,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             <button class="action-btn secondary" style="font-size: 0.8em; padding: 5px 10px; margin-left: auto;" onclick="clearHistory()">Clear</button>
         </div>
         <div style="display:flex; gap:8px; margin-bottom:12px;">
-            <input type="text" id="history-search" class="form-input" placeholder="Search history..." oninput="filterHistoryEntries()">
+            <input type="text" id="history-search" class="form-input" placeholder="Verlauf durchsuchen…" oninput="filterHistoryEntries()">
             <button class="action-btn secondary" style="padding:10px 14px; white-space:nowrap;" onclick="exportHistory()">Export</button>
         </div>
         <div id="app-history-content" style="overflow-y: auto; flex-grow: 1;">
@@ -4574,7 +4596,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             <h3>Gemini AI</h3>
             <div class="form-group">
                 <label class="form-label" for="gemini-api-key">API Key</label>
-                <input type="password" class="form-input" id="gemini-api-key" placeholder="Enter Gemini API Key" onchange="saveGeminiApiKey()">
+                <input type="password" class="form-input" id="gemini-api-key" placeholder="Gemini-API-Schlüssel eingeben" onchange="saveGeminiApiKey()">
                 <small style="color: #666; margin-top: 5px;">Your key is stored locally in your browser and never sent to our servers.</small>
             </div>
         </div>
@@ -4600,7 +4622,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="poly-expr">Polynomial P(x)</label>
-                    <input type="text" class="form-input" id="poly-expr" placeholder="e.g. x^2 - 4">
+                    <input type="text" class="form-input" id="poly-expr" placeholder="z. B. x^2 - 4">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="poly-var">Variable</label>
@@ -4618,11 +4640,11 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="poly-num">Numerator P(x)</label>
-                    <input type="text" class="form-input" id="poly-num" placeholder="e.g. x^3 - 1">
+                    <input type="text" class="form-input" id="poly-num" placeholder="z. B. x^3 - 1">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="poly-den">Denominator D(x)</label>
-                    <input type="text" class="form-input" id="poly-den" placeholder="e.g. x - 1">
+                    <input type="text" class="form-input" id="poly-den" placeholder="z. B. x - 1">
                 </div>
                 <div class="action-grid">
                     <button class="action-btn" onclick="runTool('quo', ['poly-num', 'poly-den'])">Quotient</button>
@@ -4635,7 +4657,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             <div class="tool-form">
                 <div class="form-group">
                     <label class="form-label" for="poly-adv-expr">Polynomial</label>
-                    <input type="text" class="form-input" id="poly-adv-expr" placeholder="e.g. x^3+2*x+1">
+                    <input type="text" class="form-input" id="poly-adv-expr" placeholder="z. B. x^3+2*x+1">
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -4671,7 +4693,7 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
             <div class="form-group">
                 <label class="form-label" for="gemini-input">Your Question</label>
                 <div style="display: flex; gap: 10px;">
-                    <input type="text" class="form-input" id="gemini-input" placeholder="e.g. Explain how to solve x^2 - 4 = 0" style="flex-grow: 1;" onkeypress="if(event.key === 'Enter') askGemini()">
+                    <input type="text" class="form-input" id="gemini-input" placeholder="z. B. Explain how to solve x^2 - 4 = 0" style="flex-grow: 1;" onkeypress="if(event.key === 'Enter') askGemini()">
                     <button class="action-btn" onclick="askGemini()" style="white-space: nowrap;">Ask</button>
                 </div>
             </div>
@@ -4713,12 +4735,12 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
     </div>
 
     <div id="sidebar">
-        <h2>Variables</h2>
+        <h2>Variablen</h2>
         <div id="variable-list">
-            <div style="color: #888; font-style: italic;">No variables defined</div>
+            <div style="color: #888; font-style: italic;">Keine Variablen definiert</div>
         </div>
 
-        <h2 style="margin-top: 20px;">Functions</h2>
+        <h2 style="margin-top: 20px;">Funktionen</h2>
         <ul style="font-size: 0.9em; padding-left: 20px; margin: 0; line-height: 1.5;">
             <li>diff(expr, var)</li>
             <li>integrate(expr, var)</li>
@@ -5061,8 +5083,8 @@ plot(a*x + b, x);" style="font-family: monospace; white-space: pre;"></textarea>
 
              isMobileMode = false;
              isGraphingMode = false;
-              setToggleLabel(modeToggle, 'App Mode');
-              setToggleLabel(graphingToggle, 'Graphing Mode');
+              setToggleLabel(modeToggle, 'Apps');
+              setToggleLabel(graphingToggle, 'Graphen');
 
              closeTool(); // Close any open tools
 
@@ -5078,7 +5100,7 @@ if (mode === 'desktop') {
                   appSearch.style.display = 'flex';
                   const appCategories = document.getElementById('app-categories');
                   if (appCategories) appCategories.style.display = 'flex';
-                  setToggleLabel(modeToggle, 'Desktop Mode');
+                  setToggleLabel(modeToggle, 'Desktop');
                   // Reset bottom bar active state to Home
                   document.querySelectorAll('.mobile-bottom-bar button').forEach(btn => {
                       btn.classList.toggle('active', btn.dataset.tool === 'home');
@@ -5087,7 +5109,7 @@ if (mode === 'desktop') {
                   isGraphingMode = true;
                   document.body.classList.add('graphing-mode');
                   graphingMode.style.display = 'flex';
-                 setToggleLabel(graphingToggle, 'Close Graphing');
+                 setToggleLabel(graphingToggle, 'Graphen schließen');
                  // Initialize canvas size
                  resizeGraphingCanvas();
                  // Add first cell if empty
@@ -7067,14 +7089,15 @@ if (mode === 'desktop') {
 
             // Allow clicking entry to copy result to input
             entryDiv.style.cursor = 'pointer';
-            entryDiv.title = 'Click to insert result into input';
+            entryDiv.title = 'Ergebnis in die Eingabe einfügen';
 
             // Add Copy LaTeX Button
             if (!isError && latex) {
                 const copyBtn = document.createElement('button');
-                copyBtn.innerHTML = '📋';
-                copyBtn.title = 'Copy LaTeX';
-                copyBtn.className = 'copy-btn';
+                copyBtn.innerHTML = 'TeX';
+                copyBtn.title = 'LaTeX kopieren';
+                copyBtn.setAttribute('aria-label', 'LaTeX kopieren');
+                copyBtn.className = 'copy-btn copy-btn-tex';
                 copyBtn.onclick = (e) => {
                     e.stopPropagation(); // Prevent entry click
                     navigator.clipboard.writeText(latex).then(() => {
@@ -7348,7 +7371,8 @@ if (mode === 'desktop') {
             // Add Copy Button
             const copyBtn = document.createElement('button');
             copyBtn.innerHTML = '📋';
-            copyBtn.title = "Copy Result";
+            copyBtn.title = "Ergebnis kopieren";
+            copyBtn.setAttribute('aria-label', 'Ergebnis kopieren');
             copyBtn.className = 'copy-btn';
             copyBtn.onclick = (e) => {
                 e.stopPropagation();
@@ -7826,7 +7850,7 @@ if (mode === 'desktop') {
         shortcutsModal.innerHTML = `
             <div style="background:var(--card-bg); border-radius:12px; padding:30px; max-width:420px; width:90%; box-shadow:0 8px 32px rgba(0,0,0,0.3); color:var(--text-color);">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                    <h2 style="margin:0; border:none; padding:0;">⌨️ Keyboard Shortcuts</h2>
+                    <h2 style="margin:0; border:none; padding:0;">⌨️ Tastenkürzel</h2>
                     <button id="shortcuts-close" style="background:none; border:none; font-size:1.5em; cursor:pointer; color:var(--text-color);">×</button>
                 </div>
                 <div style="display:flex; flex-direction:column; gap:10px; font-size:0.95em;">
@@ -7862,11 +7886,11 @@ if (mode === 'desktop') {
         sessionsModal.innerHTML = `
             <div style="background:var(--card-bg); border-radius:12px; padding:30px; max-width:480px; width:90%; box-shadow:0 8px 32px rgba(0,0,0,0.3); color:var(--text_color);">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                    <h2 style="margin:0; border:none; padding:0;">📁 Session Manager</h2>
+                    <h2 style="margin:0; border:none; padding:0;">📁 Sitzungen verwalten</h2>
                     <button id="sessions-close" style="background:none; border:none; font-size:1.5em; cursor:pointer; color:var(--text_color);">×</button>
                 </div>
                 <div style="display:flex; gap:8px; margin-bottom:16px;">
-                    <input type="text" id="session-name-input" placeholder="Session name (e.g. HM2 Übungen)" style="flex:1; background:var(--bg-color); border:1px solid var(--border-color); border-radius:6px; padding:8px 12px; color:var(--text_color); font-size:0.95em;">
+                    <input type="text" id="session-name-input" placeholder="Sitzungsname (z. B. HM2 Übungen)" style="flex:1; background:var(--bg-color); border:1px solid var(--border-color); border-radius:6px; padding:8px 12px; color:var(--text_color); font-size:0.95em;">
                     <button id="session-save-btn" style="padding:8px 16px; background:#28a745; border:none; border-radius:6px; color:white; cursor:pointer; font-weight:600;">Save</button>
                 </div>
                 <div id="sessions-list" style="max-height:300px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;"></div>
@@ -8387,7 +8411,7 @@ if (mode === 'desktop') {
 
             div.innerHTML = `
                 <button class="graphing-cell-remove" onclick="removeGraphingCell('${id}')">×</button>
-                <input type="text" class="graphing-cell-input" placeholder="Expression (e.g. sin(x))" value="${expr}" onkeydown="handleGraphingInput(event, '${id}')" onblur="updateGraphingPlot()">
+                <input type="text" class="graphing-cell-input" placeholder="Ausdruck (z. B. sin(x))" value="${expr}" onkeydown="handleGraphingInput(event, '${id}')" onblur="updateGraphingPlot()">
                 <div class="graphing-cell-output"></div>
             `;
 
@@ -8566,7 +8590,24 @@ if (mode === 'desktop') {
         };
 
         // Initial welcome
-        addToHistory("System Ready", "Welcome to Client-Side CAS", false);
+        addToHistory("Bereit", "Willkommen — alles läuft lokal im Browser, kein Server n\u00f6tig.", false);
+
+        // Eingabe nie unter der Falz verstecken: auf niedrigen Fenstern einmal
+        // automatisch hinaufs scrollen (nur wenn die Eingabe wirklich fehlt).
+        window.addEventListener('load', () => {
+            const el = document.getElementById('input-area');
+            if (!el || getComputedStyle(el).display === 'none') return;
+            requestAnimationFrame(() => {
+                const r = el.getBoundingClientRect();
+                if (r.bottom > window.innerHeight - 8) {
+                    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                    window.scrollTo({
+                        top: Math.max(0, window.scrollY + r.bottom - window.innerHeight + 16),
+                        behavior: reduce ? 'auto' : 'smooth'
+                    });
+                }
+            });
+        });
         updateVariables();
 
         // Geometry Logic
@@ -9872,7 +9913,7 @@ if (mode === 'desktop') {
                      const d = document.createElement('div');
                      d.className = 'form-group';
                      d.innerHTML = `<label class="form-label" for="phys-ac-list">Impedances (comma separated)</label>
-                     <input type="text" class="form-input" id="phys-ac-list" placeholder="e.g. 100, 10+5j, 50j">`;
+                     <input type="text" class="form-input" id="phys-ac-list" placeholder="z. B. 100, 10+5j, 50j">`;
                      container.appendChild(d);
                  } else if (type === 'phasor') {
                      const row = document.createElement('div'); row.className = 'form-row';

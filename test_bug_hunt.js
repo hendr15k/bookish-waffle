@@ -156,7 +156,7 @@ const { chromium } = require('playwright');
       check('Sidebar hidden in mobile mode', !sidebarVisible, 'sidebar should not be visible');
 
       // But variables tool should work
-      await page.click('.app-card:has-text("Variables")', { force: true }); await page.waitForTimeout(300);
+      await page.click('.app-card:has-text("Variablen")', { force: true }); await page.waitForTimeout(300);
       check('Variables tool opens', await page.locator('#tool-variables').isVisible());
       // Go back
       await page.locator('#tool-variables .back-btn').click({ force: true }); await page.waitForTimeout(200);
