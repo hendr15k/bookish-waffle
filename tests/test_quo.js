@@ -97,7 +97,7 @@ test('partfrac((x^3+1)/(x^2-1), x)', 'partfrac((x^3+1)/(x^2-1), x)', '(x + (1 / 
 test('partfrac(1/(x^2-1), x)', 'partfrac(1/(x^2-1), x)', '((-1 / (2 * (x + 1))) + (1 / (2 * (x - 1))))');
 
 console.log('\n=== Integration using _quo ===');
-test('integrate(x^2/(x^2+1), x)', 'integrate(x^2/(x^2+1), x)', '(x + (0 - atan(x)))');
+test('integrate(x^2/(x^2+1), x)', 'integrate(x^2/(x^2+1), x)', '(x - atan(x))');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

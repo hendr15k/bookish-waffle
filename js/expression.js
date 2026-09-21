@@ -244,22 +244,30 @@ function buildFromTerms(terms) {
         if (!combined[key]) combined[key] = { coeff: 0, base: t.base };
         combined[key].coeff += t.coeff;
     }
+    // Positive-coefficient terms first, so a cancellation comes out as
+    // (x^2 - x) instead of ((0 - x) + x^2).  Stable sort keeps the original
+    // order inside each group.
+    const keys = Object.keys(combined).sort(
+        (k1, k2) => ((combined[k1].coeff > 0 ? 0 : 1) - (combined[k2].coeff > 0 ? 0 : 1)));
     let result = null;
-    for (const key of Object.keys(combined)) {
+    for (const key of keys) {
         const { coeff, base } = combined[key];
         if (coeff === 0) continue;
         let term;
         if (base === null) {
             term = new Num(coeff);
-        } else if (Math.abs(coeff) === 1) {
+        } else if (coeff === 1) {
             term = base;
+        } else if (coeff === -1) {
+            // keep the sign: -1 * base must not collapse to the bare base
+            term = new Mul(new Num(-1), base);
         } else {
             term = new Mul(new Num(coeff), base);
         }
         if (result === null) {
             result = term;
         } else if (coeff < 0) {
-            const absTerm = (base === null) ? new Num(-coeff) : (Math.abs(coeff) === 1 ? base : new Mul(new Num(-coeff), base));
+            const absTerm = (base === null) ? new Num(-coeff) : (coeff === -1 ? base : new Mul(new Num(-coeff), base));
             result = new Sub(result, absTerm);
         } else {
             result = new Add(result, term);
@@ -624,12 +632,23 @@ class BinaryOp extends Expr {
         this.right = right;
     }
     substitute(varName, value) {
+        // Structural match: allow replacing a whole sub-expression (e.g. 2*x -> U)
+        // when the search target is itself an expression. Skipped for plain symbols
+        // (handled by Sym.substitute) to keep variable substitution cheap.
+        if (!(varName instanceof Sym) && this.toString() === varName.toString()) return value;
         return new this.constructor(this.left.substitute(varName, value), this.right.substitute(varName, value));
     }
 }
 
 class Add extends BinaryOp {
-    toString() { return `(${this.left} + ${this.right})`; }
+    toString() {
+        // a + (0 - b) renders as (a - b) rather than (a + -b)
+        const r = this.right;
+        if (r instanceof Sub && r.left instanceof Num && r.left.value === 0) {
+            return `(${this.left} - ${r.right})`;
+        }
+        return `(${this.left} + ${this.right})`;
+    }
     simplify(skipCommonFactor = false) {
         const l = this.left.simplify(skipCommonFactor);
         const r = this.right.simplify(skipCommonFactor);
@@ -870,6 +889,34 @@ class Add extends BinaryOp {
             if (r.right.toString() === l.toString()) return r.left;
         }
 
+        // Distributed-coefficient forms: (Sub(0,x)) + Mul(-k,x) and friends.
+        // Add.simplify misses these because extractCoeffBase only unwraps
+        // Mul(Num, base) on one side — Sub(0,x) is a different node type —
+        // so x - 2x ended up as ((0 - x) + 5)-style leftovers.
+        {
+            const signedOf = (e) => {
+                if (e instanceof Sym) return { sign: 1, base: e };
+                if (e instanceof Pow) return { sign: 1, base: e };
+                if (e instanceof Mul && e.left instanceof Num) return { sign: e.left.value, base: e.right };
+                if (e instanceof Mul && e.right instanceof Num) return { sign: e.right.value, base: e.left };
+                if (e instanceof Sub && e.left instanceof Num && e.left.value === 0) {
+                    const inner = signedOf(e.right);
+                    if (!inner) return null;
+                    return { sign: -inner.sign, base: inner.base };
+                }
+                return null;
+            };
+            const sl = signedOf(l);
+            const sr = signedOf(r);
+            if (sl && sr && sl.base.toString() === sr.base.toString()) {
+                const c = sl.sign + sr.sign;
+                if (c === 0) return new Num(0);
+                if (c === 1) return sl.base;
+                if (c === -1) return new Mul(new Num(-1), sl.base).simplify();
+                return new Mul(new Num(c), sl.base).simplify();
+            }
+        }
+
         return new Add(l, r);
     }
     evaluateNumeric() { return this.left.evaluateNumeric() + this.right.evaluateNumeric(); }
@@ -884,7 +931,12 @@ class Add extends BinaryOp {
 }
 
 class Sub extends BinaryOp {
-    toString() { return `(${this.left} - ${this.right})`; }
+    toString() {
+        // 0 - a displays as -a instead of (0 - a); Add/Sub already parenthesise
+        // themselves, so the sign can be attached directly.
+        if (this.left instanceof Num && this.left.value === 0) return `-${this.right}`;
+        return `(${this.left} - ${this.right})`;
+    }
     simplify() {
         const l = this.left.simplify();
         const r = this.right.simplify();
@@ -1061,6 +1113,10 @@ class Sub extends BinaryOp {
             const newR = new Mul(new Num(-r.left.value), r.right).simplify();
             return new Add(l, newR).simplify();
         }
+        // a - (-b) -> a + b, where the negated side is a Sub(0, b) node
+        if (r instanceof Sub && r.left instanceof Num && r.left.value === 0) {
+            return new Add(l, r.right).simplify();
+        }
 
         if (exprEquals(l, r)) return new Num(0);
 
@@ -1133,6 +1189,30 @@ class Sub extends BinaryOp {
         // A - (A - B) -> B
         if (r instanceof Sub) {
              if (r.left.toString() === l.toString()) return r.right;
+        }
+
+        // Flattened term collection as a last resort: cancel like terms across
+        // nested sums, e.g. (x^4 - x) - (x^4 - x^2) -> x^2 - x, which the
+        // shallow patterns above cannot see. Only powers with numeric
+        // exponents and plain products are combined; anything exotic keeps the
+        // Sub unevaluated.
+        if ((l instanceof Add || l instanceof Sub) && (r instanceof Add || r instanceof Sub)) {
+            try {
+                const combined = flattenCombine(new Sub(l, r));
+                const flat = flattenAddSub(new Sub(l, r));
+                let allSimple = true;
+                for (const t of flat) {
+                    const bb = t.base;
+                    if (bb === null) continue;
+                    if (bb instanceof Sym) continue;
+                    if (bb instanceof Pow && bb.left instanceof Sym && bb.right instanceof Num) continue;
+                    allSimple = false;
+                    break;
+                }
+                if (allSimple && combined.toString() !== new Sub(l, r).toString() && combined.toString().length < (l.toString().length + r.toString().length)) {
+                    return combined;
+                }
+            } catch (e) {}
         }
 
         return new Sub(l, r);
@@ -2220,6 +2300,21 @@ class Pow extends BinaryOp {
     simplify() {
         const l = this.left.simplify();
         const r = this.right.simplify();
+
+        // (a/b)^n -> a^n / b^n for numeric fraction bases and integer n:
+        // (-3/2)^2 = 9/4, (3/2)^-2 = 4/9.  These never reached Math.pow before,
+        // so variance/std kept a wall of un-evaluated squared brackets.
+        if (l instanceof Div && r instanceof Num && Number.isInteger(r.value) &&
+            l.left instanceof Num && l.right instanceof Num) {
+            const n = Math.abs(r.value);
+            const num = new Num(Math.pow(l.left.value, n));
+            const den = new Num(Math.pow(l.right.value, n));
+            if (den.value !== 0) {
+                return (r.value > 0)
+                    ? new Div(num, den).simplify()
+                    : new Div(den, num).simplify();
+            }
+        }
 
         // Complex number rules for i^n
         if (l instanceof Sym && l.name === 'i' && r instanceof Num && Number.isInteger(r.value)) {

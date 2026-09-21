@@ -119,4 +119,4 @@ testShouldThrow("Multiple decimal points (mixed)", "0.5.5", "multiple decimal po
 
 // Bug Fix Verification
 test("Double negative subtraction", "x - (-5)", "(x + 5)");
-test("Negative denominator", "x / -2", "((0 - x) / 2)");
+test("Negative denominator", "x / -2", "(-x / 2)");

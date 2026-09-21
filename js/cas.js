@@ -6361,6 +6361,17 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
     }
 
     _limit(expr, varNode, point, depth = 0, dir = 0) {
+        // Normalise the infinity aliases: the parser maps `oo` (Xcas spelling)
+        // to Sym('oo') while every isInf/isNegInf test below only knows
+        // Infinity/infinity/inf — so `limit(1/x, x, oo)` fell through untouched.
+        // Evaluation can also wrap it as (0 - oo), so substitute every `oo`.
+        {
+            const hasOo = (n) => (n instanceof Sym && n.name === 'oo') ||
+                (n instanceof BinaryOp && (hasOo(n.left) || hasOo(n.right))) ||
+                (n instanceof Pow && (hasOo(n.left) || hasOo(n.right))) ||
+                (n instanceof Call && n.args.some(hasOo));
+            if (hasOo(point)) point = point.substitute(new Sym('oo'), new Sym('Infinity'));
+        }
         // Detect oscillating limits at ±∞: sin(f(x)) or cos(f(x)) as x→±∞
         if (depth === 0) {
             const isPointInf = (point instanceof Sym && (point.name === 'Infinity' || point.name === 'infinity' || point.name === 'inf')) ||
@@ -6425,6 +6436,12 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             if (!isNaN(baseVal) && baseVal > 0 && baseVal < 1 && isInf(limExp)) return new Num(0);
             // 0 < a < 1, exponent -> -Infinity => Infinity
             if (!isNaN(baseVal) && baseVal > 0 && baseVal < 1 && isNegInf(limExp)) return new Sym('Infinity');
+            // Indeterminate 1^+-Infinity, e.g. (1 + 1/n)^n -> e^(lim (f-1)*g)
+            if (limBase instanceof Num && limBase.value === 1 && (isInf(limExp) || isNegInf(limExp))) {
+                const product = new Mul(new Sub(expr.left, new Num(1)), expr.right);
+                const L = this._limit(product, varNode, point, depth + 1, dir);
+                if (L instanceof Num) return new Pow(new Sym('e'), L).simplify();
+            }
         }
 
         // Handle Call nodes: e^f(x), exp(f(x)) etc.
@@ -6495,6 +6512,17 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             let num = expr.left.substitute(varNode, point).simplify();
             let den = expr.right.substitute(varNode, point).simplify();
 
+            // Classify numerator/denominator with the limit engine itself:
+            // plain substitution cannot tell ln(infinity) from an unevaluated
+            // ln-node (so ln(x)/x missed the L'Hopital branch entirely), and it
+            // cannot see that sin(infinity) is bounded-but-oscillating.
+            try {
+                const limNum = this._limit(expr.left, varNode, point, depth + 1, dir);
+                const limDen = this._limit(expr.right, varNode, point, depth + 1, dir);
+                if (limNum !== undefined && limNum !== null) num = limNum;
+                if (limDen !== undefined && limDen !== null) den = limDen;
+            } catch (e) { /* keep the substituted forms */ }
+
             // Handle Num or zero-value Num from simplification
             const isZero = (n) => (n instanceof Num && n.value === 0);
             const isInf = (n) => {
@@ -6524,6 +6552,17 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                  const diffNum = expr.left.diff(varNode).simplify();
                  const diffDen = expr.right.diff(varNode).simplify();
                  return this._limit(new Div(diffNum, diffDen).simplify(), varNode, point, depth + 1, dir);
+            }
+
+            // finite (or bounded/oscillating) numerator over a diverging
+            // denominator -> 0.  Covers 1/x, ln(x)/x, sin(x)/x, ... at +-Inf.
+            if (isInfinite(den) && !isInfinite(num)) {
+                if (num instanceof Num) return new Num(0);
+                const isOscNum = expr.left instanceof Call &&
+                    (expr.left.funcName === 'sin' || expr.left.funcName === 'cos') &&
+                    expr.left.args.length === 1;
+                if (isOscNum && (num instanceof Sym && num.name === 'undefined')) return new Num(0);
+                if (isOscNum) return new Num(0); // sin(f)/g with g -> +-Inf is 0 whenever f diverges
             }
 
             if (num instanceof Num && den instanceof Num) {
@@ -7218,9 +7257,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                      const finalP = this._getPolyCoeffs(u, varNode);
                      if (finalP) {
                          const lc = finalP.coeffs[finalP.maxDeg];
-                         if (lc && !(lc instanceof Num && lc.value === 0)) {
-                             return new Div(u, lc).simplify();
-                         }
+                         return this._polyNormalize(u, lc, varNode);
                      }
                      return u.simplify();
                  }
@@ -7232,6 +7269,34 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         return new Call('gcd', [a, b]);
     }
 
+    _polyNormalize(u, lc, varNode) {
+        // Rebuild a polynomial from its coefficients (optionally divided by the
+        // leading coefficient) so the result comes out in canonical, fully
+        // collected form instead of a leftover nested Sub like (0 - ((0 - x) - 1)).
+        const p = this._getPolyCoeffs(u, varNode);
+        if (!p) return lc ? new Div(u, lc).simplify() : u.simplify();
+        let out = new Num(0);
+        for (let d = p.maxDeg; d >= 0; d--) {
+            const cRaw = p.coeffs[d];
+            if (cRaw === undefined) continue;
+            const c = (lc && !(lc instanceof Num && lc.value === 1)) ? new Div(cRaw, lc).simplify() : cRaw.simplify();
+            if (c instanceof Num && c.value === 0) continue;
+            const mon = (d === 0) ? new Num(1) : (d === 1 ? varNode : new Pow(varNode, new Num(d)));
+            const term = new Mul(c, mon).simplify();
+            out = (out instanceof Num && out.value === 0) ? term : new Add(out, term);
+        }
+        return out.simplify();
+    }
+
+    _isZeroPoly(p) {
+        // True when every simplified coefficient of the _getPolyCoeffs result is numeric 0
+        for (const d in p.coeffs) {
+            const c = p.coeffs[d];
+            if (!(c instanceof Num && c.value === 0)) return false;
+        }
+        return true;
+    }
+
     _polyRem(a, b, varNode) {
         // Polynomial Remainder of A / B
         // A = Q*B + R
@@ -7240,6 +7305,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         const pB = this._getPolyCoeffs(b, varNode);
 
         if (!pA || !pB) return new Call('rem', [a, b]); // Should not happen if called from GCD
+        if (this._isZeroPoly(pB)) return new Call('rem', [a, b]); // never divide by the zero polynomial
 
         let degA = pA.maxDeg;
         const degB = pB.maxDeg;
@@ -7278,8 +7344,8 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
              // Re-evaluate coeffs of R
              pR = this._getPolyCoeffs(R, varNode);
              if (!pR) break; // Should be 0
-             // Check if R is 0
-             if (Object.keys(pR.coeffs).length === 0) {
+             // All coefficients cancel => exact division, remainder is the zero polynomial
+             if (this._isZeroPoly(pR)) {
                  return new Num(0);
              }
 
@@ -11785,44 +11851,69 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         const coeffs = {};
         let maxDeg = 0;
 
-        // Analyze term
-        const analyze = (t) => {
-             if (t instanceof Sym && t.name === varNode.name) return { d: 1, c: new Num(1) };
-             if (t instanceof Num) return { d: 0, c: t };
-             if (t instanceof Sym) return { d: 0, c: t };
+        // Analyze a term into a degree -> coefficient map ({deg: expr}).
+        // A map (instead of a single {degree, coeff} pair) is required because
+        // expand() does not always flatten nested sums, e.g. (0 - x)/2 keeps a
+        // Sub inside a Div numerator, and that term carries two degrees at once.
+        const polyMap = (t) => {
+             if (t instanceof Num) return { 0: t };
+             if (t instanceof Sym) return t.name === varNode.name ? { 1: new Num(1) } : { 0: t };
              if (t instanceof Pow) {
                   if (t.left instanceof Sym && t.left.name === varNode.name && t.right instanceof Num) {
-                       return { d: t.right.value, c: new Num(1) };
+                       return { [t.right.value]: new Num(1) };
                   }
                   if (this._dependsOn(t, varNode)) throw new Error("Not a polynomial");
-                  return { d: 0, c: t };
+                  return { 0: t };
+             }
+             if (t instanceof Add || t instanceof Sub) {
+                  const lm = polyMap(t.left);
+                  const rm = polyMap(t.right);
+                  const out = Object.assign({}, lm);
+                  const sgn = (t instanceof Sub) ? new Num(-1) : new Num(1);
+                  for (const d in rm) out[d] = new Add(out[d] || new Num(0), new Mul(sgn, rm[d]));
+                  return out;
              }
              if (t instanceof Mul) {
-                  const l = analyze(t.left);
-                  const r = analyze(t.right);
-                  return { d: l.d + r.d, c: new Mul(l.c, r.c) };
+                  const lm = polyMap(t.left);
+                  const rm = polyMap(t.right);
+                  const out = {};
+                  for (const dl in lm) {
+                       for (const dr in rm) {
+                            const d = parseInt(dl) + parseInt(dr);
+                            out[d] = new Add(out[d] || new Num(0), new Mul(lm[dl], rm[dr]));
+                       }
+                  }
+                  return out;
              }
              if (t instanceof Div) {
-                  const l = analyze(t.left);
-                  const r = analyze(t.right);
-                  if (r.d > 0) throw new Error("Rational function, not polynomial");
-                  return { d: l.d, c: new Div(l.c, r.c) };
+                  const lm = polyMap(t.left);
+                  const rm = polyMap(t.right);
+                  const denKeys = Object.keys(rm);
+                  if (denKeys.length !== 1 || denKeys[0] !== '0') throw new Error("Rational function, not polynomial");
+                  const dc = rm[0];
+                  if (dc instanceof Num && dc.value === 0) throw new Error("Division by zero");
+                  const out = {};
+                  for (const d in lm) out[d] = new Div(lm[d], dc);
+                  return out;
              }
              if (t instanceof Call) {
                   if (this._dependsOn(t, varNode)) throw new Error("Not a polynomial");
-                  return { d: 0, c: t };
+                  return { 0: t };
              }
              // Default const
              if (this._dependsOn(t, varNode)) throw new Error("Not a polynomial");
-             return { d: 0, c: t };
+             return { 0: t };
         };
 
         for(const item of terms) {
              try {
-                 const res = analyze(item.e);
-                 const finalCoeff = (item.sign === 1) ? res.c : new Mul(new Num(-1), res.c);
-                 coeffs[res.d] = new Add(coeffs[res.d] || new Num(0), finalCoeff);
-                 if (res.d > maxDeg) maxDeg = res.d;
+                 const m = polyMap(item.e);
+                 for (const d in m) {
+                     const deg = parseInt(d);
+                     const finalCoeff = (item.sign === 1) ? m[d] : new Mul(new Num(-1), m[d]);
+                     coeffs[d] = new Add(coeffs[d] || new Num(0), finalCoeff);
+                     if (deg > maxDeg) maxDeg = deg;
+                 }
              } catch (e) {
                  // Not polynomial term
                  return null;
