@@ -8501,6 +8501,47 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
              // Systems return Vec? No, _solve returns set or Expr.
         }
 
+        // The IRR is a single real rate. Complex roots (cubic cash-flow
+        // polynomials give them) are not answers, and a symbolic real root is
+        // not usable either, so evaluate numerically and keep real r > -1.
+        {
+            const numeric = [];
+            for (const sol of solutions) {
+                try {
+                    const v = sol.evaluateNumeric();
+                    if (Number.isFinite(v) && v > -1) numeric.push(v);
+                } catch (e) {}
+            }
+            if (numeric.length > 0) {
+                numeric.sort((a, b) => a - b);
+                return new Num(numeric[0]);
+            }
+            // No symbolic real root: scan NPV for a sign change.
+            const npv = (r) => {
+                let acc = 0;
+                for (let i = 0; i < flows.elements.length; i++) {
+                    const c = flows.elements[i].evaluateNumeric();
+                    if (!Number.isFinite(c)) return NaN;
+                    acc += c / Math.pow(1 + r, i);
+                }
+                return acc;
+            };
+            let prevR = -0.9999, prevV = npv(prevR);
+            for (let k = 1; k <= 2000; k++) {
+                const r = -0.9999 + k * (100.9999 / 2000);
+                const v = npv(r);
+                if (Number.isFinite(prevV) && Number.isFinite(v) && prevV * v < 0) {
+                    let lo = prevR, hi = r;
+                    for (let it = 0; it < 200; it++) {
+                        const mid = (lo + hi) / 2;
+                        if (npv(lo) * npv(mid) <= 0) hi = mid; else lo = mid;
+                    }
+                    return new Num((lo + hi) / 2);
+                }
+                prevR = r; prevV = v;
+            }
+        }
+
         if (solutions.length === 0) return new Call('irr', [flows]);
         if (solutions.length === 1) return solutions[0];
         return new Call('set', solutions);

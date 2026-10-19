@@ -166,7 +166,14 @@ checkStr('integrate(cos(x)/x^2) is not silently 1/x^2', 'integrate(cos(x)/x^2, x
 checkStr('partfrac still splits rational functions', 'partfrac((2*x+1)/(x^2+x), x)', '((1 / (x + 1)) + (1 / x))');
 checkNum('definite integral via nIntegrate still agrees', 'nIntegrate(cos(x)/x^2, x, 1, 2)', 0.08904581770619656, 1e-6);
 
-// --- 13. numeric edge cases --------------------------------------------------
+// --- 13. irr must return a usable rate ---------------------------------------
+// The cubic cash-flow polynomial has two complex roots, so irr() answered with
+// a set of complex expressions instead of the real rate.
+checkNum('irr of a cubic flow', 'irr([-100,30,40,50])', 0.08896339469335002, 1e-9);
+checkNum('irr of a quadratic flow', 'irr([-1000,500,600])', 0.063941029805, 1e-6);
+checkStr('irr of a simple flow', 'irr([-100,110])', '0.1');
+
+// --- 14. numeric edge cases --------------------------------------------------
 // Splitting (a/b)^n into a^n/b^n overflows for large n (360 months is normal):
 // 121^360 and 120^360 are both Infinity, so the ratio came out NaN.
 checkNum('(12.1/12)^(-360)', '(12.1/12)^(-360)', Math.pow(12.1 / 12, -360), 1e-9);
