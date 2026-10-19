@@ -529,7 +529,7 @@ window.HELP_DATA = {
     },
     "blackScholes": { "description": "Black-Scholes option pricing.", "syntax": "blackScholes(S, K, T, r, sigma, type)", "examples": ["blackScholes(100, 100, 1, 0.05, 0.2, 'call')"] },
     "black_scholes": { "description": "Alias for blackScholes.", "syntax": "black_scholes(S, K, T, r, sigma, type)", "examples": ["black_scholes(100, 100, 1, 0.05, 0.2, 'call')"] },
-    "amortization": { "description": "Amortization schedule.", "syntax": "amortization(principal, rate, periods)", "examples": ["amortization(10000, 0.05, 12)"] },
+    "amortization": { "description": "Loan payment per period (annuity formula).", "syntax": "amortization(rate, periods, principal)", "examples": ["amortization(0.05/12, 360, 200000)"] },
     "annuity": { "description": "Annuity calculation.", "syntax": "annuity(payment, rate, periods)", "examples": ["annuity(100, 0.05, 10)"] },
 
 // --- Complex Numbers ---

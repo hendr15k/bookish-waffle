@@ -3367,6 +3367,10 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
     _sum(expr, varNode, start, end) {
         if (!(varNode instanceof Sym)) throw new Error("Sum variable must be a symbol");
+        // `oo` is the Xcas spelling of infinity; the symbolic summation below
+        // only recognises the Infinity/infinity symbols.
+        start = this._normaliseInfinity(start);
+        end = this._normaliseInfinity(end);
         if (!(start instanceof Num) || !(end instanceof Num)) {
             return this._sumSymbolic(expr, varNode, start, end);
         }
@@ -3394,6 +3398,15 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             sum = new Add(sum, term);
         }
         return new Mul(new Div(new Num(1), new Num(p+1)), sum).simplify();
+    }
+
+    _normaliseInfinity(n) {
+        if (!n) return n;
+        const hasOo = (m) => (m instanceof Sym && m.name === 'oo') ||
+            (m instanceof BinaryOp && (hasOo(m.left) || hasOo(m.right))) ||
+            (m instanceof Pow && (hasOo(m.left) || hasOo(m.right))) ||
+            (m instanceof Call && m.args.some(hasOo));
+        return hasOo(n) ? n.substitute(new Sym('oo'), new Sym('Infinity')) : n;
     }
 
     _sumSymbolic(expr, varNode, start, end) {
@@ -3603,6 +3616,8 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
     _product(expr, varNode, start, end) {
         if (!(varNode instanceof Sym)) throw new Error("Product variable must be a symbol");
+        start = this._normaliseInfinity(start);
+        end = this._normaliseInfinity(end);
         if (!(start instanceof Num) || !(end instanceof Num)) {
             return this._productSymbolic(expr, varNode, start, end);
         }
@@ -8407,13 +8422,12 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
     }
 
     _loan(P, r, n) {
-        // Monthly payment PMT = (P * r/12) / (1 - (1 + r/12)^(-n))
-        // Assuming r is annual rate (e.g. 0.05), n is total months
-        // If args are just P, r, n, we follow standard formula
-
+        // Monthly payment PMT = (P * r/12) / (1 - (1 + r/12)^(-nMonths))
+        // r is the annual rate (e.g. 0.04) and n the term in YEARS, which is
+        // what the help documents; the exponent needs the number of months.
         P = P.simplify();
         r = r.simplify();
-        n = n.simplify();
+        n = new Mul(n.simplify(), new Num(12)).simplify();
 
         const monthlyRate = new Div(r, new Num(12));
         const num = new Mul(P, monthlyRate);

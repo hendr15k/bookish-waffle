@@ -2320,11 +2320,16 @@ class Pow extends BinaryOp {
             const n = Math.abs(r.value);
             const num = new Num(Math.pow(l.left.value, n));
             const den = new Num(Math.pow(l.right.value, n));
-            if (den.value !== 0) {
+            if (Number.isFinite(num.value) && Number.isFinite(den.value) && den.value !== 0 && num.value !== 0) {
                 return (r.value > 0)
                     ? new Div(num, den).simplify()
                     : new Div(den, num).simplify();
             }
+            // Large exponents overflow when the fraction is split into a^n/b^n
+            // (e.g. (121/120)^-360 gives Inf/Inf = NaN). Evaluate the ratio
+            // directly in that case.
+            const direct = Math.pow(l.left.value / l.right.value, r.value);
+            if (Number.isFinite(direct)) return new Num(direct);
         }
 
         // Complex number rules for i^n

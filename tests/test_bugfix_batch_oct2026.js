@@ -145,6 +145,17 @@ checkStr('integer outer exponent still collapses', 'simplify((x^2)^3)', 'x^6');
 checkStr('symbolic exponent still collapses', '(a^x)^y', 'a^((x * y))');
 checkStr('sqrt(x^2) is still abs(x)', 'sqrt(x^2)', 'abs(x)');
 
+// --- 11. numeric edge cases --------------------------------------------------
+// Splitting (a/b)^n into a^n/b^n overflows for large n (360 months is normal):
+// 121^360 and 120^360 are both Infinity, so the ratio came out NaN.
+checkNum('(12.1/12)^(-360)', '(12.1/12)^(-360)', Math.pow(12.1 / 12, -360), 1e-9);
+checkStr('small fractional powers stay exact', '(1/2)^2', '(1 / 4)');
+// loan(P, annual_rate, years) treated the years as months
+checkNum('loan() 30 years', 'loan(200000, 0.04, 30)', 200000 * (0.04 / 12) / (1 - Math.pow(1 + 0.04 / 12, -360)), 1e-9);
+// `oo` was only normalised for limits, not for sums/products
+checkStr('sum with oo bound', 'sum(1/n^2, n, 1, oo)', '(pi^2 / 6)');
+checkStr('sum with inf bound unchanged', 'sum(1/n^2, n, 1, inf)', '(pi^2 / 6)');
+
 // --- 9. every documented help example evaluates -----------------------------
 {
     // help.js registers window.HELP_DATA; chemistry.js must live inside the
