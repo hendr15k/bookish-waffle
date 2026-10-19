@@ -788,6 +788,10 @@ class Add extends BinaryOp {
             const aFactors = getFactors(a);
             const bFactors = getFactors(b);
             for (const af of aFactors) {
+                // A bare number is a coefficient, not a factor: pulling it out
+                // turns 3x^2 + 3x into 3*(x^2 + x), which defeats expand() and
+                // makes plain polynomials display in factored form.
+                if (af instanceof Num) continue;
                 for (const bf of bFactors) {
                     if (exprEquals(af, bf)) return af;
                 }
@@ -2490,6 +2494,22 @@ class Pow extends BinaryOp {
                 return new Div(new Pow(this.left, new Num(n + 1)), new Num(n + 1));
             }
         }
+        // A power without the variable is a constant factor
+        if (!this.dependsOn(varName)) return new Mul(this, varName);
+        // (a*x+b)^n for a numeric exponent n != -1: (a*x+b)^(n+1) / (a*(n+1))
+        // Also covers fractional powers coming from sqrt(u).
+        {
+            const nVal = this.right.evaluateNumeric();
+            if (isFinite(nVal) && this.left.dependsOn(varName)) {
+                const d = this.left.diff(varName).simplify();
+                if (d instanceof Num && d.value !== 0) {
+                    if (nVal === -1) return new Div(new Call('ln', [this.left]), d).simplify();
+                    const next = new Num(nVal + 1);
+                    const denom = new Num((nVal + 1) * d.value);
+                    return new Div(new Pow(this.left, next), denom).simplify();
+                }
+            }
+        }
         // a^x -> a^x / ln(a)
         if (this.right instanceof Sym && this.right.name === varName.name) {
              const isSimpleConst = (node) => {
@@ -3909,7 +3929,9 @@ class Call extends Expr {
         // Default to symbolic diff
         return new Call('diff', [this, varName]);
     }
-    integrate(varName) {
+    // Antiderivative of f(t) with respect to t for the elementary functions.
+    // Returns null when no closed form is known, so callers can fall back.
+    _intOuter(varName) {
         if (this.args[0].toString() === varName.toString()) {
             if (this.funcName === 'sin') return new Mul(new Num(-1), new Call('cos', [varName]));
             if (this.funcName === 'cos') return new Call('sin', [varName]);
@@ -4040,6 +4062,31 @@ class Call extends Expr {
                 return new Mul(new Num(-1), new Call('polylog', [new Num(2), new Mul(new Num(-1), new Call('exp', [varName]))]));
             }
         }
+        return null;
+    }
+    integrate(varName) {
+        const arg = this.args[0];
+
+        // A function call that does not contain the variable is a constant
+        if (!this.dependsOn(varName)) return new Mul(this, varName);
+
+        // sqrt(u) integrates like u^(1/2)
+        if (this.funcName === 'sqrt' && this.args.length === 1) {
+            return new Pow(arg, new Div(new Num(1), new Num(2))).integrate(varName);
+        }
+
+        if (arg.toString() === varName.toString()) {
+            const F = this._intOuter(varName);
+            return F || new Call("integrate", [this, varName]);
+        }
+
+        // Generalised chain rule: f(a*x+b) -> F(a*x+b)/a
+        const d = arg.diff(varName).simplify();
+        if (d instanceof Num && d.value !== 0 && arg.dependsOn(varName)) {
+            const F = this._intOuter(arg);
+            if (F) return d.value === 1 ? F : new Div(F, d).simplify();
+        }
+
         return new Call("integrate", [this, varName]);
     }
     substitute(varName, value) {
@@ -5400,12 +5447,45 @@ class Xnor extends BinaryOp {
     toLatex() { return `${this.left.toLatex()} \\odot ${this.right.toLatex()}`; }
 }
 
+// Fully distribute a product over sums and expand integer powers of sums.
+// simplify() may pull common factors back out (a*b + a*c -> a*(b+c)), so the
+// expansion is done structurally and only like terms are merged at the end;
+// the result is a genuine sum of monomials, which is what expand() promises.
+function distributeFully(node) {
+    const walk = (n) => {
+        if (n instanceof Add) return new Add(walk(n.left), walk(n.right));
+        if (n instanceof Sub) return new Sub(walk(n.left), walk(n.right));
+        if (n instanceof Mul) {
+            const l = walk(n.left);
+            const r = walk(n.right);
+            if (l instanceof Add) return new Add(distributeFully(new Mul(l.left, r)), distributeFully(new Mul(l.right, r)));
+            if (l instanceof Sub) return new Sub(distributeFully(new Mul(l.left, r)), distributeFully(new Mul(l.right, r)));
+            if (r instanceof Add) return new Add(distributeFully(new Mul(l, r.left)), distributeFully(new Mul(l, r.right)));
+            if (r instanceof Sub) return new Sub(distributeFully(new Mul(l, r.left)), distributeFully(new Mul(l, r.right)));
+            return new Mul(l, r);
+        }
+        if (n instanceof Pow) {
+            const l = walk(n.left);
+            const r = walk(n.right);
+            if (r instanceof Num && Number.isInteger(r.value) && r.value > 1 && (l instanceof Add || l instanceof Sub)) {
+                let acc = l;
+                for (let i = 1; i < r.value; i++) acc = new Mul(acc, l);
+                return distributeFully(acc);
+            }
+            return new Pow(l, r);
+        }
+        if (n instanceof Call) return new Call(n.funcName, n.args.map(walk));
+        return n;
+    };
+    return flattenCombine(walk(node));
+}
+
 // Export classes for Global/CommonJS environments
 (function() {
     const exports = {
         Expr, Num, Sym, BinaryOp, Add, Sub, Mul, Div, Pow, Call, Assignment, Eq, Vec, FunctionDef, Block, toExpr,
         And, Or, Xor, Implies, Iff, Nand, Nor, Xnor, Not, Mod, Neq, Lt, Gt, Le, Ge, At, BooleanEq,
-        If, While, For, Return, Break, Continue, Str
+        If, While, For, Return, Break, Continue, Str, distributeFully
     };
     if (typeof globalThis !== 'undefined') {
         Object.assign(globalThis, exports);
