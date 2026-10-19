@@ -363,8 +363,11 @@ function polyQuotient(P, Q) {
 }
 
 function polyGcd(P, Q) {
-    let a = P;
-    let b = Q;
+    // Work on copies: the monic normalisation at the end would otherwise
+    // mutate the caller's coefficient arrays, and callers keep using them
+    // (Div.simplify divides num and den by the gcd afterwards).
+    let a = [...P];
+    let b = [...Q];
     while (b.length > 0 && !(b.length === 1 && Math.abs(b[0]) < 1e-15)) {
         const r = polyRem(a, b);
         a = b;
@@ -788,6 +791,10 @@ class Add extends BinaryOp {
             const aFactors = getFactors(a);
             const bFactors = getFactors(b);
             for (const af of aFactors) {
+                // A bare number is a coefficient, not a factor: pulling it out
+                // turns 3x^2 + 3x into 3*(x^2 + x), which defeats expand() and
+                // makes plain polynomials display in factored form.
+                if (af instanceof Num) continue;
                 for (const bf of bFactors) {
                     if (exprEquals(af, bf)) return af;
                 }
@@ -840,19 +847,11 @@ class Add extends BinaryOp {
             return new Sub(new Num(0), result).simplify();
         }
 
-        // Sub(a,b) + Sub(c,d) -> collect like terms across Sub nodes
+        // Sub(a,b) + Sub(c,d): collect coefficients term by term. The old
+        // shortcut matched equal parts and then kept only one copy of them, so
+        // (a-b)+(c-b) gave a+c-b instead of a+c-2b and (2-x)+(1-x) gave 3-x.
         if (l instanceof Sub && r instanceof Sub) {
-            const la = l.left, lb = l.right;
-            const ra = r.left, rb = r.right;
-            // Try matching: (a-b) + (c-d) -> (a+c) - (b+d) or (a-c) - (b-d)
-            // Match positive terms: la vs ra, and negative terms: lb vs rb
-            const posMatch = exprEquals(la, ra);
-            const negMatch = exprEquals(lb, rb);
-            if (posMatch && negMatch) return new Num(0);
-            if (posMatch) return new Sub(la, new Add(lb, rb).simplify()).simplify();
-            if (negMatch) return new Sub(new Add(la, ra).simplify(), lb).simplify();
-            // (a-b) + (c-d) -> (a+c) - (b+d)
-            return new Sub(new Add(la, ra).simplify(), new Add(lb, rb).simplify()).simplify();
+            return buildFromTerms([...flattenAddSub(l), ...flattenAddSub(r)]);
         }
 
         // Logarithmic Combination: ln(a) + ln(b) -> ln(a*b)
@@ -1954,7 +1953,9 @@ class Div extends BinaryOp {
                         const newDen = polyFromCoeffs(newDenCoeffs, varNode);
 
                         if (newDenCoeffs.length === 1 && Math.abs(newDenCoeffs[0] - 1) < 1e-9) return newNum;
-                        return new Div(newNum, newDen);
+                        // Simplify the quotient so a constant denominator -1 does
+                        // not survive as -(-x - 2) in the result.
+                        return new Div(newNum, newDen).simplify();
                     }
                 }
             }
@@ -2268,8 +2269,10 @@ class Pow extends BinaryOp {
         let l = this.left.toString();
         let r = this.right.toString();
 
-        // Wrap left if it's an operator with lower precedence than Pow
-        if (this.left instanceof Add || this.left instanceof Sub || this.left instanceof Mul || this.left instanceof Div) {
+        // Wrap left if it's an operator with lower precedence than Pow.
+        // A nested Pow must be wrapped too: (x^2)^(1/2) would otherwise print
+        // as x^2^(1/2), which re-parses as x^(2^(1/2)).
+        if (this.left instanceof Add || this.left instanceof Sub || this.left instanceof Mul || this.left instanceof Div || this.left instanceof Pow) {
             l = `(${l})`;
         }
         // Also wrap if left is negative number?
@@ -2278,8 +2281,8 @@ class Pow extends BinaryOp {
         }
 
         // Wrap right if complex? usually right is evaluated first?
-        // x^(a+b) needs parens
-        if (this.right instanceof Add || this.right instanceof Sub || this.right instanceof Mul || this.right instanceof Div) {
+        // x^(a+b) needs parens, and so does x^(2^3) (a^b^c is right-associative)
+        if (this.right instanceof Add || this.right instanceof Sub || this.right instanceof Mul || this.right instanceof Div || this.right instanceof Pow) {
             r = `(${r})`;
         }
 
@@ -2309,11 +2312,16 @@ class Pow extends BinaryOp {
             const n = Math.abs(r.value);
             const num = new Num(Math.pow(l.left.value, n));
             const den = new Num(Math.pow(l.right.value, n));
-            if (den.value !== 0) {
+            if (Number.isFinite(num.value) && Number.isFinite(den.value) && den.value !== 0 && num.value !== 0) {
                 return (r.value > 0)
                     ? new Div(num, den).simplify()
                     : new Div(den, num).simplify();
             }
+            // Large exponents overflow when the fraction is split into a^n/b^n
+            // (e.g. (121/120)^-360 gives Inf/Inf = NaN). Evaluate the ratio
+            // directly in that case.
+            const direct = Math.pow(l.left.value / l.right.value, r.value);
+            if (Number.isFinite(direct)) return new Num(direct);
         }
 
         // Complex number rules for i^n
@@ -2462,13 +2470,20 @@ class Pow extends BinaryOp {
              return new Mul(cn, xn).simplify();
         }
 
-        // Simplify roots: (x^a)^(1/b) -> x^(a/b) ?
-        // Simplification rule: (a^b)^c = a^(b*c)
+        // (a^b)^c = a^(b*c) is not valid for negative bases when an even power
+        // is followed by a fractional root: (x^2)^(1/2) is |x|, not x. That one
+        // shape is left unevaluated; every other combination keeps the rule.
         if (l instanceof Pow) {
              const base = l.left;
              const exp1 = l.right;
              const exp2 = r;
-             return new Pow(base, new Mul(exp1, exp2).simplify()).simplify();
+             const e1v = exp1.evaluateNumeric();
+             const e2v = exp2.evaluateNumeric();
+             const evenInnerPower = isFinite(e1v) && Number.isInteger(e1v) && e1v % 2 === 0;
+             const fractionalOuter = isFinite(e2v) && !Number.isInteger(e2v);
+             if (!(evenInnerPower && fractionalOuter)) {
+                 return new Pow(base, new Mul(exp1, exp2).simplify()).simplify();
+             }
         }
 
         return new Pow(l, r);
@@ -2488,6 +2503,22 @@ class Pow extends BinaryOp {
                 if (this.right.value === -1) return new Call("ln", [varName]);
                 const n = this.right.value;
                 return new Div(new Pow(this.left, new Num(n + 1)), new Num(n + 1));
+            }
+        }
+        // A power without the variable is a constant factor
+        if (!this.dependsOn(varName)) return new Mul(this, varName);
+        // (a*x+b)^n for a numeric exponent n != -1: (a*x+b)^(n+1) / (a*(n+1))
+        // Also covers fractional powers coming from sqrt(u).
+        {
+            const nVal = this.right.evaluateNumeric();
+            if (isFinite(nVal) && this.left.dependsOn(varName)) {
+                const d = this.left.diff(varName).simplify();
+                if (d instanceof Num && d.value !== 0) {
+                    if (nVal === -1) return new Div(new Call('ln', [this.left]), d).simplify();
+                    const next = new Num(nVal + 1);
+                    const denom = new Num((nVal + 1) * d.value);
+                    return new Div(new Pow(this.left, next), denom).simplify();
+                }
             }
         }
         // a^x -> a^x / ln(a)
@@ -3909,7 +3940,9 @@ class Call extends Expr {
         // Default to symbolic diff
         return new Call('diff', [this, varName]);
     }
-    integrate(varName) {
+    // Antiderivative of f(t) with respect to t for the elementary functions.
+    // Returns null when no closed form is known, so callers can fall back.
+    _intOuter(varName) {
         if (this.args[0].toString() === varName.toString()) {
             if (this.funcName === 'sin') return new Mul(new Num(-1), new Call('cos', [varName]));
             if (this.funcName === 'cos') return new Call('sin', [varName]);
@@ -4040,6 +4073,31 @@ class Call extends Expr {
                 return new Mul(new Num(-1), new Call('polylog', [new Num(2), new Mul(new Num(-1), new Call('exp', [varName]))]));
             }
         }
+        return null;
+    }
+    integrate(varName) {
+        const arg = this.args[0];
+
+        // A function call that does not contain the variable is a constant
+        if (!this.dependsOn(varName)) return new Mul(this, varName);
+
+        // sqrt(u) integrates like u^(1/2)
+        if (this.funcName === 'sqrt' && this.args.length === 1) {
+            return new Pow(arg, new Div(new Num(1), new Num(2))).integrate(varName);
+        }
+
+        if (arg.toString() === varName.toString()) {
+            const F = this._intOuter(varName);
+            return F || new Call("integrate", [this, varName]);
+        }
+
+        // Generalised chain rule: f(a*x+b) -> F(a*x+b)/a
+        const d = arg.diff(varName).simplify();
+        if (d instanceof Num && d.value !== 0 && arg.dependsOn(varName)) {
+            const F = this._intOuter(arg);
+            if (F) return d.value === 1 ? F : new Div(F, d).simplify();
+        }
+
         return new Call("integrate", [this, varName]);
     }
     substitute(varName, value) {
@@ -5400,12 +5458,45 @@ class Xnor extends BinaryOp {
     toLatex() { return `${this.left.toLatex()} \\odot ${this.right.toLatex()}`; }
 }
 
+// Fully distribute a product over sums and expand integer powers of sums.
+// simplify() may pull common factors back out (a*b + a*c -> a*(b+c)), so the
+// expansion is done structurally and only like terms are merged at the end;
+// the result is a genuine sum of monomials, which is what expand() promises.
+function distributeFully(node) {
+    const walk = (n) => {
+        if (n instanceof Add) return new Add(walk(n.left), walk(n.right));
+        if (n instanceof Sub) return new Sub(walk(n.left), walk(n.right));
+        if (n instanceof Mul) {
+            const l = walk(n.left);
+            const r = walk(n.right);
+            if (l instanceof Add) return new Add(distributeFully(new Mul(l.left, r)), distributeFully(new Mul(l.right, r)));
+            if (l instanceof Sub) return new Sub(distributeFully(new Mul(l.left, r)), distributeFully(new Mul(l.right, r)));
+            if (r instanceof Add) return new Add(distributeFully(new Mul(l, r.left)), distributeFully(new Mul(l, r.right)));
+            if (r instanceof Sub) return new Sub(distributeFully(new Mul(l, r.left)), distributeFully(new Mul(l, r.right)));
+            return new Mul(l, r);
+        }
+        if (n instanceof Pow) {
+            const l = walk(n.left);
+            const r = walk(n.right);
+            if (r instanceof Num && Number.isInteger(r.value) && r.value > 1 && (l instanceof Add || l instanceof Sub)) {
+                let acc = l;
+                for (let i = 1; i < r.value; i++) acc = new Mul(acc, l);
+                return distributeFully(acc);
+            }
+            return new Pow(l, r);
+        }
+        if (n instanceof Call) return new Call(n.funcName, n.args.map(walk));
+        return n;
+    };
+    return flattenCombine(walk(node));
+}
+
 // Export classes for Global/CommonJS environments
 (function() {
     const exports = {
         Expr, Num, Sym, BinaryOp, Add, Sub, Mul, Div, Pow, Call, Assignment, Eq, Vec, FunctionDef, Block, toExpr,
         And, Or, Xor, Implies, Iff, Nand, Nor, Xnor, Not, Mod, Neq, Lt, Gt, Le, Ge, At, BooleanEq,
-        If, While, For, Return, Break, Continue, Str
+        If, While, For, Return, Break, Continue, Str, distributeFully
     };
     if (typeof globalThis !== 'undefined') {
         Object.assign(globalThis, exports);

@@ -4,7 +4,7 @@
   "description": "A lightweight, client-side Computer Algebra System (CAS) with an Xcas-like syntax",
   "homepage": "https://hendr15k.github.io/bookish-waffle/",
   "scripts": {
-    "test": "node -e \"const fs=require('fs'); const path=require('path'); const {spawnSync}=require('child_process'); const dir='tests'; const files=fs.readdirSync(dir).filter(f => /^test_.*\\.js$/.test(f)).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true})); for (const file of files) { const full=path.join(dir, file); console.log('Running', full); const result=spawnSync(process.execPath, [full], {stdio:'inherit'}); if (result.status !== 0) process.exit(result.status ?? 1); }\"",
+    "test": "node scripts/run-tests.mjs",
     "test:core": "node tests/test_core.js",
     "test:latex": "node tests/test_latex.js",
     "test:chemistry": "node tests/test_chemistry.js",

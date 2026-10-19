@@ -30,14 +30,18 @@ class CAS {
             // Length (Base: m)
             'm': 1, 'km': 1000, 'cm': 0.01, 'mm': 0.001, 'um': 1e-6, 'nm': 1e-9,
             'ft': 0.3048, 'in': 0.0254, 'yd': 0.9144, 'mi': 1609.34,
+            'inch': 0.0254, 'foot': 0.3048, 'feet': 0.3048, 'yard': 0.9144, 'mile': 1609.34,
             // Mass (Base: kg)
             'kg': 1, 'g': 0.001, 'mg': 1e-6, 'lb': 0.453592, 'oz': 0.0283495, 't': 1000,
+            'pound': 0.453592, 'ounce': 0.0283495, 'tonne': 1000,
             // Time (Base: s)
             's': 1, 'min': 60, 'h': 3600, 'd': 86400, 'wk': 604800, 'y': 31536000, 'ms': 0.001,
+            'minute': 60, 'hour': 3600, 'day': 86400, 'week': 604800, 'year': 31536000,
             // Area (Base: m^2)
             'm^2': 1, 'km^2': 1e6, 'cm^2': 1e-4, 'mm^2': 1e-6, 'ft^2': 0.092903, 'in^2': 0.00064516, 'ac': 4046.86, 'ha': 10000,
             // Volume (Base: m^3)
             'm^3': 1, 'km^3': 1e9, 'cm^3': 1e-6, 'mm^3': 1e-9, 'L': 0.001, 'mL': 1e-6, 'gal': 0.00378541, 'ft^3': 0.0283168,
+            'liter': 0.001, 'litre': 0.001, 'gallon': 0.00378541,
             // Speed (Base: m/s)
             'm/s': 1, 'km/h': 0.277778, 'mph': 0.44704, 'kn': 0.514444, 'ft/s': 0.3048,
             // Pressure (Base: Pa)
@@ -102,6 +106,17 @@ class CAS {
         if (node instanceof Call) {
             // Special handling for purge/del to prevent premature evaluation of the argument
             if (node.funcName === 'purge' || node.funcName === 'del') {
+                // del(f, vars) is documented as the nabla operator
+                if (node.funcName === 'del' && node.args.length === 2) {
+                    return this._grad(this._recursiveEval(node.args[0]), this._recursiveEval(node.args[1]));
+                }
+                if (node.args.length === 0) {
+                    // purge() clears every user-defined variable
+                    for (const k of Object.keys(this.variables)) {
+                        if (!['pi', 'true', 'false', 'j'].includes(k)) delete this.variables[k];
+                    }
+                    return new Num(1);
+                }
                 if (node.args.length !== 1) throw new Error("purge requires 1 argument");
                 const target = node.args[0];
                 if (target instanceof Sym) {
@@ -123,6 +138,16 @@ class CAS {
             }
 
             if (node.funcName === 'subs' || node.funcName === 'substitute') {
+                 // Two documented forms:
+                 //   substitute(expr, var = value)      / substitute(expr, [x=1, y=2])
+                 //   substitute(expr, var, value)
+                 if (node.args.length === 3) {
+                     const expr = this._recursiveEval(node.args[0]);
+                     const target = this._recursiveEval(node.args[1]);
+                     const value = this._recursiveEval(node.args[2]);
+                     const t = (target instanceof Str) ? new Sym(target.value) : target;
+                     return expr.substitute(t, value).simplify();
+                 }
                  if (node.args.length !== 2) throw new Error("subs requires 2 arguments: expr, substitution (var=val)");
                  const expr = this._recursiveEval(node.args[0]);
                  const sub = this._recursiveEval(node.args[1]);
@@ -629,6 +654,29 @@ class CAS {
                         }
                     }
 
+                    // The specialised integrators (erf/erfi, Si/Ci/Ei/Li, trig
+                    // tables, atan forms) are only consulted by the indefinite
+                    // path, so definite integrals of them came back unevaluated
+                    // even though the antiderivative was known. Try them here.
+                    if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
+                        const specials = [
+                            () => this._integrateSpecial(func, varNode),
+                            () => this._integrateSpecialFunctions(func, varNode),
+                            () => this._integrateTrig(func, varNode),
+                            () => this._integrateAtan(func, varNode),
+                            () => this._integrateInverseHyperbolic(func, varNode),
+                            () => this._integrateExpTrig(func, varNode),
+                        ];
+                        for (const attempt of specials) {
+                            let r = null;
+                            try { r = attempt(); } catch (e) { r = null; }
+                            if (r && !(r instanceof Call && r.funcName === 'integrate')) {
+                                indefinite = this.evaluate(r);
+                                break;
+                            }
+                        }
+                    }
+
                     // If integration failed (returned a Call to integrate), return symbolic definite integral
                     if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
                         return new Call('integrate', args);
@@ -718,6 +766,11 @@ class CAS {
                                 try {
                                     const aVal = indefinite.substitute(varNode, new Num(xi)).evaluateNumeric();
                                     if (!isFinite(aVal) || isNaN(aVal)) {
+                                        // Not a pole of the integrand but an
+                                        // antiderivative we cannot evaluate:
+                                        // fall back to numeric integration.
+                                        const numeric = this._definiteNumericFallback(func, varNode, lower, upper);
+                                        if (numeric) return numeric;
                                         return new Sym('NaN');
                                     }
                                 } catch(e) {}
@@ -727,17 +780,26 @@ class CAS {
 
                     // Use limit for bounds to handle singularities (e.g. 1/sqrt(x) at 0)
                     // limit(F(x), x, upper, left) - limit(F(x), x, lower, right)
-                    let valUpper = indefinite.substitute(varNode, upper);
+                    // Simplify so an indeterminate value like 0*ln(0) surfaces as
+                    // NaN here and is then resolved with a one-sided limit.
+                    let valUpper = indefinite.substitute(varNode, upper).simplify();
                     // Check if substitution failed (NaN or Infinity symbolic)
                     // Also check for evaluateNumeric issues if needed, but symbolic check covers basic cases
-                    const isBad = (n) => (n instanceof Sym && (n.name === 'NaN' || n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf')) ||
+                    // A NaN can hide inside a larger node: x*ln(x) - x at x = 0
+                    // evaluates 0*(-Infinity) to NaN and keeps the -1 around.
+                    const hasNaN = (n) => (n instanceof Sym && n.name === 'NaN') ||
+                        (n instanceof Num && isNaN(n.value)) ||
+                        ((n instanceof BinaryOp || n instanceof Pow) && (hasNaN(n.left) || hasNaN(n.right))) ||
+                        (n instanceof Call && n.args.some(hasNaN));
+                    const isBad = (n) => hasNaN(n) ||
+                                         (n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf')) ||
                                          (n instanceof Mul && n.left instanceof Num && n.left.value === -1 && (n.right.name === 'Infinity' || n.right.name === 'infinity' || n.right.name === 'inf'));
 
                     if (isBad(valUpper)) {
                          valUpper = this._limit(indefinite, varNode, upper, 0, -1);
                     }
 
-                    let valLower = indefinite.substitute(varNode, lower);
+                    let valLower = indefinite.substitute(varNode, lower).simplify();
                     if (isBad(valLower)) {
                          valLower = this._limit(indefinite, varNode, lower, 0, 1);
                     }
@@ -747,7 +809,15 @@ class CAS {
                                          (n instanceof Mul && n.left instanceof Num && n.left.value === -1 && (n.right.name === 'Infinity' || n.right.name === 'infinity' || n.right.name === 'inf'));
                     const isNaNExpr = (n) => (n instanceof Sym && n.name === 'NaN');
 
-                    if (isNaNExpr(valUpper) || isNaNExpr(valLower)) return new Sym('NaN');
+                    if (isNaNExpr(valUpper) || isNaNExpr(valLower)) {
+                        // The antiderivative cannot be evaluated at the bounds
+                        // (e.g. a non-elementary integrand whose symbolic form
+                        // still contains an integral). Fall back to the numeric
+                        // integrator instead of answering NaN.
+                        const numeric = this._definiteNumericFallback(func, varNode, lower, upper);
+                        if (numeric) return numeric;
+                        return new Sym('NaN');
+                    }
 
                     if (isInf(valUpper)) {
                         if (isInf(valLower)) {
@@ -762,7 +832,13 @@ class CAS {
                         return new Mul(new Num(-1), valLower).simplify();
                     }
 
-                    return new Sub(valUpper, valLower).simplify();
+                    const definite = new Sub(valUpper, valLower).simplify();
+                    if ((definite instanceof Sym && definite.name === 'NaN') ||
+                        (definite instanceof Num && isNaN(definite.value))) {
+                        const numeric = this._definiteNumericFallback(func, varNode, lower, upper);
+                        if (numeric) return numeric;
+                    }
+                    return definite;
                 }
 
                 // Check for standard integrals that are not handled by Expr.integrate
@@ -870,7 +946,10 @@ class CAS {
 
             if (node.funcName === 'expand') {
                 if (node.args.length !== 1) throw new Error("expand takes exactly 1 argument");
-                const result = args[0].expand();
+                let result = args[0].expand();
+                // Push every remaining product over the sums: simplify() may have
+                // folded a common factor back in, which left (x+1)^3 unexpanded.
+                try { result = distributeFully(result); } catch (e) {}
                 if (result && typeof result.simplify === 'function') {
                     result._alreadySimplified = true;
                 }
@@ -1436,7 +1515,9 @@ class CAS {
             }
 
             if (node.funcName === 'angle') {
-                if (node.args.length !== 2) throw new Error("angle requires 2 arguments: u, v");
+                // angle(u, v) between two vectors, angle(z) of a complex number
+                if (node.args.length === 1) return this._arg(this._recursiveEval(node.args[0])).simplify();
+                if (node.args.length !== 2) throw new Error("angle requires 1 or 2 arguments: z or u, v");
                 return this._angle(args[0], args[1]);
             }
 
@@ -1446,12 +1527,14 @@ class CAS {
             }
 
             if (node.funcName === 'toSpherical') {
-                if (node.args.length !== 1) throw new Error("toSpherical requires 1 argument: vector [x, y, z]");
+                if (node.args.length === 3) return this._toSpherical(new Vec(args));
+                if (node.args.length !== 1) throw new Error("toSpherical requires 1 argument: vector [x, y, z], or x, y, z");
                 return this._toSpherical(args[0]);
             }
 
             if (node.funcName === 'toCylindrical') {
-                if (node.args.length !== 1) throw new Error("toCylindrical requires 1 argument: vector [x, y, z]");
+                if (node.args.length === 3) return this._toCylindrical(new Vec(args));
+                if (node.args.length !== 1) throw new Error("toCylindrical requires 1 argument: vector [x, y, z], or x, y, z");
                 return this._toCylindrical(args[0]);
             }
 
@@ -1692,6 +1775,26 @@ class CAS {
             if (node.funcName === 'nCr') {
                 if (node.args.length !== 2) throw new Error("nCr requires 2 arguments");
                 return this._nCr(args[0], args[1]);
+            }
+
+            if (node.funcName === 'permutations' && node.args.length === 1 && args[0] instanceof Vec) {
+                // permutations([a, b, c]) -> every ordering of the list
+                const items = args[0].elements;
+                if (items.length > 7) throw new Error("permutations: at most 7 elements (5040 orderings)");
+                const out = [];
+                const used = new Array(items.length).fill(false);
+                const cur = [];
+                const rec = () => {
+                    if (cur.length === items.length) { out.push(new Vec([...cur])); return; }
+                    for (let i = 0; i < items.length; i++) {
+                        if (used[i]) continue;
+                        used[i] = true; cur.push(items[i]);
+                        rec();
+                        cur.pop(); used[i] = false;
+                    }
+                };
+                rec();
+                return new Vec(out);
             }
 
             if (node.funcName === 'nPr' || node.funcName === 'perm' || node.funcName === 'permutations') {
@@ -1939,6 +2042,12 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             }
 
             if (node.funcName === 'divergence' || node.funcName === 'div') { // 'div' might conflict with division if not careful, but funcName is safe
+                 // div() is documented as integer/polynomial quotient; keep the
+                 // divergence meaning only for the vector-field argument shape.
+                 if (node.funcName === 'div' && !(node.args.length === 2 && args[0] instanceof Vec && args[1] instanceof Vec)) {
+                     if (node.args.length !== 2) throw new Error("div requires 2 arguments: a, b");
+                     return this._quo(args[0], args[1]);
+                 }
                  if (node.args.length !== 2) throw new Error("divergence requires 2 arguments: vector field and list of variables");
                  return this._divergence(args[0], args[1]);
             }
@@ -1961,12 +2070,16 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             }
 
             if (node.funcName === 'rem' || node.funcName === 'irem') {
-                if (node.args.length !== 2) throw new Error("rem requires 2 arguments");
+                // rem(a, b) or the documented rem(a, b, var)
+                if (node.args.length !== 2 && node.args.length !== 3) throw new Error("rem requires 2 or 3 arguments: num, den, [var]");
+                if (node.args.length === 3) return this._remIn(args[0], args[1], args[2]);
                 return this._rem(args[0], args[1]);
             }
 
             if (node.funcName === 'quo') {
-                if (node.args.length !== 2) throw new Error("quo requires 2 arguments");
+                // quo(a, b) or the documented quo(a, b, var)
+                if (node.args.length !== 2 && node.args.length !== 3) throw new Error("quo requires 2 or 3 arguments: num, den, [var]");
+                if (node.args.length === 3) return this._quoIn(args[0], args[1], args[2]);
                 return this._quo(args[0], args[1]);
             }
 
@@ -2137,11 +2250,11 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 if (node.args.length !== 1) throw new Error("basis requires 1 argument");
                 return this._basis(args[0].simplify());
             }
-            if (node.funcName === 'eigenvals') {
+            if (node.funcName === 'eigenvals' || node.funcName === 'eigenvalues') {
                 if (node.args.length !== 1) throw new Error("eigenvals requires 1 argument");
                 return this._eigenvals(args[0].simplify());
             }
-            if (node.funcName === 'eigenvects') {
+            if (node.funcName === 'eigenvects' || node.funcName === 'eigenvectors') {
                 if (node.args.length !== 1) throw new Error("eigenvects requires 1 argument");
                 return this._eigenvects(args[0].simplify());
             }
@@ -2362,6 +2475,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 if (node.args.length !== 1) throw new Error("atomicWeight requires 1 argument (symbol)");
                 let sym = "";
                 if (args[0] instanceof Sym) sym = args[0].name;
+                else if (args[0] instanceof Str) sym = args[0].value;
                 if (!sym) throw new Error("Invalid element symbol");
                 return this._atomicWeight(sym);
             }
@@ -2518,8 +2632,8 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             }
 
             if (node.funcName === 'lineEquation') {
-                if (node.args.length !== 2) throw new Error("lineEquation requires 2 arguments: point1, point2");
-                return this._lineEquation(args[0], args[1]);
+                if (node.args.length !== 2 && node.args.length !== 3) throw new Error("lineEquation requires 2 or 3 arguments: point1, point2, [vars]");
+                return this._lineEquation(args[0], args[1], args.length > 2 ? args[2] : null);
             }
 
             if (node.funcName === 'circleEquation') {
@@ -2541,7 +2655,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             if (node.funcName === 'cfrac' || node.funcName === 'cf' || node.funcName === 'continued_fraction') {
                  // cfrac(val, [depth])
                  const depth = node.args.length > 1 ? args[1].evaluateNumeric() : 15;
-                 return this._cfrac(args[0], depth);
+                 return this._cfrac(args[0], new Num(isFinite(depth) ? depth : 15));
             }
 
             if (node.funcName === 'sturm') {
@@ -2799,6 +2913,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 // Expect language as string identifier
                 let lang = "";
                 if (args[1] instanceof Sym) lang = args[1].name;
+                else if (args[1] instanceof Str) lang = args[1].value;
                 else if (args[1] instanceof Num) lang = args[1].toString(); // unlikely
                 else throw new Error("Language must be an identifier (e.g. python, js, c)");
                 return this._codegen(args[0], lang);
@@ -2810,11 +2925,15 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                 let fromUnit = "", toUnit = "";
                 if (args[1] instanceof Sym) fromUnit = args[1].name;
                 if (args[2] instanceof Sym) toUnit = args[2].name;
+                // Documented form uses string literals: convert(1, 'inch', 'cm')
+                if (!fromUnit && args[1] instanceof Str) fromUnit = args[1].value;
+                if (!toUnit && args[2] instanceof Str) toUnit = args[2].value;
                 // handle power units like m^2 represented as Pow in AST if parser allows,
                 // but parser likely sees m^2 as Pow(Sym(m), Num(2)).
                 // We need to convert AST to unit string if complex.
                 // Simple helper to get unit string
                 const getUnitStr = (n) => {
+                    if (n instanceof Str) return n.value;
                     if (n instanceof Sym) return n.name;
                     if (n instanceof Pow) return getUnitStr(n.left) + "^" + getUnitStr(n.right);
                     if (n instanceof Num) return n.value.toString();
@@ -2842,7 +2961,12 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             }
 
             if (node.funcName === 'convolution') {
-                if (node.args.length !== 3) throw new Error("convolution requires 3 arguments: f, g, t");
+                // convolution(list, list) -> discrete convolution,
+                // convolution(f(t), g(t), t) -> continuous convolution
+                if (node.args.length === 2 && args[0] instanceof Vec && args[1] instanceof Vec) {
+                    return this._conv(args[0], args[1]);
+                }
+                if (node.args.length !== 3) throw new Error("convolution requires 2 lists or 3 arguments: f, g, t");
                 return this._convolution(args[0], args[1], args[2]);
             }
 
@@ -3294,6 +3418,10 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
     _sum(expr, varNode, start, end) {
         if (!(varNode instanceof Sym)) throw new Error("Sum variable must be a symbol");
+        // `oo` is the Xcas spelling of infinity; the symbolic summation below
+        // only recognises the Infinity/infinity symbols.
+        start = this._normaliseInfinity(start);
+        end = this._normaliseInfinity(end);
         if (!(start instanceof Num) || !(end instanceof Num)) {
             return this._sumSymbolic(expr, varNode, start, end);
         }
@@ -3321,6 +3449,15 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             sum = new Add(sum, term);
         }
         return new Mul(new Div(new Num(1), new Num(p+1)), sum).simplify();
+    }
+
+    _normaliseInfinity(n) {
+        if (!n) return n;
+        const hasOo = (m) => (m instanceof Sym && m.name === 'oo') ||
+            (m instanceof BinaryOp && (hasOo(m.left) || hasOo(m.right))) ||
+            (m instanceof Pow && (hasOo(m.left) || hasOo(m.right))) ||
+            (m instanceof Call && m.args.some(hasOo));
+        return hasOo(n) ? n.substitute(new Sym('oo'), new Sym('Infinity')) : n;
     }
 
     _sumSymbolic(expr, varNode, start, end) {
@@ -3530,6 +3667,8 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
 
     _product(expr, varNode, start, end) {
         if (!(varNode instanceof Sym)) throw new Error("Product variable must be a symbol");
+        start = this._normaliseInfinity(start);
+        end = this._normaliseInfinity(end);
         if (!(start instanceof Num) || !(end instanceof Num)) {
             return this._productSymbolic(expr, varNode, start, end);
         }
@@ -4411,6 +4550,31 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         }
 
         throw new Error("System solver did not converge");
+    }
+
+    // Numeric value of a definite integral whose symbolic antiderivative is not
+    // usable. Returns null when the integrand is not finite on the interval (so
+    // divergences keep their symbolic NaN/Infinity answer).
+    _definiteNumericFallback(func, varNode, lower, upper) {
+        try {
+            const a = lower.evaluateNumeric();
+            const b = upper.evaluateNumeric();
+            if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+            const steps = 64;
+            const dx = (b - a) / steps;
+            for (let i = 1; i < steps; i++) {
+                const v = func.substitute(varNode, new Num(a + i * dx)).evaluateNumeric();
+                if (!Number.isFinite(v)) return null;
+            }
+            // A finer grid than the 100-point default: the fallback is used for
+            // integrands with square-root-type behaviour at an endpoint.
+            const val = this._nIntegrate(func, varNode, lower, upper, new Num(600));
+            const n = val instanceof Num ? val.value : val.evaluateNumeric();
+            if (!Number.isFinite(n)) return null;
+            return new Num(n);
+        } catch (e) {
+            return null;
+        }
     }
 
     _nIntegrate(expr, varNode, start, end, nArg) {
@@ -6158,6 +6322,9 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                      node.args.forEach(arg => {
                          if (this._dependsOn(arg, varNode)) candidates.add(arg);
                      });
+                     // The call itself is a substitution candidate too:
+                     // integrate(ln(x)/x, x) needs u = ln(x), not u = x.
+                     if (this._dependsOn(node, varNode)) candidates.add(node);
                  }
              } else if (node instanceof Pow) {
                  if (this._dependsOn(node.left, varNode)) candidates.add(node.left);
@@ -6462,6 +6629,22 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             if (isInf(limArg)) return new Sym('Infinity');
         }
 
+        // An Add/Sub whose direct substitution is NaN can still have a limit:
+        // x*ln(x) - x at 0 is 0*(-Inf) - 0. Take the limits of the parts.
+        if ((expr instanceof Add || expr instanceof Sub)) {
+            let direct = null;
+            try { direct = expr.substitute(varNode, point).simplify(); } catch (e) { direct = null; }
+            if (direct instanceof Sym && direct.name === 'NaN') {
+                const L = this._limit(expr.left, varNode, point, depth + 1, dir);
+                const R = this._limit(expr.right, varNode, point, depth + 1, dir);
+                const bad = (n) => (n instanceof Sym && (n.name === 'NaN' || n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf')) ||
+                    (n instanceof Num && !isFinite(n.value));
+                if (!bad(L) && !bad(R)) {
+                    return (expr instanceof Add ? new Add(L, R) : new Sub(L, R)).simplify();
+                }
+            }
+        }
+
         // Check for Indeterminate form NaN (from 0*Inf)
         // If expr is Mul, convert to Div
         if (expr instanceof Mul) {
@@ -6476,6 +6659,13 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                     const num = lnArg;
                     const den = new Div(new Num(1), varNode).simplify();
                     const lhopitalExpr = new Div(num, den);
+                    if (dir === 0) {
+                        // Two-sided limit: L'Hopital's rule needs a direction, so
+                        // compute both one-sided limits and combine them.
+                        const right = this._limit(lhopitalExpr, varNode, point, depth + 1, 1);
+                        const left = this._limit(lhopitalExpr, varNode, point, depth + 1, -1);
+                        if (right.toString() === left.toString()) return right;
+                    }
                     return this._limit(lhopitalExpr, varNode, point, depth + 1, dir);
                 }
 
@@ -8334,13 +8524,12 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
     }
 
     _loan(P, r, n) {
-        // Monthly payment PMT = (P * r/12) / (1 - (1 + r/12)^(-n))
-        // Assuming r is annual rate (e.g. 0.05), n is total months
-        // If args are just P, r, n, we follow standard formula
-
+        // Monthly payment PMT = (P * r/12) / (1 - (1 + r/12)^(-nMonths))
+        // r is the annual rate (e.g. 0.04) and n the term in YEARS, which is
+        // what the help documents; the exponent needs the number of months.
         P = P.simplify();
         r = r.simplify();
-        n = n.simplify();
+        n = new Mul(n.simplify(), new Num(12)).simplify();
 
         const monthlyRate = new Div(r, new Num(12));
         const num = new Mul(P, monthlyRate);
@@ -8412,6 +8601,47 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             processRoot(roots);
         } else if (roots instanceof Vec) {
              // Systems return Vec? No, _solve returns set or Expr.
+        }
+
+        // The IRR is a single real rate. Complex roots (cubic cash-flow
+        // polynomials give them) are not answers, and a symbolic real root is
+        // not usable either, so evaluate numerically and keep real r > -1.
+        {
+            const numeric = [];
+            for (const sol of solutions) {
+                try {
+                    const v = sol.evaluateNumeric();
+                    if (Number.isFinite(v) && v > -1) numeric.push(v);
+                } catch (e) {}
+            }
+            if (numeric.length > 0) {
+                numeric.sort((a, b) => a - b);
+                return new Num(numeric[0]);
+            }
+            // No symbolic real root: scan NPV for a sign change.
+            const npv = (r) => {
+                let acc = 0;
+                for (let i = 0; i < flows.elements.length; i++) {
+                    const c = flows.elements[i].evaluateNumeric();
+                    if (!Number.isFinite(c)) return NaN;
+                    acc += c / Math.pow(1 + r, i);
+                }
+                return acc;
+            };
+            let prevR = -0.9999, prevV = npv(prevR);
+            for (let k = 1; k <= 2000; k++) {
+                const r = -0.9999 + k * (100.9999 / 2000);
+                const v = npv(r);
+                if (Number.isFinite(prevV) && Number.isFinite(v) && prevV * v < 0) {
+                    let lo = prevR, hi = r;
+                    for (let it = 0; it < 200; it++) {
+                        const mid = (lo + hi) / 2;
+                        if (npv(lo) * npv(mid) <= 0) hi = mid; else lo = mid;
+                    }
+                    return new Num((lo + hi) / 2);
+                }
+                prevR = r; prevV = v;
+            }
         }
 
         if (solutions.length === 0) return new Call('irr', [flows]);
@@ -8709,7 +8939,9 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         return phi;
     }
 
-    _rem(a, b) {
+    _remIn(a, b, v) { return this._rem(a, b, v); }
+
+    _rem(a, b, varArg = null) {
         a = a.simplify();
         b = b.simplify();
 
@@ -8717,7 +8949,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
              return new Num(a.value % b.value);
         }
 
-        const varNode = this._getPolyVar(a) || this._getPolyVar(b);
+        const varNode = varArg || this._getPolyVar(a) || this._getPolyVar(b);
         if (!varNode) return new Call('rem', [a, b]);
 
         const aPoly = this._getPolyCoeffs(a, varNode);
@@ -8765,7 +8997,9 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         return remainder.simplify();
     }
 
-    _quo(a, b) {
+    _quoIn(a, b, v) { return this._quo(a, b, v); }
+
+    _quo(a, b, varArg = null) {
         a = a.simplify();
         b = b.simplify();
 
@@ -8773,7 +9007,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
              return new Num(Math.trunc(a.value / b.value));
         }
 
-        const varNode = this._getPolyVar(a);
+        const varNode = varArg || this._getPolyVar(a);
         if (!varNode) return new Call('quo', [a, b]);
 
         const aPoly = this._getPolyCoeffs(a, varNode);
@@ -10912,6 +11146,25 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             // Denominator is not a polynomial (e.g., e^x - 1)
             // Partial fraction decomposition does not apply
             return expr;
+        }
+
+        // 2b. Partial fractions only apply to rational functions. When the
+        // numerator contains a transcendental factor such as cos(x), the
+        // coefficient extraction below treats it as a constant and silently
+        // drops it (partfrac(cos(x)/x^2) returned 1/x^2, which then produced a
+        // wrong antiderivative), so bail out for those.
+        {
+            const numPoly = this._getPolyCoeffs(num, varNode);
+            if (numPoly && numPoly.coeffs) {
+                for (let d = 0; d <= numPoly.maxDeg; d++) {
+                    const c = numPoly.coeffs[d];
+                    if (c && this._dependsOn(c, varNode)) return expr;
+                }
+            } else if (num !== null && this._dependsOn(num, varNode)) {
+                // Not representable as a polynomial at all but still contains
+                // the variable: not a rational function.
+                return expr;
+            }
         }
 
         // 3. Check for polynomial part (degree num >= degree den)
@@ -13728,7 +13981,7 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         return this._sum(new Div(new Num(1), k), k, new Num(1), n);
     }
 
-    _lineEquation(p1, p2) {
+    _lineEquation(p1, p2, vars = null) {
         if (!(p1 instanceof Vec) || !(p2 instanceof Vec)) throw new Error("Points must be vectors [x, y]");
         if (p1.elements.length < 2 || p2.elements.length < 2) throw new Error("Points must be at least 2D");
 
@@ -13740,8 +13993,8 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         const dx = new Sub(x2, x1).simplify();
         const dy = new Sub(y2, y1).simplify();
 
-        const x = new Sym('x');
-        const y = new Sym('y');
+        const x = (vars instanceof Vec && vars.elements.length > 0) ? vars.elements[0] : new Sym('x');
+        const y = (vars instanceof Vec && vars.elements.length > 1) ? vars.elements[1] : new Sym('y');
 
         // Check if vertical line (dx = 0)
         let isVertical = false;
@@ -13819,11 +14072,17 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
     }
     _cfrac(x, depth) {
         x = x.simplify();
-        if (x instanceof Num) {
-            let val = x.value;
+        // Symbolic constants (pi, e) are expanded to their numeric value
+        let val = null;
+        if (x instanceof Num) val = x.value;
+        else {
+            const nv = x.evaluateNumeric();
+            if (isFinite(nv)) val = nv;
+        }
+        if (val !== null) {
             const res = [];
-            // Handle depth default
-            const d = (depth instanceof Num) ? depth.value : 15;
+            // Handle depth default; the caller may pass a Num or a plain number
+            const d = (depth instanceof Num) ? depth.value : (typeof depth === 'number' ? depth : 15);
 
             for(let i=0; i<d; i++) {
                 const a = Math.floor(val);
@@ -16034,6 +16293,155 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         return new Call('set', solutions);
     }
 
+    // --- State-space helpers: ctrb / obsv / ackermann / ss2tf ---------------
+    // A column vector [b1, b2] becomes an n x 1 matrix; a matrix passes through.
+    _asMatrix(m) {
+        if (!(m instanceof Vec)) return null;
+        if (m.elements.length === 0) return m;
+        if (m.elements[0] instanceof Vec) return m;
+        return new Vec(m.elements.map(e => new Vec([e])));
+    }
+
+    _matMul(A, B) {
+        return new Mul(A, B).simplify();
+    }
+
+    _matAdd(A, B) {
+        return new Add(A, B).simplify();
+    }
+
+    _ctrb(A, B) {
+        const Am = this._asMatrix(A);
+        const Bm = this._asMatrix(B);
+        if (!Am || !Bm || !(Am.elements[0] instanceof Vec)) {
+            throw new Error("ctrb requires a square matrix A and a column vector or matrix B");
+        }
+        const n = Am.elements.length;
+        if (Bm.elements.length !== n) throw new Error("ctrb: A and B dimensions do not match");
+        const blocks = [Bm];
+        let cur = Bm;
+        for (let k = 1; k < n; k++) {
+            cur = this._matMul(Am, cur);
+            blocks.push(cur);
+        }
+        const rows = [];
+        for (let i = 0; i < n; i++) {
+            const row = [];
+            for (const blk of blocks) row.push(...blk.elements[i].elements);
+            rows.push(new Vec(row));
+        }
+        return new Vec(rows);
+    }
+
+    _obsv(A, C) {
+        const Am = this._asMatrix(A);
+        const Cm = this._asMatrix(C);
+        if (!Am || !Cm || !(Am.elements[0] instanceof Vec)) {
+            throw new Error("obsv requires a square matrix A and a row vector or matrix C");
+        }
+        const n = Am.elements.length;
+        const blocks = [Cm];
+        let cur = Cm;
+        for (let k = 1; k < n; k++) {
+            cur = this._matMul(cur, Am);
+            blocks.push(cur);
+        }
+        const rows = [];
+        for (const blk of blocks) {
+            for (const row of blk.elements) rows.push(row);
+        }
+        return new Vec(rows);
+    }
+
+    _isControllable(A, B) {
+        const C = this._ctrb(A, B);
+        const n = C.elements.length;
+        const r = this._rank(C);
+        return new Num(r instanceof Num && r.value === n ? 1 : 0);
+    }
+
+    _isObservable(A, C) {
+        const O = this._obsv(A, C);
+        const n = A.elements.length;
+        const r = this._rank(O);
+        return new Num(r instanceof Num && r.value === n ? 1 : 0);
+    }
+
+    _ackermann(A, B, poles) {
+        const Am = this._asMatrix(A);
+        const Bm = this._asMatrix(B);
+        if (!Am || !Bm || !(Am.elements[0] instanceof Vec)) {
+            throw new Error("ackermann requires a square matrix A and a column vector B");
+        }
+        const n = Am.elements.length;
+        const poleList = (poles instanceof Vec) ? poles.elements : [poles];
+        if (poleList.length !== n) throw new Error(`ackermann requires ${n} poles for a ${n}x${n} system`);
+
+        // Desired characteristic polynomial prod(s - p_i), coefficients descending.
+        let coeffs = [new Num(1)];
+        for (const p of poleList) {
+            const next = new Array(coeffs.length + 1).fill(null).map(() => new Num(0));
+            for (let i = 0; i < coeffs.length; i++) {
+                next[i] = new Add(next[i], coeffs[i]).simplify();
+                next[i + 1] = new Sub(next[i + 1], new Mul(p, coeffs[i]).simplify()).simplify();
+            }
+            coeffs = next;
+        }
+
+        // phi(A) = A^n + a1 A^(n-1) + ... + an I
+        let phi = null;
+        for (let k = 0; k <= n; k++) {
+            const c = coeffs[k];
+            const power = n - k;
+            const term = new Mul(c, this._matrixPow(Am, new Num(power))).simplify();
+            phi = (phi === null) ? term : this._matAdd(phi, term);
+        }
+
+        const Ctrb = this._ctrb(Am, Bm);
+        if (!(this._rank(Ctrb) instanceof Num) || this._rank(Ctrb).value !== n) {
+            throw new Error("ackermann: system is not controllable");
+        }
+        const Cinv = this._inv(Ctrb);
+        // e_n^T * C^-1 * phi(A)
+        const lastRow = new Vec(Array.from({ length: n }, (_, i) => new Num(i === n - 1 ? 1 : 0)));
+        const rowMat = new Vec([lastRow]);
+        const partial = this._matMul(rowMat, Cinv);
+        const K = this._matMul(partial, phi);
+        // Single-input system: hand back the gain vector, not a 1 x n matrix
+        if (K instanceof Vec && K.elements.length === 1 && K.elements[0] instanceof Vec) {
+            return K.elements[0];
+        }
+        return K;
+    }
+
+    _ss2tf(A, B, C, D) {
+        const Am = this._asMatrix(A);
+        const Bm = this._asMatrix(B);
+        const Cm = this._asMatrix(C);
+        if (!Am || !Bm || !Cm || !(Am.elements[0] instanceof Vec)) {
+            throw new Error("ss2tf requires A (matrix), B (column vector), C (row vector) and D (scalar)");
+        }
+        const n = Am.elements.length;
+        const s = new Sym('s');
+        const sI = new Vec(Am.elements.map((row, i) => new Vec(row.elements.map((_, j) =>
+            new Num(i === j ? 1 : 0)))));
+        const sIMinusA = new Sub(new Mul(s, sI).simplify(), Am).simplify();
+        const resolved = this._inv(sIMinusA);
+        if (resolved instanceof Call) {
+            return new Call('ss2tf', [A, B, C, D]);
+        }
+        let G = this._matMul(Cm, this._matMul(resolved, Bm));
+        const dVal = (D instanceof Vec) ? D.elements[0] : D;
+        if (dVal && !(dVal instanceof Num && dVal.value === 0)) {
+            G = this._matAdd(G, dVal);
+        }
+        // Single-input/single-output: unwrap to a scalar transfer function
+        if (G instanceof Vec && G.elements.length === 1 && G.elements[0] instanceof Vec && G.elements[0].elements.length === 1) {
+            return G.elements[0].elements[0];
+        }
+        return G;
+    }
+
     _matrixExp(matrix) {
         if (!(matrix instanceof Vec)) throw new Error("matrixExp requires a matrix");
 
@@ -16549,7 +16957,8 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
     }
 
     _lagrangeMultiplier(expr, constraints, vars) {
-        if (!(constraints instanceof Vec) || !(vars instanceof Vec)) throw new Error("Constraints and variables must be lists");
+        if (!(constraints instanceof Vec)) constraints = new Vec([constraints]);
+        if (!(vars instanceof Vec)) throw new Error("Constraints and variables must be lists");
 
         const g = [];
         for(const c of constraints.elements) {

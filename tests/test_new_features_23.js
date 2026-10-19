@@ -4,6 +4,10 @@ const { Expr, Num, Sym, Call, Vec, Add, Mul, Pow, Sub } = require('../js/express
 
 const cas = new CAS();
 
+// This file used to print FAIL/CHECK and exit 0, so the suite stayed green
+// while the divergence check was failing. Track failures and exit non-zero.
+let failures = 0;
+
 console.log("--- Test Quadratic Factorization ---");
 const x = new Sym('x');
 // 2x^2 + 5x + 2
@@ -14,10 +18,11 @@ console.log("Factor(2x^2+5x+2) =", factored.toString());
 if (factored.toString() === "((2 * x) + 1) * (x + 2)" || factored.toString() === "(x + 2) * ((2 * x) + 1)") {
     console.log("PASS: Quadratic factorization");
 } else {
-    // Also accept with leading coeff 1 if it simplified well, but we want integer factors.
-    // My implementation: pushed '2x+1' and 'x+2'. No leading coeff remaining.
-    // Mul(Add(2x, 1), Sub(x, -2)) -> (2x+1)(x+2)
-    console.log("CHECK: Is this acceptable?");
+    // Still a correct factorisation if it multiplies back to the polynomial.
+    const back = cas._expand ? cas._expand(factored) : factored.expand();
+    const ok = back.simplify().toString() === poly.simplify().toString();
+    if (!ok) { failures++; console.log("FAIL: Quadratic factorization does not multiply back"); }
+    else console.log("PASS: Quadratic factorization (non-integer form):", factored.toString());
 }
 
 console.log("\n--- Test Pow.toLatex for Trig ---");
@@ -26,6 +31,7 @@ console.log("Latex sin(x)^2 =", sin2.toLatex());
 if (sin2.toLatex() === "\\sin^{2}\\left(x\\right)") {
     console.log("PASS: Latex format");
 } else {
+    failures++;
     console.log("FAIL: Expected \\sin^{2}\\left(x\\right)");
 }
 
@@ -39,6 +45,7 @@ console.log("ilaplace(1/(s^2+1)) =", il.toString());
 if (il.toString() === "sin(t)") {
     console.log("PASS: Inverse Laplace");
 } else {
+    failures++;
     console.log("FAIL: Expected sin(t)");
 }
 
@@ -53,5 +60,11 @@ console.log("div([x^2, y^2, z^2]) =", div.toString());
 if (div.toString() === "((2 * x) + ((2 * y) + (2 * z)))") {
     console.log("PASS: Divergence");
 } else {
-    console.log("FAIL: Check output");
+    failures++;
+    console.log("FAIL: Check output, got " + div.toString());
+}
+
+if (failures > 0) {
+    console.error(`\n${failures} check(s) failed`);
+    process.exit(1);
 }
