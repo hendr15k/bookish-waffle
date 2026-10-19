@@ -221,7 +221,11 @@ class Lexer {
                 if (lowerId === 'not') return new Token(TOKEN_NOT, id);
                 if (lowerId === 'xor') return new Token(TOKEN_XOR, id);
                 if (lowerId === 'mod') {
-                    // 'mod(a, b)' is a function call, 'a mod b' is the infix operator
+                    // 'mod(a, b)' is a function call, 'a mod b' is the infix operator,
+                    // and 'mod_inverse' / 'mod_pow' are ordinary command names.
+                    if (this.text[this.pos] === '_') {
+                        return new Token(TOKEN_IDENTIFIER, id);
+                    }
                     let p = this.pos;
                     while (p < this.text.length && /\s/.test(this.text[p])) p++;
                     if (p < this.text.length && this.text[p] === '(') {
@@ -244,15 +248,16 @@ class Lexer {
 
                 return new Token(TOKEN_IDENTIFIER, id);
             }
-            if (this.currentChar === '"') {
+            if (this.currentChar === '"' || this.currentChar === "'") {
+                const quote = this.currentChar;
                 this.advance();
                 let str = '';
-                while (this.currentChar !== null && this.currentChar !== '"') {
+                while (this.currentChar !== null && this.currentChar !== quote) {
                     if (this.currentChar === '\\') {
                         this.advance();
                         if (this.currentChar === 'n') { str += '\n'; this.advance(); continue; }
                         if (this.currentChar === 't') { str += '\t'; this.advance(); continue; }
-                        if (this.currentChar === '"') { str += '"'; this.advance(); continue; }
+                        if (this.currentChar === quote) { str += quote; this.advance(); continue; }
                         str += this.currentChar;
                         this.advance();
                         continue;
@@ -260,7 +265,7 @@ class Lexer {
                     str += this.currentChar;
                     this.advance();
                 }
-                if (this.currentChar === '"') this.advance();
+                if (this.currentChar === quote) this.advance();
                 return new Token(TOKEN_STRING, str);
             }
             if (this.currentChar === ':') {
@@ -353,7 +358,9 @@ class Lexer {
                     this.advance(); this.advance();
                     return new Token(TOKEN_AND, '&&');
                 }
-                throw new Error("Invalid character: &");
+                // A single '&' is the documented logical AND (cnf/dnf examples use it)
+                this.advance();
+                return new Token(TOKEN_AND, '&');
             }
             if (this.currentChar === '|') {
                 if (this.peek() === '|') {
