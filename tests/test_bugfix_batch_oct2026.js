@@ -173,7 +173,28 @@ checkNum('irr of a cubic flow', 'irr([-100,30,40,50])', 0.08896339469335002, 1e-
 checkNum('irr of a quadratic flow', 'irr([-1000,500,600])', 0.063941029805, 1e-6);
 checkStr('irr of a simple flow', 'irr([-100,110])', '0.1');
 
-// --- 14. numeric edge cases --------------------------------------------------
+// --- 14. definite integrals of non-elementary integrands ---------------------
+// The specialised integrators (erf/erfi, Si/Ci/Ei/Li) were only consulted on
+// the indefinite path, so definite integrals of them came back unevaluated.
+checkNum('definite integral with erf', 'integrate(exp(-x^2), x, 0, 1)', 0.7468241328124269, 1e-6);
+checkStr('definite integral with Si', 'integrate(sin(x)/x, x, 1, 2)', '(Si(2) - Si(1))');
+checkNum('indefinite ln(x)/x via substitution', 'substitute(integrate(ln(x)/x, x), x, 2)', Math.log(2) ** 2 / 2, 1e-9);
+checkNum('indefinite 1/(x*ln(x)) via substitution', 'substitute(integrate(1/(x*ln(x)), x), x, 2)', Math.log(Math.log(2)), 1e-9);
+// A definite integral whose antiderivative cannot be evaluated must not answer NaN
+checkNum('non-elementary definite integral', 'integrate(sqrt(x)*exp(-x), x, 0, 4)', 0.8454363872526243, 1e-6);
+checkNum('surfaceArea falls back to a numeric value', 'surfaceArea(x^2, x, 0, 1)', 3.8097297048578103, 1e-6);
+// A divergent integral keeps its symbolic answer
+checkStr('divergent integral stays divergent', 'integrate(1/x, x, -1, 1)', 'NaN');
+checkStr('improper integral at the boundary', 'integrate(1/x, x, 0, 1)', 'Infinity');
+
+// --- 15. two-sided limits ----------------------------------------------------
+// L'Hopital needs a direction; the two-sided limit used to answer NaN.
+checkStr('two-sided limit of x*ln(x)', 'limit(x*ln(x), x, 0)', '0');
+checkStr('two-sided limit of x*ln(x)-x', 'limit(x*ln(x)-x, x, 0)', '0');
+checkStr('one-sided limits still work', 'limit(x*ln(x), x, 0, 1)', '0');
+checkStr('limit of 1/x stays undefined', 'limit(1/x, x, 0)', 'NaN');
+
+// --- 16. numeric edge cases --------------------------------------------------
 // Splitting (a/b)^n into a^n/b^n overflows for large n (360 months is normal):
 // 121^360 and 120^360 are both Infinity, so the ratio came out NaN.
 checkNum('(12.1/12)^(-360)', '(12.1/12)^(-360)', Math.pow(12.1 / 12, -360), 1e-9);

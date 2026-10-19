@@ -654,6 +654,29 @@ class CAS {
                         }
                     }
 
+                    // The specialised integrators (erf/erfi, Si/Ci/Ei/Li, trig
+                    // tables, atan forms) are only consulted by the indefinite
+                    // path, so definite integrals of them came back unevaluated
+                    // even though the antiderivative was known. Try them here.
+                    if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
+                        const specials = [
+                            () => this._integrateSpecial(func, varNode),
+                            () => this._integrateSpecialFunctions(func, varNode),
+                            () => this._integrateTrig(func, varNode),
+                            () => this._integrateAtan(func, varNode),
+                            () => this._integrateInverseHyperbolic(func, varNode),
+                            () => this._integrateExpTrig(func, varNode),
+                        ];
+                        for (const attempt of specials) {
+                            let r = null;
+                            try { r = attempt(); } catch (e) { r = null; }
+                            if (r && !(r instanceof Call && r.funcName === 'integrate')) {
+                                indefinite = this.evaluate(r);
+                                break;
+                            }
+                        }
+                    }
+
                     // If integration failed (returned a Call to integrate), return symbolic definite integral
                     if (indefinite instanceof Call && indefinite.funcName === 'integrate') {
                         return new Call('integrate', args);
@@ -743,6 +766,11 @@ class CAS {
                                 try {
                                     const aVal = indefinite.substitute(varNode, new Num(xi)).evaluateNumeric();
                                     if (!isFinite(aVal) || isNaN(aVal)) {
+                                        // Not a pole of the integrand but an
+                                        // antiderivative we cannot evaluate:
+                                        // fall back to numeric integration.
+                                        const numeric = this._definiteNumericFallback(func, varNode, lower, upper);
+                                        if (numeric) return numeric;
                                         return new Sym('NaN');
                                     }
                                 } catch(e) {}
@@ -752,17 +780,26 @@ class CAS {
 
                     // Use limit for bounds to handle singularities (e.g. 1/sqrt(x) at 0)
                     // limit(F(x), x, upper, left) - limit(F(x), x, lower, right)
-                    let valUpper = indefinite.substitute(varNode, upper);
+                    // Simplify so an indeterminate value like 0*ln(0) surfaces as
+                    // NaN here and is then resolved with a one-sided limit.
+                    let valUpper = indefinite.substitute(varNode, upper).simplify();
                     // Check if substitution failed (NaN or Infinity symbolic)
                     // Also check for evaluateNumeric issues if needed, but symbolic check covers basic cases
-                    const isBad = (n) => (n instanceof Sym && (n.name === 'NaN' || n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf')) ||
+                    // A NaN can hide inside a larger node: x*ln(x) - x at x = 0
+                    // evaluates 0*(-Infinity) to NaN and keeps the -1 around.
+                    const hasNaN = (n) => (n instanceof Sym && n.name === 'NaN') ||
+                        (n instanceof Num && isNaN(n.value)) ||
+                        ((n instanceof BinaryOp || n instanceof Pow) && (hasNaN(n.left) || hasNaN(n.right))) ||
+                        (n instanceof Call && n.args.some(hasNaN));
+                    const isBad = (n) => hasNaN(n) ||
+                                         (n instanceof Sym && (n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf')) ||
                                          (n instanceof Mul && n.left instanceof Num && n.left.value === -1 && (n.right.name === 'Infinity' || n.right.name === 'infinity' || n.right.name === 'inf'));
 
                     if (isBad(valUpper)) {
                          valUpper = this._limit(indefinite, varNode, upper, 0, -1);
                     }
 
-                    let valLower = indefinite.substitute(varNode, lower);
+                    let valLower = indefinite.substitute(varNode, lower).simplify();
                     if (isBad(valLower)) {
                          valLower = this._limit(indefinite, varNode, lower, 0, 1);
                     }
@@ -772,7 +809,15 @@ class CAS {
                                          (n instanceof Mul && n.left instanceof Num && n.left.value === -1 && (n.right.name === 'Infinity' || n.right.name === 'infinity' || n.right.name === 'inf'));
                     const isNaNExpr = (n) => (n instanceof Sym && n.name === 'NaN');
 
-                    if (isNaNExpr(valUpper) || isNaNExpr(valLower)) return new Sym('NaN');
+                    if (isNaNExpr(valUpper) || isNaNExpr(valLower)) {
+                        // The antiderivative cannot be evaluated at the bounds
+                        // (e.g. a non-elementary integrand whose symbolic form
+                        // still contains an integral). Fall back to the numeric
+                        // integrator instead of answering NaN.
+                        const numeric = this._definiteNumericFallback(func, varNode, lower, upper);
+                        if (numeric) return numeric;
+                        return new Sym('NaN');
+                    }
 
                     if (isInf(valUpper)) {
                         if (isInf(valLower)) {
@@ -787,7 +832,13 @@ class CAS {
                         return new Mul(new Num(-1), valLower).simplify();
                     }
 
-                    return new Sub(valUpper, valLower).simplify();
+                    const definite = new Sub(valUpper, valLower).simplify();
+                    if ((definite instanceof Sym && definite.name === 'NaN') ||
+                        (definite instanceof Num && isNaN(definite.value))) {
+                        const numeric = this._definiteNumericFallback(func, varNode, lower, upper);
+                        if (numeric) return numeric;
+                    }
+                    return definite;
                 }
 
                 // Check for standard integrals that are not handled by Expr.integrate
@@ -4501,6 +4552,31 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
         throw new Error("System solver did not converge");
     }
 
+    // Numeric value of a definite integral whose symbolic antiderivative is not
+    // usable. Returns null when the integrand is not finite on the interval (so
+    // divergences keep their symbolic NaN/Infinity answer).
+    _definiteNumericFallback(func, varNode, lower, upper) {
+        try {
+            const a = lower.evaluateNumeric();
+            const b = upper.evaluateNumeric();
+            if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+            const steps = 64;
+            const dx = (b - a) / steps;
+            for (let i = 1; i < steps; i++) {
+                const v = func.substitute(varNode, new Num(a + i * dx)).evaluateNumeric();
+                if (!Number.isFinite(v)) return null;
+            }
+            // A finer grid than the 100-point default: the fallback is used for
+            // integrands with square-root-type behaviour at an endpoint.
+            const val = this._nIntegrate(func, varNode, lower, upper, new Num(600));
+            const n = val instanceof Num ? val.value : val.evaluateNumeric();
+            if (!Number.isFinite(n)) return null;
+            return new Num(n);
+        } catch (e) {
+            return null;
+        }
+    }
+
     _nIntegrate(expr, varNode, start, end, nArg) {
         // Composite Simpson's Rule with optional adaptive refinement and configurable subintervals
         //
@@ -6246,6 +6322,9 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                      node.args.forEach(arg => {
                          if (this._dependsOn(arg, varNode)) candidates.add(arg);
                      });
+                     // The call itself is a substitution candidate too:
+                     // integrate(ln(x)/x, x) needs u = ln(x), not u = x.
+                     if (this._dependsOn(node, varNode)) candidates.add(node);
                  }
              } else if (node instanceof Pow) {
                  if (this._dependsOn(node.left, varNode)) candidates.add(node.left);
@@ -6550,6 +6629,22 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             if (isInf(limArg)) return new Sym('Infinity');
         }
 
+        // An Add/Sub whose direct substitution is NaN can still have a limit:
+        // x*ln(x) - x at 0 is 0*(-Inf) - 0. Take the limits of the parts.
+        if ((expr instanceof Add || expr instanceof Sub)) {
+            let direct = null;
+            try { direct = expr.substitute(varNode, point).simplify(); } catch (e) { direct = null; }
+            if (direct instanceof Sym && direct.name === 'NaN') {
+                const L = this._limit(expr.left, varNode, point, depth + 1, dir);
+                const R = this._limit(expr.right, varNode, point, depth + 1, dir);
+                const bad = (n) => (n instanceof Sym && (n.name === 'NaN' || n.name === 'Infinity' || n.name === 'infinity' || n.name === 'inf')) ||
+                    (n instanceof Num && !isFinite(n.value));
+                if (!bad(L) && !bad(R)) {
+                    return (expr instanceof Add ? new Add(L, R) : new Sub(L, R)).simplify();
+                }
+            }
+        }
+
         // Check for Indeterminate form NaN (from 0*Inf)
         // If expr is Mul, convert to Div
         if (expr instanceof Mul) {
@@ -6564,6 +6659,13 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
                     const num = lnArg;
                     const den = new Div(new Num(1), varNode).simplify();
                     const lhopitalExpr = new Div(num, den);
+                    if (dir === 0) {
+                        // Two-sided limit: L'Hopital's rule needs a direction, so
+                        // compute both one-sided limits and combine them.
+                        const right = this._limit(lhopitalExpr, varNode, point, depth + 1, 1);
+                        const left = this._limit(lhopitalExpr, varNode, point, depth + 1, -1);
+                        if (right.toString() === left.toString()) return right;
+                    }
                     return this._limit(lhopitalExpr, varNode, point, depth + 1, dir);
                 }
 
