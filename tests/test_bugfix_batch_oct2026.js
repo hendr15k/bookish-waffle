@@ -145,7 +145,19 @@ checkStr('integer outer exponent still collapses', 'simplify((x^2)^3)', 'x^6');
 checkStr('symbolic exponent still collapses', '(a^x)^y', 'a^((x * y))');
 checkStr('sqrt(x^2) is still abs(x)', 'sqrt(x^2)', 'abs(x)');
 
-// --- 11. numeric edge cases --------------------------------------------------
+// --- 11. summing two differences --------------------------------------------
+// Add.simplify() matched equal parts of (a-b)+(c-d) and then kept only one copy,
+// so (2-x)+(1-x) collapsed to 3-x and the product rule lost a factor.
+checkStr('(2-x)+(1-x)', '(2-x)+(1-x)', '(3 - (2 * x))');
+checkStr('(a-b)+(c-b)', '(a-b)+(c-b)', '((a + c) - (2 * b))');
+checkStr('(a-b)+(a-d)', '(a-b)+(a-d)', '(((2 * a) - b) - d)');
+checkStr('(a-b)+(b-a) still cancels', '(a-b)+(b-a)', '0');
+checkNum('(2-x)+(1-x) at x=4', 'substitute((2-x)+(1-x), x, 4)', -5);
+// derivative of a product of two affine factors
+checkStr('diff((1.5-x)*(y-x), x)', 'diff((1.5-x)*(y-x), x)', '-((y + 1.5) - (2 * x))');
+checkNum('product rule at x=0.9,y=0.5', 'substitute(diff((1.5-x)*(y-x), x), [x=0.9, y=0.5])', -(0.5 + 1.5 - 1.8));
+
+// --- 12. numeric edge cases --------------------------------------------------
 // Splitting (a/b)^n into a^n/b^n overflows for large n (360 months is normal):
 // 121^360 and 120^360 are both Infinity, so the ratio came out NaN.
 checkNum('(12.1/12)^(-360)', '(12.1/12)^(-360)', Math.pow(12.1 / 12, -360), 1e-9);

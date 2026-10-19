@@ -847,19 +847,11 @@ class Add extends BinaryOp {
             return new Sub(new Num(0), result).simplify();
         }
 
-        // Sub(a,b) + Sub(c,d) -> collect like terms across Sub nodes
+        // Sub(a,b) + Sub(c,d): collect coefficients term by term. The old
+        // shortcut matched equal parts and then kept only one copy of them, so
+        // (a-b)+(c-b) gave a+c-b instead of a+c-2b and (2-x)+(1-x) gave 3-x.
         if (l instanceof Sub && r instanceof Sub) {
-            const la = l.left, lb = l.right;
-            const ra = r.left, rb = r.right;
-            // Try matching: (a-b) + (c-d) -> (a+c) - (b+d) or (a-c) - (b-d)
-            // Match positive terms: la vs ra, and negative terms: lb vs rb
-            const posMatch = exprEquals(la, ra);
-            const negMatch = exprEquals(lb, rb);
-            if (posMatch && negMatch) return new Num(0);
-            if (posMatch) return new Sub(la, new Add(lb, rb).simplify()).simplify();
-            if (negMatch) return new Sub(new Add(la, ra).simplify(), lb).simplify();
-            // (a-b) + (c-d) -> (a+c) - (b+d)
-            return new Sub(new Add(la, ra).simplify(), new Add(lb, rb).simplify()).simplify();
+            return buildFromTerms([...flattenAddSub(l), ...flattenAddSub(r)]);
         }
 
         // Logarithmic Combination: ln(a) + ln(b) -> ln(a*b)
