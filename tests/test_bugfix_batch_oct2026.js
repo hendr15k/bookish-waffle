@@ -126,6 +126,25 @@ checkStr('eigenvalues alias', 'eigenvalues([[1,2],[2,1]])', '[-1, 3]');
 checkStr('cfrac honours the depth argument', 'cfrac(pi, 5)', '[3, 7, 15, 1, 292]');
 checkStr('continued_fraction on e', 'continued_fraction(e, 5)', '[2, 1, 2, 1, 1]');
 
+// --- 9. polynomial cancellation must keep the sign ---------------------------
+// polyGcd() normalised its result in place, which corrupted the caller's
+// denominator coefficients and flipped the sign of the quotient.
+checkStr('(x^2-4)/(2-x)', '(x^2-4)/(2-x)', '-(2 + x)');
+checkStr('(x^2-9)/(3-x)', '(x^2-9)/(3-x)', '-(3 + x)');
+checkNum('(x^2-4)/(2-x) at x=3', 'substitute((x^2-4)/(2-x), x, 3)', -5);
+checkNum('(4-x^2)/(2-x) at x=3', 'substitute((4-x^2)/(2-x), x, 3)', 5);
+checkStr('(x^2-4)/(x-2) unchanged', '(x^2-4)/(x-2)', '(2 + x)');
+checkStr('gcd still cancels', '(2*x+4)/(x+2)', '2');
+
+// --- 10. powers of powers ----------------------------------------------------
+// (x^2)^(1/2) is |x|, so it must not collapse to x, and the printed form must
+// re-parse as the same expression ((x^2)^(1/2), not x^2^(1/2)).
+checkStr('fractional root of an even power stays symbolic', 'simplify((x^2)^(1/2))', '(x^2)^((1 / 2))');
+checkNum('(x^2)^(1/2) at x=-3 is |x|', 'substitute(simplify((x^2)^(1/2)), x, -3)', 3);
+checkStr('integer outer exponent still collapses', 'simplify((x^2)^3)', 'x^6');
+checkStr('symbolic exponent still collapses', '(a^x)^y', 'a^((x * y))');
+checkStr('sqrt(x^2) is still abs(x)', 'sqrt(x^2)', 'abs(x)');
+
 // --- 9. every documented help example evaluates -----------------------------
 {
     // help.js registers window.HELP_DATA; chemistry.js must live inside the

@@ -363,8 +363,11 @@ function polyQuotient(P, Q) {
 }
 
 function polyGcd(P, Q) {
-    let a = P;
-    let b = Q;
+    // Work on copies: the monic normalisation at the end would otherwise
+    // mutate the caller's coefficient arrays, and callers keep using them
+    // (Div.simplify divides num and den by the gcd afterwards).
+    let a = [...P];
+    let b = [...Q];
     while (b.length > 0 && !(b.length === 1 && Math.abs(b[0]) < 1e-15)) {
         const r = polyRem(a, b);
         a = b;
@@ -1958,7 +1961,9 @@ class Div extends BinaryOp {
                         const newDen = polyFromCoeffs(newDenCoeffs, varNode);
 
                         if (newDenCoeffs.length === 1 && Math.abs(newDenCoeffs[0] - 1) < 1e-9) return newNum;
-                        return new Div(newNum, newDen);
+                        // Simplify the quotient so a constant denominator -1 does
+                        // not survive as -(-x - 2) in the result.
+                        return new Div(newNum, newDen).simplify();
                     }
                 }
             }
@@ -2272,8 +2277,10 @@ class Pow extends BinaryOp {
         let l = this.left.toString();
         let r = this.right.toString();
 
-        // Wrap left if it's an operator with lower precedence than Pow
-        if (this.left instanceof Add || this.left instanceof Sub || this.left instanceof Mul || this.left instanceof Div) {
+        // Wrap left if it's an operator with lower precedence than Pow.
+        // A nested Pow must be wrapped too: (x^2)^(1/2) would otherwise print
+        // as x^2^(1/2), which re-parses as x^(2^(1/2)).
+        if (this.left instanceof Add || this.left instanceof Sub || this.left instanceof Mul || this.left instanceof Div || this.left instanceof Pow) {
             l = `(${l})`;
         }
         // Also wrap if left is negative number?
@@ -2282,8 +2289,8 @@ class Pow extends BinaryOp {
         }
 
         // Wrap right if complex? usually right is evaluated first?
-        // x^(a+b) needs parens
-        if (this.right instanceof Add || this.right instanceof Sub || this.right instanceof Mul || this.right instanceof Div) {
+        // x^(a+b) needs parens, and so does x^(2^3) (a^b^c is right-associative)
+        if (this.right instanceof Add || this.right instanceof Sub || this.right instanceof Mul || this.right instanceof Div || this.right instanceof Pow) {
             r = `(${r})`;
         }
 
@@ -2466,13 +2473,20 @@ class Pow extends BinaryOp {
              return new Mul(cn, xn).simplify();
         }
 
-        // Simplify roots: (x^a)^(1/b) -> x^(a/b) ?
-        // Simplification rule: (a^b)^c = a^(b*c)
+        // (a^b)^c = a^(b*c) is not valid for negative bases when an even power
+        // is followed by a fractional root: (x^2)^(1/2) is |x|, not x. That one
+        // shape is left unevaluated; every other combination keeps the rule.
         if (l instanceof Pow) {
              const base = l.left;
              const exp1 = l.right;
              const exp2 = r;
-             return new Pow(base, new Mul(exp1, exp2).simplify()).simplify();
+             const e1v = exp1.evaluateNumeric();
+             const e2v = exp2.evaluateNumeric();
+             const evenInnerPower = isFinite(e1v) && Number.isInteger(e1v) && e1v % 2 === 0;
+             const fractionalOuter = isFinite(e2v) && !Number.isInteger(e2v);
+             if (!(evenInnerPower && fractionalOuter)) {
+                 return new Pow(base, new Mul(exp1, exp2).simplify()).simplify();
+             }
         }
 
         return new Pow(l, r);
