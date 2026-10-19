@@ -157,7 +157,16 @@ checkNum('(2-x)+(1-x) at x=4', 'substitute((2-x)+(1-x), x, 4)', -5);
 checkStr('diff((1.5-x)*(y-x), x)', 'diff((1.5-x)*(y-x), x)', '-((y + 1.5) - (2 * x))');
 checkNum('product rule at x=0.9,y=0.5', 'substitute(diff((1.5-x)*(y-x), x), [x=0.9, y=0.5])', -(0.5 + 1.5 - 1.8));
 
-// --- 12. numeric edge cases --------------------------------------------------
+// --- 12. partfrac must not swallow a transcendental numerator ---------------
+// partfrac(cos(x)/x^2) returned 1/x^2 (the cos(x) was treated as a constant
+// coefficient and dropped), and integrate() then answered the integral of
+// 1/x^2 — a wrong number instead of "no closed form".
+checkStr('partfrac leaves cos(x)/x^2 alone', 'partfrac(cos(x)/x^2, x)', '(cos(x) / x^2)');
+checkStr('integrate(cos(x)/x^2) is not silently 1/x^2', 'integrate(cos(x)/x^2, x)', 'integrate((cos(x) / x^2), x)');
+checkStr('partfrac still splits rational functions', 'partfrac((2*x+1)/(x^2+x), x)', '((1 / (x + 1)) + (1 / x))');
+checkNum('definite integral via nIntegrate still agrees', 'nIntegrate(cos(x)/x^2, x, 1, 2)', 0.08904581770619656, 1e-6);
+
+// --- 13. numeric edge cases --------------------------------------------------
 // Splitting (a/b)^n into a^n/b^n overflows for large n (360 months is normal):
 // 121^360 and 120^360 are both Infinity, so the ratio came out NaN.
 checkNum('(12.1/12)^(-360)', '(12.1/12)^(-360)', Math.pow(12.1 / 12, -360), 1e-9);

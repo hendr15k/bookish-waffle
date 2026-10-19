@@ -11005,6 +11005,25 @@ if (node.funcName === 'variance' || node.funcName === 'var') {
             return expr;
         }
 
+        // 2b. Partial fractions only apply to rational functions. When the
+        // numerator contains a transcendental factor such as cos(x), the
+        // coefficient extraction below treats it as a constant and silently
+        // drops it (partfrac(cos(x)/x^2) returned 1/x^2, which then produced a
+        // wrong antiderivative), so bail out for those.
+        {
+            const numPoly = this._getPolyCoeffs(num, varNode);
+            if (numPoly && numPoly.coeffs) {
+                for (let d = 0; d <= numPoly.maxDeg; d++) {
+                    const c = numPoly.coeffs[d];
+                    if (c && this._dependsOn(c, varNode)) return expr;
+                }
+            } else if (num !== null && this._dependsOn(num, varNode)) {
+                // Not representable as a polynomial at all but still contains
+                // the variable: not a rational function.
+                return expr;
+            }
+        }
+
         // 3. Check for polynomial part (degree num >= degree den)
         // P/Q = Poly + Rem/Q. Do polynomial division first.
         const pNum = this._getPolyCoeffs(num, varNode);
